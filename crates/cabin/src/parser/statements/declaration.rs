@@ -51,7 +51,7 @@ impl Declaration {
 impl Parse for Declaration {
 	type Output = Statement;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let debug_section = debug_start!("{} a {}", "Parsing".bold().green(), "declaration".cyan());
 
 		// Tags
@@ -83,9 +83,7 @@ impl Parse for Declaration {
 		value.try_set_scope_label(name.clone());
 
 		// Add the name declaration to the scope
-		context().scope_data.declare_new_variable(name.clone(), value).map_err(mapped_err! {
-			while = format!("attempting to add the variable \"{}\" to its scope", name.unmangled_name().bold().cyan()),
-		})?;
+		context().scope_data.declare_new_variable(name.clone(), value)?;
 
 		let _ = tokens.pop(TokenType::Semicolon)?;
 

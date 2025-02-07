@@ -60,6 +60,10 @@ impl Default for Context {
 }
 
 impl Context {
+	pub fn reset(&mut self) {
+		*self = Self::default();
+	}
+
 	pub fn toggle_side_effects(&mut self, side_effects: bool) {
 		self.side_effects_stack.push(side_effects);
 	}
@@ -288,7 +292,7 @@ impl SourceFilePosition {
 /// made a lot of things impossible &mdash; like implementing `Drop` or `Debug` for things that need to reference
 /// the context. Not to mention an excessive amount of cloning to make the borrow checker happy &mdash; overall,
 /// it was a poor syntactic layer over what was essentially just global mutable state anyway. Sue me.
-static CONTEXT: LazyLock<Context> = LazyLock::new(Context::default);
+pub static CONTEXT: LazyLock<Context> = LazyLock::new(Context::default);
 
 /// Returns a non-borrow-checked static mutable reference to the program's `Context`, which holds global state
 /// data about the compiler.
@@ -305,16 +309,6 @@ pub fn context() -> &'static mut Context {
 	unsafe {
 		(&*CONTEXT as *const Context as *mut Context).as_mut().unwrap()
 	}
-}
-
-// Maybe we should try something like this instead..
-
-pub static SAFE_CONTEXT: LazyLock<Arc<Mutex<Context>>> = LazyLock::new(|| Arc::new(Mutex::new(Context::default())));
-#[macro_export]
-macro_rules! context {
-	() => {
-		std::sync::Arc::clone(&*crate::api::context::SAFE_CONTEXT).try_lock().unwrap()
-	};
 }
 
 pub struct DebugSection;

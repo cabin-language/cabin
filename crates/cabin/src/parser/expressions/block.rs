@@ -60,7 +60,7 @@ impl Block {
 	/// # Errors
 	///
 	/// If an unexpected token was encountered.
-	pub fn parse_with_scope_type(tokens: &mut TokenQueue, scope_type: ScopeType) -> anyhow::Result<Block> {
+	pub fn parse_with_scope_type(tokens: &mut TokenQueue, scope_type: ScopeType) -> Result<Block, crate::Error> {
 		let debug_section = debug_start!("{} a {} expression", "Compile-Time Evaluating".bold().green(), "block".cyan());
 		context().scope_data.enter_new_scope(scope_type);
 
@@ -75,7 +75,7 @@ impl Block {
 
 		let end = tokens.pop(TokenType::RightBrace)?.span;
 
-		context().scope_data.exit_scope()?;
+		context().scope_data.exit_scope().unwrap();
 
 		debug_section.finish();
 		Ok(Block {
@@ -89,7 +89,7 @@ impl Block {
 impl Parse for Block {
 	type Output = Block;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		Block::parse_with_scope_type(tokens, ScopeType::Block)
 	}
 }

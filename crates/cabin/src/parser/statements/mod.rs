@@ -30,7 +30,7 @@ pub enum Statement {
 impl Parse for Statement {
 	type Output = Statement;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let statement = match tokens.peek_type()? {
 			TokenType::KeywordLet | TokenType::TagOpening => Declaration::parse(tokens)?,
 			TokenType::KeywordDefault => Statement::DefaultExtend(DefaultExtend::parse(tokens)?),

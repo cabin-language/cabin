@@ -4,7 +4,9 @@ use crate::{
 	lexer::TokenType,
 	parser::{
 		expressions::{name::Name, Expression},
-		Parse, TokenQueue, TokenQueueFunctionality,
+		Parse,
+		TokenQueue,
+		TokenQueueFunctionality,
 	},
 	transpiler::TranspileToC,
 };
@@ -18,7 +20,7 @@ pub struct TailStatement {
 impl Parse for TailStatement {
 	type Output = TailStatement;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let label = Name::parse(tokens)?;
 
 		let _ = tokens.pop(TokenType::KeywordIs)?;

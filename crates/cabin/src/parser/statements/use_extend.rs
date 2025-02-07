@@ -35,7 +35,7 @@ pub struct DefaultExtendPointer {
 impl Parse for DefaultExtend {
 	type Output = DefaultExtendPointer;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let _ = tokens.pop(TokenType::KeywordDefault)?;
 		let _ = tokens.pop(TokenType::KeywordExtend)?;
 

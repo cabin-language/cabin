@@ -35,7 +35,7 @@ pub struct ForEachLoop {
 impl Parse for ForEachLoop {
 	type Output = ForEachLoop;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let start = tokens.pop(TokenType::KeywordForEach)?.span;
 
 		let binding_name = Name::parse(tokens)?;
@@ -67,9 +67,15 @@ impl Parse for ForEachLoop {
 impl CompileTime for ForEachLoop {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
+	fn evaluate_at_compile_time(mut self) -> anyhow::Result<Self::Output> {
+		self.iterable = Box::new(self.iterable.evaluate_at_compile_time()?);
 		if let Ok(literal) = self.iterable.try_as_literal() {
-			let elements = literal.try_as::<Vec<Expression>>()?.to_owned();
+			let elements = literal
+				.try_as::<Vec<Expression>>()?
+				.to_owned()
+				.into_iter()
+				.map(|element| element.evaluate_at_compile_time())
+				.collect::<anyhow::Result<Vec<_>>>()?;
 			for element in elements {
 				context().scope_data.reassign_variable_from_id(&self.binding_name, element.clone(), self.inner_scope_id)?;
 				let value = self.body.clone().evaluate_at_compile_time()?;

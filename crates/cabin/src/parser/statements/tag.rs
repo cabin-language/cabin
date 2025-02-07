@@ -3,10 +3,15 @@ use std::{fmt::Debug, ops::Deref};
 use crate::{
 	api::traits::TryAs as _,
 	comptime::{memory::VirtualPointer, CompileTime},
-	debug_log, debug_start, mapped_err, parse_list,
+	debug_log,
+	debug_start,
+	mapped_err,
+	parse_list,
 	parser::{
 		expressions::{literal::CompilerWarning, Expression},
-		ListType, Parse, TokenQueue,
+		ListType,
+		Parse,
+		TokenQueue,
 	},
 };
 
@@ -18,7 +23,7 @@ pub struct TagList {
 impl Parse for TagList {
 	type Output = TagList;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let mut tags = Vec::new();
 		let _ = parse_list!(tokens, ListType::Tag, {
 			tags.push(Expression::parse(tokens)?);

@@ -2,17 +2,17 @@ use std::{fmt::Debug, hash::Hash};
 
 use colored::Colorize as _;
 
+use super::Spanned;
 use crate::{
 	api::context::context,
 	comptime::CompileTime,
-	debug_log, debug_start,
+	debug_log,
+	debug_start,
 	lexer::{Span, TokenType},
 	mapped_err,
 	parser::{expressions::Expression, Parse, ToCabin, TokenQueue, TokenQueueFunctionality as _},
 	transpiler::TranspileToC,
 };
-
-use super::Spanned;
 
 #[derive(Clone, Eq)]
 pub struct Name {
@@ -36,13 +36,8 @@ pub struct Name {
 impl Parse for Name {
 	type Output = Self;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
-		let span = tokens.current_position().unwrap();
-
-		let token = tokens.pop(TokenType::Identifier).map_err(mapped_err! {
-			while = "attempting to parse a variable name",
-			position = span,
-		})?;
+	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output, crate::Error> {
+		let token = tokens.pop(TokenType::Identifier)?;
 
 		Ok(Name {
 			name: token.value,

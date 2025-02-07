@@ -81,7 +81,7 @@ impl Debug for FunctionDeclaration {
 impl Parse for FunctionDeclaration {
 	type Output = VirtualPointer;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let debug_section = debug_start!("{} a {}", "Parsing".bold().green(), "function declaration".cyan());
 		// "function" keyword
 		let start = tokens.pop(TokenType::KeywordAction)?.span;

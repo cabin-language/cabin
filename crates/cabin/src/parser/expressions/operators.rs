@@ -3,7 +3,6 @@ use std::collections::VecDeque;
 use super::{extend::Extend, match_expression::Match, sugar::string::CabinString};
 use crate::{
 	lexer::{Token, TokenType},
-	mapped_err,
 	parser::{
 		expressions::{
 			block::Block,
@@ -21,8 +20,10 @@ use crate::{
 			Expression,
 		},
 		Parse,
+		ParseError,
 		TokenQueueFunctionality,
 	},
+	ErrorInfo,
 };
 
 /// A binary operation. More specifically, this represents not one operation, but a group of operations that share the same precedence.
@@ -44,7 +45,7 @@ impl BinaryOperation {
 	/// - `tokens` - The token stream to parse
 	/// - `current_scope` - The current scope
 	/// - `debug_info` - The debug information
-	fn parse_precedent(&self, tokens: &mut VecDeque<Token>) -> anyhow::Result<Expression> {
+	fn parse_precedent(&self, tokens: &mut VecDeque<Token>) -> Result<Expression, crate::Error> {
 		if let Some(precedent) = self.precedent {
 			parse_binary_expression(precedent, tokens)
 		} else {
@@ -57,15 +58,13 @@ impl BinaryOperation {
 #[derive(Clone, Debug)]
 pub struct BinaryExpression;
 
-fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<Token>) -> anyhow::Result<Expression> {
+fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<Token>) -> Result<Expression, crate::Error> {
 	let mut expression = operation.parse_precedent(tokens)?;
 
 	while tokens.next_is_one_of(operation.token_types) {
 		let operator_token = tokens.pop(tokens.peek_type()?)?;
 		let right = operation.parse_precedent(tokens)?;
-		expression = Expression::FunctionCall(FunctionCall::from_binary_operation(expression, right, operator_token).map_err(mapped_err! {
-			while = "converting a binary operation into a function call expression",
-		})?);
+		expression = Expression::FunctionCall(FunctionCall::from_binary_operation(expression, right, operator_token)?);
 	}
 
 	Ok(expression)
@@ -74,8 +73,8 @@ fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<To
 impl Parse for BinaryExpression {
 	type Output = Expression;
 
-	fn parse(tokens: &mut VecDeque<Token>) -> anyhow::Result<Self::Output> {
-		parse_binary_expression(&ASSIGNMENT, tokens)
+	fn parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, crate::Error> {
+		parse_binary_expression(&COMBINATOR, tokens)
 	}
 }
 
@@ -84,7 +83,7 @@ pub struct PrimaryExpression;
 impl Parse for PrimaryExpression {
 	type Output = Expression;
 
-	fn parse(tokens: &mut VecDeque<Token>) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, crate::Error> {
 		Ok(match tokens.peek_type()? {
 			TokenType::LeftParenthesis => {
 				let _ = tokens.pop(TokenType::LeftParenthesis).unwrap_or_else(|_| unreachable!());
@@ -95,36 +94,24 @@ impl Parse for PrimaryExpression {
 			},
 
 			// Parse function declaration expression
-			TokenType::KeywordAction => Expression::Pointer(FunctionDeclaration::parse(tokens).map_err(mapped_err! {
-				while = "attempting to parse a function declaration expression",
-			})?),
+			TokenType::KeywordAction => Expression::Pointer(FunctionDeclaration::parse(tokens)?),
 
 			// Parse block expression
 			TokenType::LeftBrace => Expression::Block(Block::parse(tokens)?),
 
 			// Parse variable name expression
-			TokenType::Identifier => Expression::Name(Name::parse(tokens).map_err(mapped_err! {
-				while = "attempting to parse a variable name expression",
-			})?),
+			TokenType::Identifier => Expression::Name(Name::parse(tokens)?),
 
 			// Parse object constructor
-			TokenType::KeywordNew => Expression::ObjectConstructor(ObjectConstructor::parse(tokens).map_err(mapped_err! {
-				while = "attempting to parse an object constructor expression",
-			})?),
+			TokenType::KeywordNew => Expression::ObjectConstructor(ObjectConstructor::parse(tokens)?),
 
 			// Parse group declaration expression
-			TokenType::KeywordGroup => Expression::Pointer(GroupDeclaration::parse(tokens).map_err(mapped_err! {
-				while = "attempting to parse a group declaration expression",
-			})?),
+			TokenType::KeywordGroup => Expression::Pointer(GroupDeclaration::parse(tokens)?),
 
 			// Parse one-of declaration expression
-			TokenType::KeywordOneOf => Expression::Pointer(OneOf::parse(tokens).map_err(mapped_err! {
-				while = "attempting to parse a one-of declaration expression",
-			})?),
+			TokenType::KeywordOneOf => Expression::Pointer(OneOf::parse(tokens)?),
 
-			TokenType::KeywordMatch => Expression::Match(Match::parse(tokens).map_err(mapped_err! {
-				while = "attempting to parse a match expression",
-			})?),
+			TokenType::KeywordMatch => Expression::Match(Match::parse(tokens)?),
 
 			TokenType::KeywordEither => Expression::Pointer(Either::parse(tokens)?),
 			TokenType::KeywordIf => Expression::If(IfExpression::parse(tokens)?),
@@ -132,17 +119,13 @@ impl Parse for PrimaryExpression {
 			TokenType::KeywordExtend => Expression::Pointer(Extend::parse(tokens)?),
 
 			// Parse run expression
-			TokenType::KeywordRuntime => Expression::Run(RunExpression::parse(tokens).map_err(mapped_err! {
-				while = "attempting to parse a run-expression",
-			})?),
+			TokenType::KeywordRuntime => Expression::Run(RunExpression::parse(tokens)?),
 
 			// Syntactic sugar: These below handle cases where syntactic sugar exists for initializing objects of certain types, such as
 			// strings, numbers, lists, etc.:
 
 			// Parse list literal into a list object
-			TokenType::LeftBracket => List::parse(tokens).map_err(mapped_err! {
-				while = "attempting to parse a list literal",
-			})?,
+			TokenType::LeftBracket => List::parse(tokens)?,
 
 			// Parse string literal into a string object
 			TokenType::String => CabinString::parse(tokens)?,
@@ -154,7 +137,15 @@ impl Parse for PrimaryExpression {
 			},
 
 			// bad :<
-			_ => anyhow::bail!("Expected primary expression but found {}", tokens.peek_type()?),
+			token_type => {
+				return Err(crate::Error {
+					span: tokens.current_position().unwrap(),
+					error: ErrorInfo::Parse(ParseError::UnexpectedTokenExpected {
+						expected: "primary expression",
+						actual: token_type,
+					}),
+				})
+			},
 		})
 	}
 }
@@ -189,8 +180,7 @@ static COMPARISON: BinaryOperation = BinaryOperation {
 	token_types: &[TokenType::DoubleEquals, TokenType::LessThan, TokenType::GreaterThan],
 };
 
-/// The assignment operations, which have the lowest precedence. This covers the `=` operator.
-static ASSIGNMENT: BinaryOperation = BinaryOperation {
+static COMBINATOR: BinaryOperation = BinaryOperation {
 	precedent: Some(&COMPARISON),
-	token_types: &[TokenType::Equal],
+	token_types: &[TokenType::KeywordAnd, TokenType::KeywordOr],
 };

@@ -8,8 +8,9 @@ use crate::{
 	comptime::memory::VirtualPointer,
 	debug_log,
 	parser::{
-		expressions::{name::Name, Expression},
+		expressions::{name::Name, Expression, Spanned},
 		statements::use_extend::DefaultExtend,
+		ParseError,
 	},
 };
 
@@ -383,7 +384,7 @@ impl ScopeData {
 	///
 	/// # Errors
 	/// Returns an error if a variable already exists with the given name in the scope with the given id.
-	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Name>, value: Expression, id: ScopeId) -> anyhow::Result<()> {
+	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Name>, value: Expression, id: ScopeId) -> Result<(), crate::Error> {
 		let name = name.into();
 		debug_log!(
 			"Declaring a new variable called {} in a scope of type {:?}",
@@ -391,10 +392,12 @@ impl ScopeData {
 			self.get_scope_from_id(id).scope_type
 		);
 		if self.get_variable_from_id(name.clone(), id).is_some() {
-			anyhow::bail!(
-				"\nError declaring new variable \"{name}\": The variable \"{name}\" already exists in the current scope, and Cabin doesn't allow shadowing.",
-				name = name.unmangled_name().bold().cyan()
-			);
+			return Err(crate::Error {
+				span: name.span(),
+				error: crate::ErrorInfo::Parse(ParseError::DuplicateVariableDeclaration {
+					name: name.unmangled_name().to_owned(),
+				}),
+			});
 		}
 		let _ = self.scopes.get_mut(id.0).unwrap().variables.insert(name, value);
 		Ok(())
@@ -411,7 +414,7 @@ impl ScopeData {
 	///
 	/// # Errors
 	/// Returns an error if a variable already exists with the given name in the current scope.
-	pub fn declare_new_variable(&mut self, name: impl Into<Name>, value: Expression) -> anyhow::Result<()> {
+	pub fn declare_new_variable(&mut self, name: impl Into<Name>, value: Expression) -> Result<(), crate::Error> {
 		self.declare_new_variable_from_id(name, value, ScopeId(self.current_scope))
 	}
 

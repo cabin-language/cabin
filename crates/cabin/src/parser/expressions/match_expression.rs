@@ -34,7 +34,7 @@ pub struct MatchBranch {
 impl Parse for Match {
 	type Output = Match;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let debug_section = debug_start!("{} a {}", "Parsing".bold().green(), "match expression".cyan());
 		let start = tokens.pop(TokenType::KeywordMatch)?.span;
 		let expression = Expression::parse(tokens)?;

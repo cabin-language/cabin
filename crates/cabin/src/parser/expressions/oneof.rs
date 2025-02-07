@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use super::field_access::FieldAccessType;
 use crate::{
 	api::{
 		context::context,
@@ -14,14 +15,16 @@ use crate::{
 			literal::{LiteralConvertible, LiteralObject},
 			name::Name,
 			object::InternalFieldValue,
-			Expression, Spanned,
+			Expression,
+			Spanned,
 		},
 		statements::tag::TagList,
-		ListType, Parse, TokenQueue, TokenQueueFunctionality,
+		ListType,
+		Parse,
+		TokenQueue,
+		TokenQueueFunctionality,
 	},
 };
-
-use super::field_access::FieldAccessType;
 
 #[derive(Debug, Clone)]
 pub struct OneOf {
@@ -36,7 +39,7 @@ pub struct OneOf {
 impl Parse for OneOf {
 	type Output = VirtualPointer;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let start = tokens.pop(TokenType::KeywordOneOf)?.span;
 
 		// Enter inner scope
@@ -62,7 +65,7 @@ impl Parse for OneOf {
 		.span;
 
 		// Exit the scope
-		context().scope_data.exit_scope()?;
+		context().scope_data.exit_scope().unwrap();
 
 		// Return
 		Ok(OneOf {

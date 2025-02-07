@@ -13,6 +13,7 @@ use crate::{
 	comptime::{memory::VirtualPointer, CompileTime},
 	debug_log,
 	debug_start,
+	if_then_else_default,
 	if_then_some,
 	lexer::{Span, Token, TokenType},
 	mapped_err,
@@ -22,6 +23,7 @@ use crate::{
 			literal::{LiteralConvertible, LiteralObject},
 			name::Name,
 			object::{Field, InternalFieldValue},
+			parameter::Parameter,
 			Expression,
 			Parse,
 			Spanned,
@@ -46,11 +48,23 @@ pub struct GroupDeclaration {
 impl Parse for GroupDeclaration {
 	type Output = VirtualPointer;
 
-	fn parse(tokens: &mut VecDeque<Token>) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, crate::Error> {
 		let start = tokens.pop(TokenType::KeywordGroup)?.span;
 		let outer_scope_id = context().scope_data.unique_id();
 		context().scope_data.enter_new_scope(ScopeType::Group);
 		let inner_scope_id = context().scope_data.unique_id();
+
+		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
+			let mut compile_time_parameters = Vec::new();
+			let _ = parse_list!(tokens, ListType::AngleBracketed, {
+				let parameter = Parameter::parse(tokens)?;
+				context()
+					.scope_data
+					.declare_new_variable(parameter.virtual_deref().name(), Expression::Pointer(parameter))?;
+				compile_time_parameters.push(parameter);
+			});
+			compile_time_parameters
+		});
 
 		// Fields
 		let mut fields = Vec::new();
@@ -59,9 +73,7 @@ impl Parse for GroupDeclaration {
 			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::parse(tokens)?);
 
 			// Group field name
-			let name = Name::parse(tokens).map_err(mapped_err! {
-				while = "attempting to parse an the type name of object constructor",
-			})?;
+			let name = Name::parse(tokens)?;
 
 			// Group field type
 			let field_type = if_then_some!(tokens.next_is(TokenType::Colon), {
@@ -88,7 +100,7 @@ impl Parse for GroupDeclaration {
 			fields.push(Field { name, value, field_type });
 		})
 		.span;
-		context().scope_data.exit_scope()?;
+		context().scope_data.exit_scope().unwrap();
 
 		Ok(GroupDeclaration {
 			fields,

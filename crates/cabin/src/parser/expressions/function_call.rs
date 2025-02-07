@@ -102,7 +102,7 @@ pub struct PostfixOperators;
 impl Parse for PostfixOperators {
 	type Output = Expression;
 
-	fn parse(tokens: &mut VecDeque<Token>) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, crate::Error> {
 		// Primary expression
 		let mut expression = FieldAccess::parse(tokens)?;
 		let start = expression.span();
@@ -649,21 +649,7 @@ impl FunctionCall {
 	///
 	/// Only if the given token does not represent a valid binary operation. The given token must have a type of
 	/// `TokenType::Plus`, `TokenType::Minus`, etc.
-	pub fn from_binary_operation(left: Expression, right: Expression, operation: Token) -> anyhow::Result<FunctionCall> {
-		// Pipe
-		if operation.token_type == TokenType::RightArrow {
-			let Expression::FunctionCall(mut function_call) = right else {
-				bail_err! {
-					base = "Used a non-function-call expression on the right-hand side of the arrow operator",
-				};
-			};
-
-			let mut arguments = vec![left];
-			arguments.append(&mut function_call.arguments);
-			function_call.arguments = arguments;
-			return Ok(function_call);
-		}
-
+	pub fn from_binary_operation(left: Expression, right: Expression, operation: Token) -> Result<FunctionCall, crate::Error> {
 		let function_name = match operation.token_type {
 			TokenType::Asterisk => "times",
 			TokenType::DoubleEquals => "equals",
@@ -672,10 +658,7 @@ impl FunctionCall {
 			TokenType::GreaterThan => "is_greater_than",
 			TokenType::Minus => "minus",
 			TokenType::Plus => "plus",
-			_ => bail_err! {
-				base = format!("Attempted to convert a binary operation into a function call, but no function name exists for the operation \"{}\"", format!("{}", operation.token_type).bold().cyan()),
-				while = "getting the function name for a binary operation",
-			},
+			_ => panic!("Invalid binary expression token type"),
 		};
 
 		let start = left.span();

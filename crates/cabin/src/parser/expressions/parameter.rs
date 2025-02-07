@@ -1,20 +1,22 @@
 use std::{collections::HashMap, fmt::Debug};
 
-use crate::{
-	api::{context::context, scope::ScopeId},
-	bail_err,
-	comptime::{memory::VirtualPointer, CompileTime},
-	debug_log, debug_start,
-	lexer::{Span, TokenType},
-	parser::{statements::tag::TagList, Parse, TokenQueue, TokenQueueFunctionality},
-};
-
 use super::{
 	field_access::FieldAccessType,
 	literal::{LiteralConvertible, LiteralObject},
 	name::Name,
 	object::InternalFieldValue,
-	Expression, Spanned, Typed,
+	Expression,
+	Spanned,
+	Typed,
+};
+use crate::{
+	api::{context::context, scope::ScopeId, traits::TerminalOutput},
+	bail_err,
+	comptime::{memory::VirtualPointer, CompileTime},
+	debug_log,
+	debug_start,
+	lexer::{Span, TokenType},
+	parser::{statements::tag::TagList, Parse, TokenQueue, TokenQueueFunctionality},
 };
 
 #[derive(Clone)]
@@ -28,7 +30,7 @@ pub struct Parameter {
 impl Parse for Parameter {
 	type Output = VirtualPointer;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let name = Name::parse(tokens)?;
 		let _ = tokens.pop(TokenType::Colon)?;
 		let parameter_type = Expression::parse(tokens)?;
@@ -51,11 +53,15 @@ impl CompileTime for Parameter {
 		debug_log!("Compile-Time Evaluating the type of a parameter");
 		let evaluated = self.parameter_type.evaluate_as_type()?;
 
-		if let Expression::Pointer(_) = &evaluated {
-			// nothing to see here...
-		} else {
+		if !matches!(evaluated, Expression::Name(_) | Expression::Pointer(_)) {
 			bail_err! {
-				base = "A value that's not fully known at compile-time was used as a parameter type",
+				base = format!(
+					"
+                    A value that's not fully known at compile-time was used as a parameter 
+                    type. Instead, it's a {} that can't be further evaluated at compile-time.
+                    ",
+					evaluated.kind_name().bold().cyan()
+				).as_terminal_output(),
 			}
 		}
 

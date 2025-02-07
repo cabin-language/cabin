@@ -69,7 +69,7 @@ pub struct Extend {
 impl Parse for Extend {
 	type Output = VirtualPointer;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let start = tokens.pop(TokenType::KeywordExtend)?.span;
 		let outer_scope_id = context().scope_data.unique_id();
 
@@ -102,9 +102,7 @@ impl Parse for Extend {
 			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::parse(tokens)?);
 
 			// Name
-			let name = Name::parse(tokens).map_err(mapped_err! {
-				while = "attempting to parse an object constructor",
-			})?;
+			let name = Name::parse(tokens)?;
 
 			// Value
 			let _ = tokens.pop(TokenType::Equal)?;
@@ -124,7 +122,7 @@ impl Parse for Extend {
 		})
 		.span;
 
-		context().scope_data.exit_scope()?;
+		context().scope_data.exit_scope().unwrap();
 
 		Ok(Extend {
 			type_to_extend,

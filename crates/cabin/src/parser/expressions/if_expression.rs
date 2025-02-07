@@ -27,7 +27,7 @@ pub struct IfExpression {
 impl Parse for IfExpression {
 	type Output = IfExpression;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let start = tokens.pop(TokenType::KeywordIf)?.span;
 		let condition = Box::new(Expression::parse(tokens)?);
 		let body = Block::parse(tokens)?;

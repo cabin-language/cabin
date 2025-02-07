@@ -13,6 +13,7 @@ use strum::IntoEnumIterator as _;
 use crate::{
 	api::context::context,
 	cli::theme::{Style, Styled},
+	ErrorInfo,
 	PRELUDE,
 };
 
@@ -95,6 +96,8 @@ pub enum TokenType {
 	RightArrow,
 
 	KeywordExtend,
+	KeywordAnd,
+	KeywordOr,
 	KeywordToBe,
 
 	/// The `if` keyword token type. This is used similar to how it is in other languages: It runs a block of code if some condition is true.
@@ -323,6 +326,8 @@ impl TokenType {
 		match self {
 			// Keywords
 			Self::KeywordAction => regex!(r"^action\b"),
+			Self::KeywordAnd => regex!(r"^and\b"),
+			Self::KeywordOr => regex!(r"^or\b"),
 			Self::KeywordDefault => regex!(r"^default\b"),
 			Self::KeywordEither => regex!(r"^either\b"),
 			Self::KeywordExtend => regex!(r"^extend\b"),
@@ -335,7 +340,7 @@ impl TokenType {
 			Self::KeywordWith => regex!(r"^with\b"),
 			Self::KeywordMatch => regex!(r"^match\b"),
 			Self::KeywordNew => regex!(r"^new\b"),
-			Self::KeywordOneOf => regex!(r"^oneof\b"),
+			Self::KeywordOneOf => regex!(r"^choice\b"),
 			Self::KeywordOtherwise => regex!(r"^otherwise\b"),
 			Self::KeywordRuntime => regex!(r"^run\b"),
 			Self::KeywordToBe => regex!(r"^tobe\b"),
@@ -488,13 +493,17 @@ impl Token {
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub struct Span {
-	start: usize,
-	length: usize,
+	pub start: usize,
+	pub length: usize,
 }
 
 impl Span {
+	pub const fn new(start: usize, length: usize) -> Span {
+		Span { start, length }
+	}
+
 	pub const fn unknown() -> Span {
-		Span { start: 0, length: 0 }
+		Span { start: 0, length: 1 }
 	}
 
 	pub const fn cover(first: Span, second: Span) -> Span {
@@ -523,6 +532,42 @@ impl Span {
 	pub const fn length(&self) -> usize {
 		self.length
 	}
+
+	pub fn start_line_column(&self, text: &str) -> (usize, usize) {
+		let mut line = 0;
+		let mut column = 0;
+		for (position, character) in text.chars().enumerate() {
+			if position == self.start() {
+				return (line, column);
+			}
+
+			column += 1;
+			if character == '\n' {
+				line += 1;
+				column = 0;
+			}
+		}
+
+		unreachable!()
+	}
+
+	pub fn end_line_column(&self, text: &str) -> (usize, usize) {
+		let mut line = 0;
+		let mut column = 0;
+		for (position, character) in text.chars().enumerate() {
+			if position == self.end() {
+				return (line, column);
+			}
+
+			column += 1;
+			if character == '\n' {
+				line += 1;
+				column = 0;
+			}
+		}
+
+		unreachable!()
+	}
 }
 
 /// Tokenizes a string of Cabin source code into a vector of tokens. This is the first step in compiling Cabin source code. The returned vector of tokens
@@ -539,9 +584,8 @@ impl Span {
 ///
 /// # Errors
 /// If the given code string is not syntactically valid Cabin code. It needn't be semantically valid, but it must be comprised of the proper tokens.
-pub fn tokenize_program(code: &str, is_prelude: bool) -> anyhow::Result<VecDeque<Token>> {
+pub fn tokenize_program(code: &str, is_prelude: bool) -> Result<VecDeque<Token>, crate::Error> {
 	let mut code = code.to_owned();
-	code = code.replace('\t', "    ");
 
 	let mut tokens = Vec::new();
 	let mut position = 0;
@@ -566,7 +610,10 @@ pub fn tokenize_program(code: &str, is_prelude: bool) -> anyhow::Result<VecDeque
 		}
 		// Unrecognized token - return an error!
 		else {
-			anyhow::bail!("Unrecognized token: {code}");
+			return Err(crate::Error {
+				span: Span { start: position, length: 1 },
+				error: ErrorInfo::Tokenize(TokenizeError::UnrecognizedToken { code }),
+			});
 		}
 	}
 
@@ -578,8 +625,6 @@ pub fn tokenize_program(code: &str, is_prelude: bool) -> anyhow::Result<VecDeque
 			}
 		}
 	}
-
-	tokens.retain(|token| token.token_type != TokenType::Whitespace && token.token_type != TokenType::Comment);
 
 	Ok(VecDeque::from(tokens))
 }
@@ -604,7 +649,6 @@ pub fn tokenize_program(code: &str, is_prelude: bool) -> anyhow::Result<VecDeque
 /// A token stream of tokenized tokens, possibly including `Unknown` tokens.
 pub fn tokenize_string(string: &str) -> VecDeque<Token> {
 	let mut code = string.to_owned();
-	code = code.replace('\t', "    ");
 
 	let mut tokens = Vec::new();
 	let mut position = 0;
@@ -630,6 +674,12 @@ pub fn tokenize_string(string: &str) -> VecDeque<Token> {
 	VecDeque::from(tokens)
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum TokenizeError {
+	#[error("Unrecognized token: {code}")]
+	UnrecognizedToken { code: String },
+}
+
 /// Tokenizes a string of Cabin source code into a vector of tokens. This is the first step in compiling Cabin source code. The returned vector of tokens
 /// should be passed into the Cabin parser, which will convert it into an abstract syntax tree.
 ///
@@ -650,7 +700,7 @@ pub fn tokenize_string(string: &str) -> VecDeque<Token> {
 /// # Errors
 ///
 /// If the given code string is not syntactically valid Cabin code. It needn't be semantically valid, but it must be comprised of the proper tokens.
-pub fn tokenize(code: &str) -> anyhow::Result<VecDeque<Token>> {
+pub fn tokenize(code: &str) -> Result<VecDeque<Token>, crate::Error> {
 	let mut tokens = tokenize_program(code, false)?;
 	let mut prelude_tokens = tokenize_program(PRELUDE, true)?;
 	prelude_tokens.append(&mut tokens);
@@ -676,7 +726,7 @@ pub fn tokenize(code: &str) -> anyhow::Result<VecDeque<Token>> {
 /// # Errors
 ///
 /// If the given code string is not syntactically valid Cabin code. It needn't be semantically valid, but it must be comprised of the proper tokens.
-pub fn tokenize_without_prelude(code: &str) -> anyhow::Result<VecDeque<Token>> {
+pub fn tokenize_without_prelude(code: &str) -> Result<VecDeque<Token>, crate::Error> {
 	tokenize_program(code, false)
 }
 

@@ -3,8 +3,7 @@
 
 # Anything
 let Anything = cabin.Anything;
-let AnythingExtension = cabin.AnythingExtension;
-default extend<T: Anything> T tobe Anything with AnythingExtension;
+let _ = cabin.AnythingImplementation;
 
 # Primitives
 let Text = cabin.Text;
@@ -37,5 +36,4 @@ let TerminalPrintOptions = cabin.TerminalPrintOptions;
 let TerminalInputOptions = cabin.TerminalInputOptions;
 
 # Compiler
-let suppress = cabin.suppress;
 let Warning = cabin.Warning;

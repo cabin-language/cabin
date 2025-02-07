@@ -7,6 +7,7 @@ use crate::{
 	comptime::{memory::VirtualPointer, CompileTime},
 	debug_log,
 	debug_start,
+	if_then_else_default,
 	if_then_some,
 	lexer::{Span, TokenType},
 	mapped_err,
@@ -140,11 +141,23 @@ impl ObjectConstructor {
 impl Parse for ObjectConstructor {
 	type Output = ObjectConstructor;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let start = tokens.pop(TokenType::KeywordNew)?.span;
 
 		// Name
 		let name = Name::parse(tokens)?;
+
+		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
+			let mut compile_time_parameters = Vec::new();
+			let _ = parse_list!(tokens, ListType::AngleBracketed, {
+				let parameter = Parameter::parse(tokens)?;
+				context()
+					.scope_data
+					.declare_new_variable(parameter.virtual_deref().name(), Expression::Pointer(parameter))?;
+				compile_time_parameters.push(parameter);
+			});
+			compile_time_parameters
+		});
 
 		// Fields
 		let mut fields = Vec::new();
@@ -153,9 +166,7 @@ impl Parse for ObjectConstructor {
 			let tags = if tokens.next_is(TokenType::TagOpening) { Some(TagList::parse(tokens)?) } else { None };
 
 			// Name
-			let field_name = Name::parse(tokens).map_err(mapped_err! {
-				while = "attempting to parse an object constructor",
-			})?;
+			let field_name = Name::parse(tokens)?;
 
 			// Value
 			let _ = tokens.pop(TokenType::Equal)?;

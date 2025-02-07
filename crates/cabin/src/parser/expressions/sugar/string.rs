@@ -10,9 +10,11 @@ use crate::{
 	parser::{
 		expressions::{field_access::FieldAccess, function_call::FunctionCall, object::ObjectConstructor, Expression},
 		Parse,
+		ParseError,
 		TokenQueue,
 		TokenQueueFunctionality as _,
 	},
+	ErrorInfo,
 };
 
 /// A part of a formatted string literal. Each part is either just a regular string value, or an
@@ -64,7 +66,7 @@ pub struct CabinString;
 impl Parse for CabinString {
 	type Output = Expression;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let token = tokens.pop(TokenType::String)?;
 		let with_quotes = token.value;
 		let mut without_quotes = with_quotes.get(1..with_quotes.len() - 1).unwrap().to_owned();
@@ -91,9 +93,10 @@ impl Parse for CabinString {
 
 					// Pop closing brace
 					if without_quotes.chars().next().unwrap() != '}' {
-						bail_err! {
-							base = "Expected closing brace after format expression in string",
-						};
+						return Err(crate::Error {
+							span: token.span,
+							error: ErrorInfo::Parse(ParseError::InvalidFormatString(with_quotes)),
+						});
 					}
 					without_quotes = without_quotes.get(1..without_quotes.len()).unwrap().to_owned();
 				},

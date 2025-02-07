@@ -1,37 +1,26 @@
 let This = group {};
 
-#[suppress<Warning.SingleVariantEither>] 
 let Nothing = either {
 	nothing
 };
 
-let Optional = oneof<Data> {
+let Optional = choice<Data> {
 	Data,
 	Nothing
 };
 
-let Text = group {
-
-	#[builtin<"Text.plus">]
-	plus = action(this: Text, other: Text): Text
-};
+let Text = group {};
 
 let Anything = group {
+	to_text: action(this: Anything): Text
+};
 
-	#[builtin<"Anything.type">]
-	type = action(this: Anything): Group,
-
+let AnythingImplementation = extend<T: Anything> T tobe Anything {
 	#[builtin<"Anything.to_string">]
 	to_text = action(this: Anything): Text
 };
 
 let Object = group {};
-
-let AnythingExtension = extend<T: Anything> T tobe Anything {
-
-	#[builtin<"Anything.to_string">]
-	to_text = action(this: Anything): Text
-};
 
 let Group = group {
 	fields: Anything,
@@ -79,11 +68,11 @@ let Boolean = either {
 	true,
 	false
 };
-let true = Boolean.true;
+let true = Boolean.true; 
 let false = Boolean.false;
 
-# The tag for a built-in function. Functions that are built into the Cabin compiler and run with native code are marked with this, usually
-# via the `builtin<>` function.
+# The tag for a built-in function. Functions that are built into the Cabin compiler 
+# and run with native code are marked with this, usually via the `builtin<>` function.
 let BuiltinTag = group {
 	internal_name: Text
 };
@@ -95,26 +84,40 @@ let builtin = action<name: Text>: BuiltinTag {
 };
 
 let Number = group {
-	#[builtin<"Number.plus">]
-	plus = action(this: Number, other: Number): Number,
 
 	#[builtin<"Number.minus">]
-	minus = action(this: Number, other: Number): Number
+	minus = action(this: Number, other: Number): Number,
+
+	#[builtin<"Number.floor">]
+	floor = action(this: Number): Number,
+
+	to = action(this: Number, end: Number): List {
+
+	}
+};
+
+let AddableTo = group<Operand: Anything, Result: Anything> {
+	plus: action(this: This, other: Operand): Result
+}; 
+
+default extend Number tobe AddableTo<Number, Number> {
+
+	#[builtin<"Number.plus">]
+	plus = action(this: Number, other: Number): Number,
 };
 
 let Error = group {
 	message: Text
 };
 
-let Attempted = oneof<Data> {
+let Attempted = choice<Data> {
 	Data,
 	Error	
 };
 
-let ignorable = new Object {};
-
 let TerminalPrintOptions = group {
-	newline = Boolean.true
+	newline = true,
+	error = false,
 };
 
 let TerminalInputOptions = group {
@@ -125,25 +128,33 @@ let system = new Object {
 
 	terminal = new Object {
 
-		#[builtin<"terminal.print">, system_side_effects, runtime<"print() is meant for the user. Use debug() at compile-time, or use a run expression to print to the user.">] 
-		print = action(object: Anything, options: TerminalPrintOptions),
+		#[
+			builtin<"terminal.print">, 
+			system_side_effects, 
+			runtime<"print() is meant for the user. Use debug() at compile-time, or use a run expression to print to the user.">
+		]
+		print = action(object: Anything, options: TerminalPrintOptions): Nothing,
 
-		debug = action(object: Anything) {
-			#[suppress<Warning.RuntimeFunctionCall>]
+		#[
+			builtin<"terminal.input">, 
+			system_side_effects, 
+			runtime<"Taking input at compile-time can produce varying outputs depending on user input. Consider embedding a file.">
+		] 
+		input = action(options: TerminalInputOptions): Text,
+
+		debug = action(object: Anything): Nothing {
 			system.terminal.print(object);
 		},
-
-		#[builtin<"terminal.input">, system_side_effects, runtime<"Taking input at compile-time can produce varying binaries.">] 
-		input = action(options: TerminalInputOptions): Text,
 	},
 };
 
 let Map = group {
-	get = action(key: Anything) {},
-	set = action(key: Anything, value: Anything) {}
+	get = action(key: Anything): Anything {},
+	set = action(key: Anything, value: Anything): Nothing {}
 };
 
 let Warning = either {
+
 	# The warning that triggers when an either is created that has zero variants.
 	EmptyEither,
 
@@ -156,11 +167,4 @@ let Warning = either {
 
 let WarningSuppressor = group {
 	warning: Warning
-};
-
-# Suppresses a warning applied to a value.
-let suppress = action<warning: Warning> {
-	suppress is new WarningSuppressor {
-		warning = warning
-	};
 };

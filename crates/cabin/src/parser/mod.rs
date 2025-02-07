@@ -1,6 +1,5 @@
 use std::collections::{HashMap, VecDeque};
 
-use colored::Colorize as _;
 use expressions::{
 	field_access::FieldAccessType,
 	literal::LiteralObject,
@@ -22,13 +21,39 @@ use crate::{
 	comptime::{memory::VirtualPointer, CompileTime},
 	lexer::{Span, Token, TokenType},
 	mapped_err,
+	parser::expressions::Spanned,
 	transpiler::TranspileToC,
+	ErrorInfo,
 };
 
 pub mod expressions;
 pub mod statements;
 
-pub fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Module> {
+#[derive(Debug, thiserror::Error)]
+pub enum ParseError {
+	#[error("Unexpected token: Expected {expected} but found {actual}")]
+	UnexpectedToken { expected: TokenType, actual: TokenType },
+
+	#[error("Unexpected token: Expected {expected} but found {actual}")]
+	UnexpectedTokenExpected { expected: &'static str, actual: TokenType },
+
+	#[error("Unexpected end of file: Expected {expected} but found end of file")]
+	UnexpectedEOF { expected: TokenType },
+
+	#[error("Unexpected end of file: Expected more tokens")]
+	UnexpectedGenericEOF,
+
+	#[error("The variable \"{name}\" was declared twice")]
+	DuplicateVariableDeclaration { name: String },
+
+	#[error("Only variable declarations and default extensions are allowed at the top level of a Cabin file")]
+	InvalidTopLevelStatement { statement: Statement },
+
+	#[error("Invalid formatted string: {0}")]
+	InvalidFormatString(String),
+}
+
+pub fn parse(tokens: &mut TokenQueue) -> Result<Module, crate::Error> {
 	Module::parse(tokens)
 }
 
@@ -41,24 +66,23 @@ pub struct Module {
 impl Parse for Module {
 	type Output = Self;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		context().scope_data.enter_new_scope(ScopeType::File);
 		let inner_scope_id = context().scope_data.unique_id();
 		let mut declarations = Vec::new();
 		while !tokens.is_empty() {
-			let statement = Declaration::parse(tokens).map_err(mapped_err! {
-				while = "parsing the program's top-level declarations",
-			})?;
+			let statement = Declaration::parse(tokens)?;
 
 			let Statement::Declaration(declaration) = statement else {
-                bail_err! {
-                    base = "Modules may only contain declarations",
-                }
+				return Err(crate::Error {
+					span: Span::unknown(),
+					error: ErrorInfo::Parse(ParseError::InvalidTopLevelStatement { statement })
+				});
             };
 
 			declarations.push(declaration);
 		}
-		context().scope_data.exit_scope()?;
+		context().scope_data.exit_scope().unwrap();
 		Ok(Module { declarations, inner_scope_id })
 	}
 }
@@ -125,7 +149,7 @@ pub trait TokenQueueFunctionality {
 	///
 	/// # Returns
 	/// A `Result` containing either the value of the popped token or an `Error`.
-	fn pop(&mut self, token_type: TokenType) -> anyhow::Result<Token>;
+	fn pop(&mut self, token_type: TokenType) -> Result<Token, crate::Error>;
 
 	/// Removes and returns the next token's type in the queue if the token matches the given token type. If it
 	/// does not (or the token stream is empty), an error is returned.
@@ -135,18 +159,18 @@ pub trait TokenQueueFunctionality {
 	///
 	/// # Returns
 	/// A `Result` containing either the type of the popped token or an `Error`.
-	fn pop_type(&mut self, token_type: TokenType) -> anyhow::Result<TokenType>;
+	fn pop_type(&mut self, token_type: TokenType) -> Result<TokenType, crate::Error>;
 
 	/// Returns a reference to the next token in the queue without removing it. If the queue is empty, `None`
 	/// is returned.
 	///
 	/// # Returns
 	/// A reference to the next token in the queue or `None` if the queue is empty.
-	fn peek(&self) -> anyhow::Result<&str>;
+	fn peek(&self) -> Result<&str, crate::Error>;
 
-	fn peek_type(&self) -> anyhow::Result<TokenType>;
+	fn peek_type(&self) -> Result<TokenType, crate::Error>;
 
-	fn peek_type2(&self) -> anyhow::Result<TokenType>;
+	fn peek_type2(&self) -> Result<TokenType, crate::Error>;
 
 	/// Returns whether the next token in the queue matches the given token type.
 	fn next_is(&self, token_type: TokenType) -> bool {
@@ -173,47 +197,71 @@ pub trait TokenQueueFunctionality {
 }
 
 impl TokenQueueFunctionality for TokenQueue {
-	fn peek(&self) -> anyhow::Result<&str> {
+	fn peek(&self) -> Result<&str, crate::Error> {
 		let mut index = 0;
-		let mut next = self.get(index).ok_or_else(|| anyhow::anyhow!("Unexpected end of file"))?;
+		let mut next = self.get(index).ok_or_else(|| crate::Error {
+			span: Span::unknown(),
+			error: ErrorInfo::Parse(ParseError::UnexpectedGenericEOF),
+		})?;
 		while next.token_type.is_whitespace() {
 			index += 1;
-			next = self.get(index).ok_or_else(|| anyhow::anyhow!("Unexpected end of file"))?;
+			next = self.get(index).ok_or_else(|| crate::Error {
+				span: Span::unknown(),
+				error: ErrorInfo::Parse(ParseError::UnexpectedGenericEOF),
+			})?;
 		}
 		Ok(&next.value)
 	}
 
-	fn peek_type(&self) -> anyhow::Result<TokenType> {
+	fn peek_type(&self) -> Result<TokenType, crate::Error> {
 		let mut index = 0;
-		let mut next = self.get(index).ok_or_else(|| anyhow::anyhow!("Unexpected end of file"))?;
+		let mut next = self.get(index).ok_or_else(|| crate::Error {
+			span: Span::unknown(),
+			error: ErrorInfo::Parse(ParseError::UnexpectedGenericEOF),
+		})?;
 		while next.token_type.is_whitespace() {
 			index += 1;
-			next = self.get(index).ok_or_else(|| anyhow::anyhow!("Unexpected end of file"))?;
+			next = self.get(index).ok_or_else(|| crate::Error {
+				span: Span::unknown(),
+				error: ErrorInfo::Parse(ParseError::UnexpectedGenericEOF),
+			})?;
 		}
 		Ok(next.token_type)
 	}
 
-	fn peek_type2(&self) -> anyhow::Result<TokenType> {
+	fn peek_type2(&self) -> Result<TokenType, crate::Error> {
 		let mut index = 0;
 
 		// The one time I'd enjoy a do-while loop
-		let mut next = self.get(index).ok_or_else(|| anyhow::anyhow!("Unexpected end of file"))?;
+		let mut next = self.get(index).ok_or_else(|| crate::Error {
+			span: Span::unknown(),
+			error: ErrorInfo::Parse(ParseError::UnexpectedGenericEOF),
+		})?;
 		index += 1;
 		while next.token_type.is_whitespace() {
-			next = self.get(index).ok_or_else(|| anyhow::anyhow!("Unexpected end of file"))?;
+			next = self.get(index).ok_or_else(|| crate::Error {
+				span: Span::unknown(),
+				error: ErrorInfo::Parse(ParseError::UnexpectedGenericEOF),
+			})?;
 			index += 1;
 		}
 
-		let mut next_next = self.get(index).ok_or_else(|| anyhow::anyhow!("Unexpected end of file"))?;
+		let mut next_next = self.get(index).ok_or_else(|| crate::Error {
+			span: Span::unknown(),
+			error: ErrorInfo::Parse(ParseError::UnexpectedGenericEOF),
+		})?;
 		while next_next.token_type.is_whitespace() {
 			index += 1;
-			next_next = self.get(index).ok_or_else(|| anyhow::anyhow!("Unexpected end of file"))?;
+			next_next = self.get(index).ok_or_else(|| crate::Error {
+				span: Span::unknown(),
+				error: ErrorInfo::Parse(ParseError::UnexpectedGenericEOF),
+			})?;
 		}
 
 		Ok(next_next.token_type)
 	}
 
-	fn pop(&mut self, token_type: TokenType) -> anyhow::Result<Token> {
+	fn pop(&mut self, token_type: TokenType) -> Result<Token, crate::Error> {
 		let mut maybe_whitespace = TokenType::Whitespace;
 		while maybe_whitespace.is_whitespace() {
 			if let Some(token) = self.pop_front() {
@@ -224,19 +272,24 @@ impl TokenQueueFunctionality for TokenQueue {
 				}
 
 				if !maybe_whitespace.is_whitespace() {
-					anyhow::bail!(
-						"Expected {} but found {}",
-						format!("{token_type}").bold().cyan(),
-						format!("{}", token.token_type).bold().cyan()
-					);
+					return Err(crate::Error {
+						span: token.span,
+						error: ErrorInfo::Parse(ParseError::UnexpectedToken {
+							expected: token_type,
+							actual: token.token_type,
+						}),
+					});
 				}
 			}
 		}
 
-		anyhow::bail!("Expected {token_type} but found EOF");
+		return Err(crate::Error {
+			span: Span::unknown(),
+			error: ErrorInfo::Parse(ParseError::UnexpectedEOF { expected: token_type }),
+		});
 	}
 
-	fn pop_type(&mut self, token_type: TokenType) -> anyhow::Result<TokenType> {
+	fn pop_type(&mut self, token_type: TokenType) -> Result<TokenType, crate::Error> {
 		let mut maybe_whitespace = TokenType::Whitespace;
 		while maybe_whitespace.is_whitespace() {
 			if let Some(token) = self.pop_front() {
@@ -247,16 +300,21 @@ impl TokenQueueFunctionality for TokenQueue {
 				}
 
 				if !maybe_whitespace.is_whitespace() {
-					anyhow::bail!(
-						"Expected {} but found {}",
-						format!("{token_type}").bold().cyan(),
-						format!("{}", token.token_type).bold().cyan()
-					);
+					return Err(crate::Error {
+						span: token.span,
+						error: ErrorInfo::Parse(ParseError::UnexpectedToken {
+							expected: token_type,
+							actual: token.token_type,
+						}),
+					});
 				}
 			}
 		}
 
-		anyhow::bail!("Expected {token_type} but found EOF");
+		return Err(crate::Error {
+			span: Span::unknown(),
+			error: ErrorInfo::Parse(ParseError::UnexpectedEOF { expected: token_type }),
+		});
 	}
 
 	fn current_position(&self) -> Option<Span> {
@@ -347,7 +405,7 @@ impl ListType {
 pub trait Parse {
 	type Output;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output>;
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error>;
 }
 
 pub type TokenQueue = VecDeque<Token>;

@@ -59,7 +59,7 @@ pub struct Either {
 impl Parse for Either {
 	type Output = VirtualPointer;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let start = tokens.pop(TokenType::KeywordEither)?.span;
 		let mut variants = Vec::new();
 		let end = parse_list!(tokens, ListType::Braced, {

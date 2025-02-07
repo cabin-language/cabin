@@ -9,7 +9,10 @@ use crate::{
 			Expression,
 		},
 		statements::tag::TagList,
-		ListType, Parse, TokenQueue, TokenQueueFunctionality,
+		ListType,
+		Parse,
+		TokenQueue,
+		TokenQueueFunctionality,
 	},
 };
 
@@ -18,7 +21,7 @@ pub struct List;
 impl Parse for List {
 	type Output = Expression;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let mut list = Vec::new();
 		let start = tokens.current_position().unwrap();
 		let end = parse_list!(tokens, ListType::Bracketed, { list.push(Expression::parse(tokens)?) }).span;

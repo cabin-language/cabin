@@ -85,7 +85,7 @@ pub enum Expression {
 impl Parse for Expression {
 	type Output = Expression;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		BinaryExpression::parse(tokens)
 	}
 }

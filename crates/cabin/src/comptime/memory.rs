@@ -1,15 +1,14 @@
 use std::{collections::HashMap, fmt::Debug};
 
-use colored::Colorize;
+use colored::Colorize as _;
 
 use crate::{
 	api::context::context,
+	comptime::CompileTime,
 	lexer::Span,
 	parser::expressions::{literal::LiteralObject, Spanned, Typed},
 	transpiler::TranspileToC,
 };
-
-use super::CompileTime;
 
 /// A pointer to a `LiteralObject` in `VirtualMemory`.
 ///
@@ -50,10 +49,6 @@ impl VirtualPointer {
 	/// given pointer is invalid, the program will `panic!`.
 	///
 	/// This is equivalent to calling `virtual_memory.get(pointer)`.
-	///
-	/// # Parameters
-	///
-	/// - `context` - Global information about the compiler; In this case, it's used to access the compiler's virtual memory.
 	///
 	/// # Returns
 	///

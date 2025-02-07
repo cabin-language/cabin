@@ -1,0 +1,12 @@
+[package]
+name = "cabin-language-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.95"
+regex-macro = "0.2.0"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.138"
+cabin = { path = "../cabin" }
+unindent = "0.2.3"

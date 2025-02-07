@@ -4,7 +4,9 @@ use crate::{
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{Expression, Spanned, Typed},
-		Parse, TokenQueue, TokenQueueFunctionality as _,
+		Parse,
+		TokenQueue,
+		TokenQueueFunctionality as _,
 	},
 	transpiler::TranspileToC,
 };
@@ -42,7 +44,7 @@ pub struct RunExpression {
 impl Parse for RunExpression {
 	type Output = RunExpression;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output> {
+	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
 		let mut span = tokens.pop(TokenType::KeywordRuntime)?.span;
 		let expression = Box::new(Expression::parse(tokens)?);
 		span = span.to(expression.span());
