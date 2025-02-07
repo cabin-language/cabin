@@ -13,8 +13,8 @@ use strum::IntoEnumIterator as _;
 use crate::{
 	api::context::context,
 	cli::theme::{Style, Styled},
-	ErrorInfo,
-	Errors,
+	DiagnosticInfo,
+	Error,
 	PRELUDE,
 };
 
@@ -602,9 +602,9 @@ pub fn tokenize_program(code: &str, is_prelude: bool) -> VecDeque<Token> {
 		let Some((token_type, value)) = TokenType::find_match(&code) else { unreachable!() };
 
 		if token_type == TokenType::Unrecognized {
-			context().add_error(crate::Error {
+			context().add_diagnostic(crate::Diagnostic {
 				span: Span { start: position, length: 1 },
-				error: ErrorInfo::Tokenize(TokenizeError::UnrecognizedToken(value.clone())),
+				error: DiagnosticInfo::Error(Error::Tokenize(TokenizeError::UnrecognizedToken(value.clone()))),
 			});
 		}
 
@@ -705,7 +705,7 @@ pub enum TokenizeError {
 /// # Errors
 ///
 /// If the given code string is not syntactically valid Cabin code. It needn't be semantically valid, but it must be comprised of the proper tokens.
-pub fn tokenize(code: &str) -> Result<VecDeque<Token>, crate::Error> {
+pub fn tokenize(code: &str) -> Result<VecDeque<Token>, crate::Diagnostic> {
 	let mut tokens = tokenize_program(code, false);
 	let mut prelude_tokens = tokenize_program(PRELUDE, true);
 	prelude_tokens.append(&mut tokens);

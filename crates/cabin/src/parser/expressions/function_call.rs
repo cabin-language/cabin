@@ -31,12 +31,13 @@ use crate::{
 			run::RuntimeableExpression,
 			unary::{UnaryOperation, UnaryOperator},
 			Expression,
-			Parse,
 			Spanned,
+			TryParse,
 			Typed,
 		},
 		statements::tag::TagList,
 		ListType,
+		Parse as _,
 		TokenQueueFunctionality,
 	},
 	transpiler::TranspileToC,
@@ -99,12 +100,12 @@ pub struct FunctionCall {
 
 pub struct PostfixOperators;
 
-impl Parse for PostfixOperators {
+impl TryParse for PostfixOperators {
 	type Output = Expression;
 
-	fn parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, crate::Diagnostic> {
 		// Primary expression
-		let mut expression = FieldAccess::parse(tokens)?;
+		let mut expression = FieldAccess::try_parse(tokens)?;
 		let start = expression.span();
 		let mut end = start;
 
@@ -131,15 +132,15 @@ impl Parse for PostfixOperators {
 				end = parse_list!(tokens, ListType::AngleBracketed, {
 					// Keyword argument
 					if tokens.next_is(TokenType::Identifier) && tokens.next_next_is(TokenType::Equal) {
-						let name = Name::parse(tokens)?;
+						let name = Name::try_parse(tokens)?;
 						let _ = tokens.pop(TokenType::Equal)?;
-						let value = Expression::parse(tokens)?;
+						let value = Expression::parse(tokens);
 						compile_time_arguments.push(Argument::Keyword(name, value));
 						has_compile_time_keyword_arguments = true
 					}
 					// Regular argument
 					else {
-						compile_time_arguments.push(Argument::Positional(Expression::parse(tokens)?));
+						compile_time_arguments.push(Argument::Positional(Expression::parse(tokens)));
 					}
 				})
 				.span;
@@ -153,15 +154,15 @@ impl Parse for PostfixOperators {
 				end = parse_list!(tokens, ListType::Parenthesized, {
 					// Keyword argument
 					if tokens.next_is(TokenType::Identifier) && tokens.next_next_is(TokenType::Equal) {
-						let name = Name::parse(tokens)?;
+						let name = Name::try_parse(tokens)?;
 						let _ = tokens.pop(TokenType::Equal)?;
-						let value = Expression::parse(tokens)?;
+						let value = Expression::parse(tokens);
 						arguments.push(Argument::Keyword(name, value));
 						has_keyword_arguments = true;
 					}
 					// Regular argument
 					else {
-						arguments.push(Argument::Positional(Expression::parse(tokens)?));
+						arguments.push(Argument::Positional(Expression::parse(tokens)));
 					}
 				})
 				.span;
@@ -473,7 +474,7 @@ impl CompileTime for FunctionCall {
 
 					inner_debug_section.finish();
 					debug_section.finish();
-					return Ok(Expression::ErrorExpression(()));
+					return Ok(Expression::ErrorExpression(Span::unknown()));
 				}
 
 				bail_err!(base = "Attempted to call a function that doesn't have a body.",);
@@ -649,7 +650,7 @@ impl FunctionCall {
 	///
 	/// Only if the given token does not represent a valid binary operation. The given token must have a type of
 	/// `TokenType::Plus`, `TokenType::Minus`, etc.
-	pub fn from_binary_operation(left: Expression, right: Expression, operation: Token) -> Result<FunctionCall, crate::Error> {
+	pub fn from_binary_operation(left: Expression, right: Expression, operation: Token) -> Result<FunctionCall, crate::Diagnostic> {
 		let function_name = match operation.token_type {
 			TokenType::Asterisk => "times",
 			TokenType::DoubleEquals => "equals",

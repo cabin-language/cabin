@@ -1,3 +1,5 @@
+use convert_case::{Case, Casing};
+
 use super::Statement;
 use crate::{
 	api::{context::context, scope::ScopeId},
@@ -5,16 +7,20 @@ use crate::{
 	debug_start,
 	err,
 	if_then_some,
-	lexer::TokenType,
+	lexer::{Span, TokenType},
 	mapped_err,
 	parser::{
-		expressions::{name::Name, Expression},
+		expressions::{name::Name, Expression, Spanned},
 		statements::tag::TagList,
-		Parse,
+		Parse as _,
 		TokenQueue,
 		TokenQueueFunctionality,
+		TryParse,
 	},
 	transpiler::TranspileToC,
+	Diagnostic,
+	DiagnosticInfo,
+	Warning,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +34,7 @@ pub struct Declaration {
 	name: Name,
 	scope_id: ScopeId,
 	declaration_type: DeclarationType,
+	span: Span,
 }
 
 impl Declaration {
@@ -48,30 +55,62 @@ impl Declaration {
 	}
 }
 
-impl Parse for Declaration {
+impl TryParse for Declaration {
 	type Output = Statement;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
-		let debug_section = debug_start!("{} a {}", "Parsing".bold().green(), "declaration".cyan());
-
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
 		// Tags
-		let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::parse(tokens)?);
+		let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens)?);
 
 		if tags.is_some() && !tokens.next_is(TokenType::KeywordLet) {
-			let mut expression = Expression::parse(tokens)?;
+			let mut expression = Expression::parse(tokens);
 			expression.set_tags(tags.unwrap());
 			let _ = tokens.pop(TokenType::Semicolon)?;
 			return Ok(Statement::Expression(expression));
 		}
 
 		// Name
-		let _ = tokens.pop(TokenType::KeywordLet)?;
-		let name = Name::parse(tokens)?;
+		let start = tokens.pop(TokenType::KeywordLet)?.span;
+		let name = Name::try_parse(tokens)?;
 
 		// Value
 		let _ = tokens.pop(TokenType::Equal)?;
 
-		let mut value = Expression::parse(tokens)?;
+		let mut value = Expression::parse(tokens);
+		let end = value.span();
+
+		if let Expression::Pointer(pointer) = &value {
+			let literal = pointer.virtual_deref();
+			if literal.type_name() == &"Group".into()
+				|| literal.type_name() == &"Either".into()
+				|| literal.type_name() == &"OneOf".into()
+				|| literal.type_name() == &"RepresentAs".into()
+			{
+				if name.unmangled_name() != name.unmangled_name().to_case(Case::Pascal) {
+					context().add_diagnostic(Diagnostic {
+						span: name.span(),
+						error: DiagnosticInfo::Warning(Warning::NonPascalCaseGroup {
+							original_name: name.unmangled_name().to_owned(),
+							type_name: literal.type_name().unmangled_name().to_owned(),
+						}),
+					});
+				}
+			} else if name.unmangled_name() != name.unmangled_name().to_case(Case::Snake) {
+				context().add_diagnostic(Diagnostic {
+					span: name.span(),
+					error: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
+						original_name: name.unmangled_name().to_owned(),
+					}),
+				});
+			}
+		} else if name.unmangled_name() != name.unmangled_name().to_case(Case::Snake) {
+			context().add_diagnostic(Diagnostic {
+				span: name.span(),
+				error: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
+					original_name: name.unmangled_name().to_owned(),
+				}),
+			});
+		}
 
 		// Tags
 		if let Some(tags) = tags {
@@ -88,11 +127,11 @@ impl Parse for Declaration {
 		let _ = tokens.pop(TokenType::Semicolon)?;
 
 		// Return the declaration
-		debug_section.finish();
 		Ok(Statement::Declaration(Declaration {
 			name,
 			scope_id: context().scope_data.unique_id(),
 			declaration_type: DeclarationType::Normal,
+			span: start.to(end),
 		}))
 	}
 }
@@ -130,5 +169,11 @@ impl TranspileToC for Declaration {
 				while = format!("transpiling the value of the initial declaration for the variable \"{}\" to C", self.name.unmangled_name()),
 			})?
 		))
+	}
+}
+
+impl Spanned for Declaration {
+	fn span(&self) -> Span {
+		self.span
 	}
 }

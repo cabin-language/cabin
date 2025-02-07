@@ -11,9 +11,10 @@ use crate::{
 	parser::{
 		expressions::{Expression, Spanned},
 		statements::Statement,
-		Parse,
+		Parse as _,
 		TokenQueue,
 		TokenQueueFunctionality as _,
+		TryParse,
 	},
 	transpiler::TranspileToC,
 };
@@ -60,7 +61,7 @@ impl Block {
 	/// # Errors
 	///
 	/// If an unexpected token was encountered.
-	pub fn parse_with_scope_type(tokens: &mut TokenQueue, scope_type: ScopeType) -> Result<Block, crate::Error> {
+	pub fn parse_with_scope_type(tokens: &mut TokenQueue, scope_type: ScopeType) -> Result<Block, crate::Diagnostic> {
 		context().scope_data.enter_new_scope(scope_type);
 		let scope_id = context().scope_data.unique_id();
 
@@ -68,7 +69,7 @@ impl Block {
 
 		let mut statements = Vec::new();
 		while !tokens.next_is(TokenType::RightBrace) {
-			statements.push(Statement::parse(tokens)?);
+			statements.push(Statement::parse(tokens));
 		}
 
 		let end = tokens.pop(TokenType::RightBrace)?.span;
@@ -83,10 +84,10 @@ impl Block {
 	}
 }
 
-impl Parse for Block {
+impl TryParse for Block {
 	type Output = Block;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
 		Block::parse_with_scope_type(tokens, ScopeType::Block)
 	}
 }

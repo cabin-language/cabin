@@ -10,8 +10,9 @@ use crate::{
 	parser::{
 		expressions::{literal::CompilerWarning, Expression},
 		ListType,
-		Parse,
+		Parse as _,
 		TokenQueue,
+		TryParse,
 	},
 };
 
@@ -20,13 +21,13 @@ pub struct TagList {
 	pub values: Vec<Expression>,
 }
 
-impl Parse for TagList {
+impl TryParse for TagList {
 	type Output = TagList;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
 		let mut tags = Vec::new();
 		let _ = parse_list!(tokens, ListType::Tag, {
-			tags.push(Expression::parse(tokens)?);
+			tags.push(Expression::parse(tokens));
 		}); // TODO: Probably span this maybe?
 		Ok(TagList { values: tags })
 	}

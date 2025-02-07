@@ -4,9 +4,10 @@ use crate::{
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{Expression, Spanned, Typed},
-		Parse,
+		Parse as _,
 		TokenQueue,
 		TokenQueueFunctionality as _,
+		TryParse,
 	},
 	transpiler::TranspileToC,
 };
@@ -41,12 +42,12 @@ pub struct RunExpression {
 	span: Span,
 }
 
-impl Parse for RunExpression {
+impl TryParse for RunExpression {
 	type Output = RunExpression;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
 		let mut span = tokens.pop(TokenType::KeywordRuntime)?.span;
-		let expression = Box::new(Expression::parse(tokens)?);
+		let expression = Box::new(Expression::parse(tokens));
 		span = span.to(expression.span());
 		Ok(RunExpression { span, expression })
 	}
@@ -56,7 +57,6 @@ impl CompileTime for RunExpression {
 	type Output = RunExpression;
 
 	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		debug_log!("{} a run expression", "Compile-Time Evaluating".bold().green());
 		Ok(RunExpression {
 			expression: Box::new(self.expression.evaluate_subexpressions_at_compile_time()?),
 			span: self.span,

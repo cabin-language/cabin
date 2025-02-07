@@ -11,9 +11,10 @@ use crate::{
 	parser::{
 		expressions::{block::Block, name::Name, Expression, Spanned},
 		ListType,
-		Parse,
+		Parse as _,
 		TokenQueue,
 		TokenQueueFunctionality,
+		TryParse,
 	},
 };
 
@@ -31,28 +32,28 @@ pub struct MatchBranch {
 	pub body: Block,
 }
 
-impl Parse for Match {
+impl TryParse for Match {
 	type Output = Match;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
 		let debug_section = debug_start!("{} a {}", "Parsing".bold().green(), "match expression".cyan());
 		let start = tokens.pop(TokenType::KeywordMatch)?.span;
-		let expression = Expression::parse(tokens)?;
+		let expression = Expression::parse(tokens);
 		let mut branches = Vec::new();
 		let end = parse_list!(tokens, ListType::Braced, {
-			let first = Name::parse(tokens)?;
+			let first = Name::try_parse(tokens)?;
 			let second = if_then_some!(tokens.next_is(TokenType::Colon), {
 				let _ = tokens.pop(TokenType::Colon)?;
-				Expression::parse(tokens)?
+				Expression::parse(tokens)
 			});
 
-			let body = Block::parse(tokens)?;
+			let body = Block::try_parse(tokens)?;
 
 			let branch = match second {
 				Some(type_to_match) => {
 					context()
 						.scope_data
-						.declare_new_variable_from_id(first.clone(), Expression::ErrorExpression(()), body.inner_scope_id())?;
+						.declare_new_variable_from_id(first.clone(), Expression::ErrorExpression(Span::unknown()), body.inner_scope_id())?;
 					MatchBranch {
 						type_to_match,
 						name: Some(first),

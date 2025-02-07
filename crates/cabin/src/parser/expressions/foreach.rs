@@ -5,9 +5,10 @@ use crate::{
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{block::Block, name::Name, Expression},
-		Parse,
+		Parse as _,
 		TokenQueue,
 		TokenQueueFunctionality as _,
+		TryParse,
 	},
 	transpiler::TranspileToC,
 };
@@ -32,19 +33,19 @@ pub struct ForEachLoop {
 	span: Span,
 }
 
-impl Parse for ForEachLoop {
+impl TryParse for ForEachLoop {
 	type Output = ForEachLoop;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordForEach)?.span;
 
-		let binding_name = Name::parse(tokens)?;
+		let binding_name = Name::try_parse(tokens)?;
 
 		let _ = tokens.pop(TokenType::KeywordIn)?;
 
-		let iterable = Box::new(Expression::parse(tokens)?);
+		let iterable = Box::new(Expression::parse(tokens));
 
-		let body = Block::parse(tokens)?;
+		let body = Block::try_parse(tokens)?;
 
 		let end = body.span();
 
@@ -52,7 +53,7 @@ impl Parse for ForEachLoop {
 		let inner_scope_id = body.inner_scope_id();
 		context()
 			.scope_data
-			.declare_new_variable_from_id(binding_name.clone(), Expression::ErrorExpression(()), inner_scope_id)?;
+			.declare_new_variable_from_id(binding_name.clone(), Expression::ErrorExpression(Span::unknown()), inner_scope_id)?;
 
 		Ok(ForEachLoop {
 			binding_name,

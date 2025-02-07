@@ -19,11 +19,13 @@ use crate::{
 			sugar::list::List,
 			Expression,
 		},
-		Parse,
+		Parse as _,
 		ParseError,
 		TokenQueueFunctionality,
+		TryParse,
 	},
-	ErrorInfo,
+	DiagnosticInfo,
+	Error,
 };
 
 /// A binary operation. More specifically, this represents not one operation, but a group of operations that share the same precedence.
@@ -45,11 +47,11 @@ impl BinaryOperation {
 	/// - `tokens` - The token stream to parse
 	/// - `current_scope` - The current scope
 	/// - `debug_info` - The debug information
-	fn parse_precedent(&self, tokens: &mut VecDeque<Token>) -> Result<Expression, crate::Error> {
+	fn parse_precedent(&self, tokens: &mut VecDeque<Token>) -> Result<Expression, crate::Diagnostic> {
 		if let Some(precedent) = self.precedent {
 			parse_binary_expression(precedent, tokens)
 		} else {
-			PostfixOperators::parse(tokens)
+			PostfixOperators::try_parse(tokens)
 		}
 	}
 }
@@ -58,7 +60,7 @@ impl BinaryOperation {
 #[derive(Clone, Debug)]
 pub struct BinaryExpression;
 
-fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<Token>) -> Result<Expression, crate::Error> {
+fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<Token>) -> Result<Expression, crate::Diagnostic> {
 	let mut expression = operation.parse_precedent(tokens)?;
 
 	while tokens.next_is_one_of(operation.token_types) {
@@ -70,65 +72,65 @@ fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<To
 	Ok(expression)
 }
 
-impl Parse for BinaryExpression {
+impl TryParse for BinaryExpression {
 	type Output = Expression;
 
-	fn parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, crate::Diagnostic> {
 		parse_binary_expression(&COMBINATOR, tokens)
 	}
 }
 
 pub struct PrimaryExpression;
 
-impl Parse for PrimaryExpression {
+impl TryParse for PrimaryExpression {
 	type Output = Expression;
 
-	fn parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, crate::Diagnostic> {
 		Ok(match tokens.peek_type()? {
 			TokenType::LeftParenthesis => {
 				let _ = tokens.pop(TokenType::LeftParenthesis).unwrap_or_else(|_| unreachable!());
-				let expression = Expression::parse(tokens)?;
+				let expression = Expression::parse(tokens);
 				let _ = tokens.pop(TokenType::RightParenthesis)?;
 				expression
 				// TODO: this needs to be its own expression type for transpilation
 			},
 
 			// Parse function declaration expression
-			TokenType::KeywordAction => Expression::Pointer(FunctionDeclaration::parse(tokens)?),
+			TokenType::KeywordAction => Expression::Pointer(FunctionDeclaration::try_parse(tokens)?),
 
 			// Parse block expression
-			TokenType::LeftBrace => Expression::Block(Block::parse(tokens)?),
+			TokenType::LeftBrace => Expression::Block(Block::try_parse(tokens)?),
 
 			// Parse variable name expression
-			TokenType::Identifier => Expression::Name(Name::parse(tokens)?),
+			TokenType::Identifier => Expression::Name(Name::try_parse(tokens)?),
 
 			// Parse object constructor
-			TokenType::KeywordNew => Expression::ObjectConstructor(ObjectConstructor::parse(tokens)?),
+			TokenType::KeywordNew => Expression::ObjectConstructor(ObjectConstructor::try_parse(tokens)?),
 
 			// Parse group declaration expression
-			TokenType::KeywordGroup => Expression::Pointer(GroupDeclaration::parse(tokens)?),
+			TokenType::KeywordGroup => Expression::Pointer(GroupDeclaration::try_parse(tokens)?),
 
 			// Parse one-of declaration expression
-			TokenType::KeywordOneOf => Expression::Pointer(OneOf::parse(tokens)?),
+			TokenType::KeywordOneOf => Expression::Pointer(OneOf::try_parse(tokens)?),
 
-			TokenType::KeywordMatch => Expression::Match(Match::parse(tokens)?),
+			TokenType::KeywordMatch => Expression::Match(Match::try_parse(tokens)?),
 
-			TokenType::KeywordEither => Expression::Pointer(Either::parse(tokens)?),
-			TokenType::KeywordIf => Expression::If(IfExpression::parse(tokens)?),
-			TokenType::KeywordForEach => Expression::ForEachLoop(ForEachLoop::parse(tokens)?),
-			TokenType::KeywordExtend => Expression::Pointer(Extend::parse(tokens)?),
+			TokenType::KeywordEither => Expression::Pointer(Either::try_parse(tokens)?),
+			TokenType::KeywordIf => Expression::If(IfExpression::try_parse(tokens)?),
+			TokenType::KeywordForEach => Expression::ForEachLoop(ForEachLoop::try_parse(tokens)?),
+			TokenType::KeywordExtend => Expression::Pointer(Extend::try_parse(tokens)?),
 
 			// Parse run expression
-			TokenType::KeywordRuntime => Expression::Run(RunExpression::parse(tokens)?),
+			TokenType::KeywordRuntime => Expression::Run(RunExpression::try_parse(tokens)?),
 
 			// Syntactic sugar: These below handle cases where syntactic sugar exists for initializing objects of certain types, such as
 			// strings, numbers, lists, etc.:
 
 			// Parse list literal into a list object
-			TokenType::LeftBracket => List::parse(tokens)?,
+			TokenType::LeftBracket => List::try_parse(tokens)?,
 
 			// Parse string literal into a string object
-			TokenType::String => CabinString::parse(tokens)?,
+			TokenType::String => CabinString::try_parse(tokens)?,
 
 			// Parse number literal into a number object
 			TokenType::Number => {
@@ -138,12 +140,12 @@ impl Parse for PrimaryExpression {
 
 			// bad :<
 			token_type => {
-				return Err(crate::Error {
+				return Err(crate::Diagnostic {
 					span: tokens.current_position().unwrap(),
-					error: ErrorInfo::Parse(ParseError::UnexpectedTokenExpected {
+					error: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedTokenExpected {
 						expected: "primary expression",
 						actual: token_type,
-					}),
+					})),
 				})
 			},
 		})

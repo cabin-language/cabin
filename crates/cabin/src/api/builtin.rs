@@ -48,7 +48,7 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 			context().lines_printed += string_value.chars().filter(|character| character == &'\n').count() + 1;
 
 			debug_section.finish();
-			Ok(Expression::ErrorExpression(()))
+			Ok(Expression::ErrorExpression(Span::unknown()))
 		},
 		to_c: |parameter_names| {
 			let text_address = context().scope_data.get_variable("Text").unwrap().try_as::<VirtualPointer>().unwrap();

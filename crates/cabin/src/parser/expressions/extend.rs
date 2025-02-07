@@ -25,9 +25,10 @@ use crate::{
 		},
 		statements::tag::TagList,
 		ListType,
-		Parse,
+		Parse as _,
 		TokenQueue,
 		TokenQueueFunctionality as _,
+		TryParse,
 	},
 };
 
@@ -66,10 +67,10 @@ pub struct Extend {
 	outer_scope_id: ScopeId,
 }
 
-impl Parse for Extend {
+impl TryParse for Extend {
 	type Output = VirtualPointer;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordExtend)?.span;
 		let outer_scope_id = context().scope_data.unique_id();
 
@@ -79,7 +80,7 @@ impl Parse for Extend {
 		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut parameters = Vec::new();
 			let _ = parse_list!(tokens, ListType::AngleBracketed, {
-				let parameter = Parameter::parse(tokens)?;
+				let parameter = Parameter::try_parse(tokens)?;
 				context().scope_data.declare_new_variable(
 					Parameter::from_literal(parameter.virtual_deref()).unwrap().name().to_owned(),
 					Expression::Pointer(parameter),
@@ -89,24 +90,24 @@ impl Parse for Extend {
 			parameters
 		});
 
-		let type_to_extend = Box::new(Expression::parse(tokens)?);
+		let type_to_extend = Box::new(Expression::parse(tokens));
 
 		let type_to_be = if_then_some!(tokens.next_is(TokenType::KeywordToBe), {
 			let _ = tokens.pop(TokenType::KeywordToBe)?;
-			Box::new(Expression::parse(tokens)?)
+			Box::new(Expression::parse(tokens))
 		});
 
 		let mut fields = Vec::new();
 		let end = parse_list!(tokens, ListType::Braced, {
 			// Parse tags
-			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::parse(tokens)?);
+			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens)?);
 
 			// Name
-			let name = Name::parse(tokens)?;
+			let name = Name::try_parse(tokens)?;
 
 			// Value
 			let _ = tokens.pop(TokenType::Equal)?;
-			let mut value = Expression::parse(tokens)?;
+			let mut value = Expression::parse(tokens);
 
 			// Set tags
 			if let Some(tags) = tags {

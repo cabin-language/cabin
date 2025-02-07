@@ -24,11 +24,12 @@ use crate::{
 			name::Name,
 			object::InternalFieldValue,
 			Expression,
-			Parse,
 			Spanned,
+			TryParse,
 		},
 		statements::tag::TagList,
 		ListType,
+		Parse as _,
 		TokenQueue,
 		TokenQueueFunctionality as _,
 	},
@@ -78,10 +79,10 @@ impl Debug for FunctionDeclaration {
 	}
 }
 
-impl Parse for FunctionDeclaration {
+impl TryParse for FunctionDeclaration {
 	type Output = VirtualPointer;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
 		let debug_section = debug_start!("{} a {}", "Parsing".bold().green(), "function declaration".cyan());
 		// "function" keyword
 		let start = tokens.pop(TokenType::KeywordAction)?.span;
@@ -92,7 +93,7 @@ impl Parse for FunctionDeclaration {
 		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
 			end = parse_list!(tokens, ListType::AngleBracketed, {
-				let parameter = Parameter::from_literal(Parameter::parse(tokens)?.virtual_deref()).unwrap();
+				let parameter = Parameter::from_literal(Parameter::try_parse(tokens)?.virtual_deref()).unwrap();
 				debug_log!(
 					"Parsed compile-time parameter {} of type {:?} in a function declaration",
 					parameter.name().unmangled_name().red(),
@@ -109,7 +110,7 @@ impl Parse for FunctionDeclaration {
 		let parameters = if_then_else_default!(tokens.next_is(TokenType::LeftParenthesis), {
 			let mut parameters = Vec::new();
 			end = parse_list!(tokens, ListType::Parenthesized, {
-				let parameter = Parameter::from_literal(Parameter::parse(tokens)?.virtual_deref()).unwrap();
+				let parameter = Parameter::from_literal(Parameter::try_parse(tokens)?.virtual_deref()).unwrap();
 				debug_log!(
 					"Parsed parameter {} of type {:?} in a function declaration",
 					parameter.name().unmangled_name().red(),
@@ -124,7 +125,7 @@ impl Parse for FunctionDeclaration {
 		// Return Type
 		let return_type = if_then_some!(tokens.next_is(TokenType::Colon), {
 			let _ = tokens.pop(TokenType::Colon)?;
-			let expression = Expression::parse(tokens)?;
+			let expression = Expression::parse(tokens);
 			end = expression.span();
 			expression
 		});
@@ -137,12 +138,12 @@ impl Parse for FunctionDeclaration {
 			for parameter in &compile_time_parameters {
 				context()
 					.scope_data
-					.declare_new_variable_from_id(parameter.name().clone(), Expression::ErrorExpression(()), block.inner_scope_id())?;
+					.declare_new_variable_from_id(parameter.name().clone(), Expression::ErrorExpression(Span::unknown()), block.inner_scope_id())?;
 			}
 			for parameter in &parameters {
 				context()
 					.scope_data
-					.declare_new_variable_from_id(parameter.name().clone(), Expression::ErrorExpression(()), block.inner_scope_id())?;
+					.declare_new_variable_from_id(parameter.name().clone(), Expression::ErrorExpression(Span::unknown()), block.inner_scope_id())?;
 			}
 			end = block.span();
 			(Expression::Block(block), inner_scope_id)

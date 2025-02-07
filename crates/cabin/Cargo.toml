@@ -11,6 +11,10 @@ keywords = ["cabin", "language", "compiler"]
 readme = "README.md"
 edition = "2021"
 
+[[bin]]
+name = "cabin"
+path = "src/bin.rs"
+
 [dependencies]
 anyhow = "1.0.93"
 clap = { version = "4.5.21", features = ["derive"] }
@@ -47,7 +51,7 @@ single_use_lifetimes = "warn"
 trivial_numeric_casts = "warn"
 unnameable_types = "warn"
 unsafe_code = "deny"
-unused_crate_dependencies = "forbid"
+#unused_crate_dependencies = "forbid"
 unused_extern_crates = "forbid"
 unused_import_braces = "warn"
 unused_lifetimes = "warn"

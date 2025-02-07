@@ -7,9 +7,9 @@ use crate::{
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{function_declaration::FunctionDeclaration, literal::LiteralConvertible as _, name::Name, operators::PrimaryExpression, Expression, Spanned},
-		Parse,
 		TokenQueue,
 		TokenQueueFunctionality as _,
+		TryParse,
 	},
 	transpiler::TranspileToC,
 };
@@ -32,15 +32,15 @@ pub struct FieldAccess {
 	span: Span,
 }
 
-impl Parse for FieldAccess {
+impl TryParse for FieldAccess {
 	type Output = Expression;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
-		let mut expression = PrimaryExpression::parse(tokens)?; // There should be no map_err here
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+		let mut expression = PrimaryExpression::try_parse(tokens)?; // There should be no map_err here
 		let start = expression.span();
 		while tokens.next_is(TokenType::Dot) {
 			let _ = tokens.pop(TokenType::Dot)?;
-			let right = Name::parse(tokens)?;
+			let right = Name::try_parse(tokens)?;
 			let end = right.span();
 			expression = Expression::FieldAccess(Self {
 				left: Box::new(expression),

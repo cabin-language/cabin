@@ -5,7 +5,7 @@ use crate::{
 	comptime::{memory::VirtualPointer, CompileTime},
 	if_then_else_default,
 	if_then_some,
-	lexer::TokenType,
+	lexer::{Span, TokenType},
 	parse_list,
 	parser::{
 		expressions::{
@@ -14,12 +14,14 @@ use crate::{
 			object::{Field, Fields as _},
 			parameter::Parameter,
 			Expression,
+			Spanned,
 		},
 		statements::tag::TagList,
 		ListType,
-		Parse,
+		Parse as _,
 		TokenQueue,
 		TokenQueueFunctionality,
+		TryParse,
 	},
 };
 
@@ -38,19 +40,20 @@ static DEFAULT_EXTEND_ID: AtomicUsize = AtomicUsize::new(0);
 pub struct DefaultExtendPointer {
 	scope_id: ScopeId,
 	id: usize,
+	span: Span,
 }
 
-impl Parse for DefaultExtend {
+impl TryParse for DefaultExtend {
 	type Output = DefaultExtendPointer;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
-		let _ = tokens.pop(TokenType::KeywordDefault)?;
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+		let start = tokens.pop(TokenType::KeywordDefault)?.span;
 		let _ = tokens.pop(TokenType::KeywordExtend)?;
 
 		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, ListType::AngleBracketed, {
-				let parameter = Parameter::parse(tokens)?;
+				let parameter = Parameter::try_parse(tokens)?;
 				context().scope_data.declare_new_variable(
 					Parameter::from_literal(parameter.virtual_deref()).unwrap().name().to_owned(),
 					Expression::Pointer(parameter),
@@ -60,25 +63,25 @@ impl Parse for DefaultExtend {
 			compile_time_parameters
 		});
 
-		let type_to_extend = Expression::parse(tokens)?;
+		let type_to_extend = Expression::parse(tokens);
 
 		let type_to_be = if_then_some!(tokens.next_is(TokenType::KeywordToBe), {
 			let _ = tokens.pop(TokenType::KeywordToBe)?;
-			let type_to_be = Expression::parse(tokens)?;
+			let type_to_be = Expression::parse(tokens);
 			type_to_be
 		});
 
 		let mut fields = Vec::new();
 		let end = parse_list!(tokens, ListType::Braced, {
 			// Parse tags
-			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::parse(tokens)?);
+			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens)?);
 
 			// Name
-			let name = Name::parse(tokens)?;
+			let name = Name::try_parse(tokens)?;
 
 			// Value
 			let _ = tokens.pop(TokenType::Equal)?;
-			let mut value = Expression::parse(tokens)?;
+			let mut value = Expression::parse(tokens);
 
 			// Set tags
 			if let Some(tags) = tags {
@@ -111,6 +114,7 @@ impl Parse for DefaultExtend {
 		Ok(DefaultExtendPointer {
 			scope_id: context().scope_data.unique_id(),
 			id,
+			span: start.to(end),
 		})
 	}
 }
@@ -146,5 +150,11 @@ impl CompileTime for DefaultExtend {
 			id: self.id,
 			fields: self.fields,
 		})
+	}
+}
+
+impl Spanned for DefaultExtendPointer {
+	fn span(&self) -> Span {
+		self.span
 	}
 }

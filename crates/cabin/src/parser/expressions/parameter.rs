@@ -16,7 +16,7 @@ use crate::{
 	debug_log,
 	debug_start,
 	lexer::{Span, TokenType},
-	parser::{statements::tag::TagList, Parse, TokenQueue, TokenQueueFunctionality},
+	parser::{statements::tag::TagList, Parse as _, TokenQueue, TokenQueueFunctionality, TryParse},
 };
 
 #[derive(Clone)]
@@ -27,13 +27,13 @@ pub struct Parameter {
 	scope_id: ScopeId,
 }
 
-impl Parse for Parameter {
+impl TryParse for Parameter {
 	type Output = VirtualPointer;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
-		let name = Name::parse(tokens)?;
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+		let name = Name::try_parse(tokens)?;
 		let _ = tokens.pop(TokenType::Colon)?;
-		let parameter_type = Expression::parse(tokens)?;
+		let parameter_type = Expression::parse(tokens);
 		Ok(Parameter {
 			span: name.span().to(parameter_type.span()),
 			name,

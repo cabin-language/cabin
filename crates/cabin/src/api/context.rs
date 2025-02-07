@@ -16,7 +16,7 @@ use crate::{
 	},
 	comptime::memory::VirtualMemory,
 	lexer::Span,
-	Errors,
+	Diagnostics,
 };
 
 pub struct Context {
@@ -38,7 +38,7 @@ pub struct Context {
 	options: CabinToml,
 	debug_indent: Vec<String>,
 
-	errors: Errors,
+	errors: Diagnostics,
 }
 
 impl Default for Context {
@@ -58,7 +58,7 @@ impl Default for Context {
 			theme: Theme::default(),
 			colored_program: Vec::new(),
 			debug_indent: Vec::new(),
-			errors: Errors::none(),
+			errors: Diagnostics::none(),
 		}
 	}
 }
@@ -76,7 +76,7 @@ impl Context {
 		let _ = self.side_effects_stack.pop();
 	}
 
-	pub fn errors(&self) -> &Errors {
+	pub fn errors(&self) -> &Diagnostics {
 		&self.errors
 	}
 
@@ -90,7 +90,7 @@ impl Context {
 		}
 	}
 
-	pub fn add_error(&mut self, error: crate::Error) {
+	pub fn add_diagnostic(&mut self, error: crate::Diagnostic) {
 		self.errors.push(error);
 	}
 

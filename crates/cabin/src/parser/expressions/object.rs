@@ -16,9 +16,10 @@ use crate::{
 		expressions::{field_access::FieldAccessType, group::GroupDeclaration, literal::LiteralConvertible as _, name::Name, parameter::Parameter, Expression, Spanned},
 		statements::tag::TagList,
 		ListType,
-		Parse,
+		Parse as _,
 		TokenQueue,
 		TokenQueueFunctionality,
+		TryParse,
 	},
 	transpiler::TranspileToC,
 };
@@ -138,19 +139,19 @@ impl ObjectConstructor {
 	}
 }
 
-impl Parse for ObjectConstructor {
+impl TryParse for ObjectConstructor {
 	type Output = ObjectConstructor;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordNew)?.span;
 
 		// Name
-		let name = Name::parse(tokens)?;
+		let name = Name::try_parse(tokens)?;
 
 		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, ListType::AngleBracketed, {
-				let parameter = Parameter::parse(tokens)?;
+				let parameter = Parameter::try_parse(tokens)?;
 				context()
 					.scope_data
 					.declare_new_variable(parameter.virtual_deref().name(), Expression::Pointer(parameter))?;
@@ -163,14 +164,18 @@ impl Parse for ObjectConstructor {
 		let mut fields = Vec::new();
 		let end = parse_list!(tokens, ListType::Braced, {
 			// Parse tags
-			let tags = if tokens.next_is(TokenType::TagOpening) { Some(TagList::parse(tokens)?) } else { None };
+			let tags = if tokens.next_is(TokenType::TagOpening) {
+				Some(TagList::try_parse(tokens)?)
+			} else {
+				None
+			};
 
 			// Name
-			let field_name = Name::parse(tokens)?;
+			let field_name = Name::try_parse(tokens)?;
 
 			// Value
 			let _ = tokens.pop(TokenType::Equal)?;
-			let mut value = Expression::parse(tokens)?;
+			let mut value = Expression::parse(tokens);
 
 			// Set tags
 			if let Some(tags) = tags {

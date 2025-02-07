@@ -1,12 +1,13 @@
 use crate::{
 	api::{context::context, scope::ScopeType},
 	comptime::CompileTime,
-	lexer::TokenType,
+	lexer::{Span, TokenType},
 	parser::{
-		expressions::{name::Name, Expression},
-		Parse,
+		expressions::{name::Name, Expression, Spanned},
+		Parse as _,
 		TokenQueue,
 		TokenQueueFunctionality,
+		TryParse,
 	},
 	transpiler::TranspileToC,
 };
@@ -15,18 +16,23 @@ use crate::{
 pub struct TailStatement {
 	pub label: Name,
 	pub value: Expression,
+	pub span: Span,
 }
 
-impl Parse for TailStatement {
+impl TryParse for TailStatement {
 	type Output = TailStatement;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
-		let label = Name::parse(tokens)?;
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+		let label = Name::try_parse(tokens)?;
 
 		let _ = tokens.pop(TokenType::KeywordIs)?;
-		let value = Expression::parse(tokens)?;
+		let value = Expression::parse(tokens);
 
-		Ok(TailStatement { label, value })
+		Ok(TailStatement {
+			span: label.span().to(value.span()),
+			label,
+			value,
+		})
 	}
 }
 
@@ -35,7 +41,11 @@ impl CompileTime for TailStatement {
 
 	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
 		let value = self.value.evaluate_at_compile_time()?;
-		Ok(TailStatement { label: self.label, value })
+		Ok(TailStatement {
+			label: self.label,
+			value,
+			span: self.span,
+		})
 	}
 }
 
@@ -45,5 +55,11 @@ impl TranspileToC for TailStatement {
 			ScopeType::Function => format!("*return_address = {};\nreturn;", self.value.to_c()?),
 			_ => format!("*tail_value = {};\ngoto label_{};", self.value.to_c()?, self.label.to_c()?),
 		})
+	}
+}
+
+impl Spanned for TailStatement {
+	fn span(&self) -> Span {
+		self.span
 	}
 }

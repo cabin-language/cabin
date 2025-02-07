@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fmt::Write as _};
 
 use colored::Colorize as _;
+use convert_case::{Case, Casing};
 
 use crate::{
 	api::{context::context, scope::ScopeId},
@@ -17,12 +18,15 @@ use crate::{
 		},
 		statements::tag::TagList,
 		ListType,
-		Parse,
 		TokenQueue,
 		TokenQueueFunctionality,
+		TryParse,
 	},
 	transpiler::TranspileToC,
 	warn,
+	Diagnostic,
+	DiagnosticInfo,
+	Warning,
 };
 
 /// An `either`. In Cabin, `eithers` represent choices between empty values. They are analogous to
@@ -56,15 +60,23 @@ pub struct Either {
 	tags: TagList,
 }
 
-impl Parse for Either {
+impl TryParse for Either {
 	type Output = VirtualPointer;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordEither)?.span;
 		let mut variants = Vec::new();
 		let end = parse_list!(tokens, ListType::Braced, {
-			let name = Name::parse(tokens)?;
+			let name = Name::try_parse(tokens)?;
 			let span = name.span();
+			if name.unmangled_name() != name.unmangled_name().to_case(Case::Snake) {
+				context().add_diagnostic(Diagnostic {
+					span: name.span(),
+					error: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
+						original_name: name.unmangled_name().to_owned(),
+					}),
+				});
+			}
 			variants.push((name, LiteralObject::empty(span).store_in_memory()));
 		})
 		.span;

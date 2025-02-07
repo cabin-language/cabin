@@ -10,7 +10,7 @@ use crate::{
 	debug_start,
 	lexer::{Span, TokenType},
 	mapped_err,
-	parser::{expressions::Expression, Parse, ToCabin, TokenQueue, TokenQueueFunctionality as _},
+	parser::{expressions::Expression, ToCabin, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::TranspileToC,
 };
 
@@ -33,10 +33,10 @@ pub struct Name {
 	should_mangle: bool,
 }
 
-impl Parse for Name {
+impl TryParse for Name {
 	type Output = Self;
 
-	fn parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output, crate::Diagnostic> {
 		let token = tokens.pop(TokenType::Identifier)?;
 
 		Ok(Name {

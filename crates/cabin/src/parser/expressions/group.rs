@@ -25,12 +25,13 @@ use crate::{
 			object::{Field, InternalFieldValue},
 			parameter::Parameter,
 			Expression,
-			Parse,
 			Spanned,
+			TryParse,
 			Typed,
 		},
 		statements::tag::TagList,
 		ListType,
+		Parse as _,
 		TokenQueueFunctionality,
 	},
 	transpiler::TranspileToC,
@@ -45,10 +46,10 @@ pub struct GroupDeclaration {
 	span: Span,
 }
 
-impl Parse for GroupDeclaration {
+impl TryParse for GroupDeclaration {
 	type Output = VirtualPointer;
 
-	fn parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, crate::Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordGroup)?.span;
 		let outer_scope_id = context().scope_data.unique_id();
 		context().scope_data.enter_new_scope(ScopeType::Group);
@@ -57,7 +58,7 @@ impl Parse for GroupDeclaration {
 		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, ListType::AngleBracketed, {
-				let parameter = Parameter::parse(tokens)?;
+				let parameter = Parameter::try_parse(tokens)?;
 				context()
 					.scope_data
 					.declare_new_variable(parameter.virtual_deref().name(), Expression::Pointer(parameter))?;
@@ -70,21 +71,21 @@ impl Parse for GroupDeclaration {
 		let mut fields = Vec::new();
 		let end = parse_list!(tokens, ListType::Braced, {
 			//  Group field tags
-			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::parse(tokens)?);
+			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens)?);
 
 			// Group field name
-			let name = Name::parse(tokens)?;
+			let name = Name::try_parse(tokens)?;
 
 			// Group field type
 			let field_type = if_then_some!(tokens.next_is(TokenType::Colon), {
 				let _ = tokens.pop(TokenType::Colon)?;
-				Expression::parse(tokens)?
+				Expression::parse(tokens)
 			});
 
 			// Group field value
 			let value = if_then_some!(tokens.next_is(TokenType::Equal), {
 				let _ = tokens.pop(TokenType::Equal)?;
-				let mut value = Expression::parse(tokens)?;
+				let mut value = Expression::parse(tokens);
 
 				// Set tags
 				if let Some(tags) = tags {
@@ -204,7 +205,13 @@ impl TranspileToC for GroupDeclaration {
 				if let Some(field_type) = &field.field_type {
 					field_type.try_as_literal()?.to_c_type()?
 				} else {
-					field.value.as_ref().unwrap_or(&Expression::ErrorExpression(())).get_type()?.virtual_deref().to_c_type()?
+					field
+						.value
+						.as_ref()
+						.unwrap_or(&Expression::ErrorExpression(Span::unknown()))
+						.get_type()?
+						.virtual_deref()
+						.to_c_type()?
 				},
 				field.name.to_c()?
 			)

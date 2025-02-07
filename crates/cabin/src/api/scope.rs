@@ -12,6 +12,8 @@ use crate::{
 		statements::use_extend::DefaultExtend,
 		ParseError,
 	},
+	DiagnosticInfo,
+	Error,
 };
 
 /// Scopes never get deleted, so all `ScopeIds` are always guaranteed to point to a valid `Scope`.
@@ -384,7 +386,7 @@ impl ScopeData {
 	///
 	/// # Errors
 	/// Returns an error if a variable already exists with the given name in the scope with the given id.
-	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Name>, value: Expression, id: ScopeId) -> Result<(), crate::Error> {
+	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Name>, value: Expression, id: ScopeId) -> Result<(), crate::Diagnostic> {
 		let name = name.into();
 		debug_log!(
 			"Declaring a new variable called {} in a scope of type {:?}",
@@ -392,11 +394,11 @@ impl ScopeData {
 			self.get_scope_from_id(id).scope_type
 		);
 		if self.get_variable_from_id(name.clone(), id).is_some() {
-			return Err(crate::Error {
+			return Err(crate::Diagnostic {
 				span: name.span(),
-				error: crate::ErrorInfo::Parse(ParseError::DuplicateVariableDeclaration {
+				error: DiagnosticInfo::Error(Error::Parse(ParseError::DuplicateVariableDeclaration {
 					name: name.unmangled_name().to_owned(),
-				}),
+				})),
 			});
 		}
 		let _ = self.scopes.get_mut(id.0).unwrap().variables.insert(name, value);
@@ -414,7 +416,7 @@ impl ScopeData {
 	///
 	/// # Errors
 	/// Returns an error if a variable already exists with the given name in the current scope.
-	pub fn declare_new_variable(&mut self, name: impl Into<Name>, value: Expression) -> Result<(), crate::Error> {
+	pub fn declare_new_variable(&mut self, name: impl Into<Name>, value: Expression) -> Result<(), crate::Diagnostic> {
 		self.declare_new_variable_from_id(name, value, ScopeId(self.current_scope))
 	}
 

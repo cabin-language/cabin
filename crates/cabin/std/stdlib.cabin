@@ -1,5 +1,11 @@
 let This = group {};
 
+let Unique = group {};
+
+default extend Unique tobe Comparable {
+
+};
+
 let Nothing = either {
 	nothing
 }; 
@@ -31,7 +37,7 @@ let Parameter = group {
 	type: Anything
 };
 
-let OneOf = group {};
+let OneOf = group {}; 
 
 let Function = group {
 	parameters: Anything,
@@ -58,10 +64,10 @@ let Field = group {
 	value: Anything,
 };
 
-let List = group {};
+let List = group<Element: Anything> {};
 
-let Either = group {
-	variants: List
+let Either = group<Type: Anything> {
+	variants: List<Type>
 };
 
 let Boolean = either {
@@ -83,18 +89,7 @@ let builtin = action<name: Text>: BuiltinTag {
 	};
 };
 
-let Number = group {
-
-	#[builtin<"Number.minus">]
-	minus = action(this: Number, other: Number): Number,
-
-	#[builtin<"Number.floor">]
-	floor = action(this: Number): Number,
-
-	to = action(this: Number, end: Number): List {
-
-	}
-}; 
+let Number = group {}; 
 
 let AddableTo = group<Operand: Anything, Result: Anything> {
 	plus: action(this: This, other: Operand): Result
@@ -106,13 +101,9 @@ default extend Number tobe AddableTo<Number, Number> {
 	plus = action(this: Number, other: Number): Number,
 };
 
-let Error = group {
-	message: Text
-};
-
-let Attempted = choice<Data> {
+let Attempted = choice<Data, Error> {
 	Data,
-	Error	
+	Error
 };
 
 let TerminalPrintOptions = group {

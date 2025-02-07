@@ -20,9 +20,10 @@ use crate::{
 		},
 		statements::tag::TagList,
 		ListType,
-		Parse,
+		Parse as _,
 		TokenQueue,
 		TokenQueueFunctionality,
+		TryParse,
 	},
 };
 
@@ -36,10 +37,10 @@ pub struct OneOf {
 	name: Name,
 }
 
-impl Parse for OneOf {
+impl TryParse for OneOf {
 	type Output = VirtualPointer;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordOneOf)?.span;
 
 		// Enter inner scope
@@ -50,8 +51,8 @@ impl Parse for OneOf {
 		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, ListType::AngleBracketed, {
-				let name = Name::parse(tokens)?;
-				context().scope_data.declare_new_variable(name.clone(), Expression::ErrorExpression(()))?;
+				let name = Name::try_parse(tokens)?;
+				context().scope_data.declare_new_variable(name.clone(), Expression::ErrorExpression(Span::unknown()))?;
 				compile_time_parameters.push(name);
 			});
 			compile_time_parameters
@@ -60,7 +61,7 @@ impl Parse for OneOf {
 		// Choices
 		let mut choices = Vec::new();
 		let end = parse_list!(tokens, ListType::Braced, {
-			choices.push(Expression::parse(tokens)?);
+			choices.push(Expression::parse(tokens));
 		})
 		.span;
 

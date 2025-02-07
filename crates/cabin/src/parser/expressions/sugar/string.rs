@@ -5,16 +5,17 @@ use try_as::traits as try_as_traits;
 
 use crate::{
 	api::{context::context, traits::TryAs as _},
-	bail_err,
 	lexer::{tokenize_string, Span, Token, TokenType},
 	parser::{
 		expressions::{field_access::FieldAccess, function_call::FunctionCall, object::ObjectConstructor, Expression},
-		Parse,
+		Parse as _,
 		ParseError,
 		TokenQueue,
 		TokenQueueFunctionality as _,
+		TryParse,
 	},
-	ErrorInfo,
+	DiagnosticInfo,
+	Error,
 };
 
 /// A part of a formatted string literal. Each part is either just a regular string value, or an
@@ -63,10 +64,10 @@ impl Into<Expression> for StringPart {
 /// formatted strings by default, so they require special logic for parsing.
 pub struct CabinString;
 
-impl Parse for CabinString {
+impl TryParse for CabinString {
 	type Output = Expression;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
 		let token = tokens.pop(TokenType::String)?;
 		let with_quotes = token.value;
 		let mut without_quotes = with_quotes.get(1..with_quotes.len() - 1).unwrap().to_owned();
@@ -85,7 +86,7 @@ impl Parse for CabinString {
 
 					// Parse an expression
 					let mut tokens = tokenize_string(&without_quotes);
-					let expression = Expression::parse(&mut tokens)?;
+					let expression = Expression::parse(&mut tokens);
 					parts.push(StringPart::Expression(expression));
 
 					// Recollect remaining tokens into string
@@ -93,9 +94,9 @@ impl Parse for CabinString {
 
 					// Pop closing brace
 					if without_quotes.chars().next().unwrap() != '}' {
-						return Err(crate::Error {
+						return Err(crate::Diagnostic {
 							span: token.span,
-							error: ErrorInfo::Parse(ParseError::InvalidFormatString(with_quotes)),
+							error: DiagnosticInfo::Error(Error::Parse(ParseError::InvalidFormatString(with_quotes))),
 						});
 					}
 					without_quotes = without_quotes.get(1..without_quotes.len()).unwrap().to_owned();

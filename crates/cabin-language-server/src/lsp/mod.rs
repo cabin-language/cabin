@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Not};
 
 use cabin::{lexer::TokenType, parser::expressions::Spanned as _};
 use text_document::{
-	diagnostics::{Diagnostic, PublishDiagnosticParams},
+	diagnostics::{get_diagnostics, Diagnostic, PublishDiagnosticParams},
 	did_change::TextDocumentDidChangeEvent,
 	hover::HoverResult,
 	Position,
@@ -88,7 +88,18 @@ impl Request {
 			RequestData::TextDocumentDidOpen { text_document } => {
 				logger.log(format!("\n*Opened `{}`*\n", text_document.uri))?;
 				state.files.insert(text_document.uri.clone(), text_document.text.clone());
-				None
+				let diagnostics = get_diagnostics(state, logger, &text_document.uri)?;
+				diagnostics.is_empty().not().then_some(Response {
+					id: self.id,
+					jsonrpc: "2.0",
+					data: ResponseData::Diagnostics {
+						method: "textDocument/publishDiagnostics".to_owned(),
+						params: PublishDiagnosticParams {
+							uri: text_document.uri.clone(),
+							diagnostics,
+						},
+					},
+				})
 			},
 
 			RequestData::TextDocumentDidChange { text_document, content_changes } => {
@@ -96,36 +107,18 @@ impl Request {
 				for change in content_changes {
 					state.files.insert(text_document.uri.clone(), change.text.clone());
 				}
-				let code = state.files.get(&text_document.uri).unwrap();
-				let errors = cabin::check(code);
-				let diagnostics = errors
-					.into_iter()
-					.map(|error| Diagnostic {
-						severity: 1,
-						message: format!("{error}"),
-						source: "Cabin Language Server".to_owned(),
-						range: Range {
-							start: error.span().start_line_column(code).into(),
-							end: error.span().end_line_column(code).into(),
+				let diagnostics = get_diagnostics(state, logger, &text_document.uri)?;
+				diagnostics.is_empty().not().then_some(Response {
+					id: self.id,
+					jsonrpc: "2.0",
+					data: ResponseData::Diagnostics {
+						method: "textDocument/publishDiagnostics".to_owned(),
+						params: PublishDiagnosticParams {
+							uri: text_document.uri.clone(),
+							diagnostics,
 						},
-					})
-					.collect::<Vec<_>>();
-
-				if diagnostics.is_empty() {
-					None
-				} else {
-					Some(Response {
-						id: self.id,
-						jsonrpc: "2.0",
-						data: ResponseData::Diagnostics {
-							method: "textDocument/publishDiagnostics".to_owned(),
-							params: PublishDiagnosticParams {
-								uri: text_document.uri.clone(),
-								diagnostics,
-							},
-						},
-					})
-				}
+					},
+				})
 			},
 
 			RequestData::TextDocumentDidHover { position, text_document } => {

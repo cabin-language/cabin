@@ -4,6 +4,7 @@ use colored::Colorize as _;
 // This is required because of a bug in `try_as`
 use try_as::traits::{self as try_as_traits, TryAsMut};
 
+use super::{Parse, TokenQueueFunctionality as _};
 use crate::{
 	api::{context::context, scope::ScopeData, traits::TryAs as _},
 	bail_err,
@@ -32,8 +33,8 @@ use crate::{
 			unary::UnaryOperation,
 		},
 		statements::tag::TagList,
-		Parse,
 		TokenQueue,
+		TryParse,
 	},
 	transpiler::TranspileToC,
 };
@@ -79,14 +80,26 @@ pub enum Expression {
 	Unary(UnaryOperation),
 	Parameter(Parameter),
 	RepresentAs(Extend),
-	ErrorExpression(()),
+	ErrorExpression(Span),
 }
 
 impl Parse for Expression {
-	type Output = Expression;
+	type Output = Self;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
-		BinaryExpression::parse(tokens)
+	fn parse(tokens: &mut TokenQueue) -> Self::Output {
+		let start = tokens.front().unwrap().span;
+		let result = BinaryExpression::try_parse(tokens);
+		match result {
+			Ok(expression) => expression,
+			Err(error) => {
+				context().add_diagnostic(error);
+				if let Ok(token_type) = tokens.peek_type() {
+					let _ = tokens.pop(token_type).unwrap();
+				}
+				let end = tokens.front().unwrap().span;
+				Expression::ErrorExpression(start.to(end))
+			},
+		}
 	}
 }
 
@@ -346,7 +359,7 @@ impl Typed for Expression {
 			Expression::FunctionCall(function_call) => function_call.get_type()?,
 			Expression::Run(run_expression) => run_expression.get_type()?,
 			Expression::Parameter(parameter) => parameter.get_type()?,
-			Expression::ErrorExpression(()) => bail_err! {
+			Expression::ErrorExpression(_span) => bail_err! {
 				base = "Attempted to get the type of a non-existent value",
 				while = "getting the type of a generic expression",
 			},
@@ -374,7 +387,7 @@ impl Spanned for Expression {
 			Expression::Match(match_expression) => match_expression.span(),
 			Expression::RepresentAs(represent_as) => represent_as.span(),
 			Expression::Unary(unary) => unary.span(),
-			Expression::ErrorExpression(_) => todo!(),
+			Expression::ErrorExpression(span) => *span,
 		}
 	}
 }
@@ -420,7 +433,7 @@ impl Debug for Expression {
 			Self::Run(run) => run.fmt(formatter),
 			Self::Match(match_expression) => match_expression.fmt(formatter),
 			Self::RepresentAs(represent_as) => represent_as.fmt(formatter),
-			Self::ErrorExpression(()) => write!(formatter, "{}", "<void>".style(context().theme.keyword())),
+			Self::ErrorExpression(_span) => write!(formatter, "{}", "<void>".style(context().theme.keyword())),
 		}
 	}
 }

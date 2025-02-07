@@ -8,9 +8,10 @@ use crate::{
 	mapped_err,
 	parser::{
 		expressions::{block::Block, Expression},
-		Parse,
+		Parse as _,
 		TokenQueue,
 		TokenQueueFunctionality,
+		TryParse,
 	},
 	transpiler::TranspileToC,
 };
@@ -24,17 +25,17 @@ pub struct IfExpression {
 	inner_scope_id: ScopeId,
 }
 
-impl Parse for IfExpression {
+impl TryParse for IfExpression {
 	type Output = IfExpression;
 
-	fn parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Error> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordIf)?.span;
-		let condition = Box::new(Expression::parse(tokens)?);
-		let body = Block::parse(tokens)?;
+		let condition = Box::new(Expression::parse(tokens));
+		let body = Block::try_parse(tokens)?;
 		let mut end = body.span();
 		let else_body = if tokens.next_is(TokenType::KeywordOtherwise) {
 			let _ = tokens.pop(TokenType::KeywordOtherwise).unwrap();
-			let else_body = Expression::Block(Block::parse(tokens)?);
+			let else_body = Expression::Block(Block::try_parse(tokens)?);
 			end = else_body.span();
 			Some(Box::new(else_body))
 		} else {

@@ -1,9 +1,10 @@
 use std::{collections::VecDeque, fmt::Display};
 
 use api::context::context;
-use comptime::CompileTime;
+use convert_case::{Case, Casing as _};
 use lexer::{Span, Token, TokenizeError};
 use parser::{expressions::Spanned, Module, ParseError};
+use strum_macros::Display;
 
 pub mod api;
 pub mod cli;
@@ -13,8 +14,17 @@ pub mod lexer;
 pub mod parser;
 pub mod transpiler;
 
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum Warning {
+	#[error("{type_name} names should be in PascalCase: Change \"{original_name}\" to \"{}\"", .original_name.to_case(Case::Pascal))]
+	NonPascalCaseGroup { type_name: String, original_name: String },
+
+	#[error("Variable names should be in snake_case: Change \"{original_name}\" to \"{}\"", .original_name.to_case(Case::Snake))]
+	NonSnakeCaseName { original_name: String },
+}
+
 #[derive(Clone, thiserror::Error, Debug)]
-pub enum ErrorInfo {
+pub enum Error {
 	#[error("Tokenization error: {0}")]
 	Tokenize(TokenizeError),
 
@@ -22,22 +32,37 @@ pub enum ErrorInfo {
 	Parse(ParseError),
 }
 
-#[derive(Clone, thiserror::Error, Debug)]
-pub struct Error {
-	span: Span,
-	error: ErrorInfo,
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum DiagnosticInfo {
+	#[error("{0}")]
+	Error(Error),
+
+	#[error("Warning: {0}")]
+	Warning(Warning),
 }
 
-impl Spanned for Error {
+#[derive(Clone, Debug, thiserror::Error)]
+pub struct Diagnostic {
+	span: Span,
+	error: DiagnosticInfo,
+}
+
+impl Diagnostic {
+	pub fn info(&self) -> &DiagnosticInfo {
+		&self.error
+	}
+}
+
+impl Spanned for Diagnostic {
 	fn span(&self) -> Span {
 		self.span
 	}
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
-pub struct Errors(Vec<Error>);
+pub struct Diagnostics(Vec<Diagnostic>);
 
-impl Display for Errors {
+impl Display for Diagnostics {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(
 			f,
@@ -47,21 +72,17 @@ impl Display for Errors {
 	}
 }
 
-impl Errors {
+impl Diagnostics {
 	pub fn none() -> Self {
 		Self(Vec::new())
 	}
 
-	pub fn new(errors: Vec<Error>) -> Self {
+	pub fn new(errors: Vec<Diagnostic>) -> Self {
 		Self(errors)
 	}
 
-	pub fn push(&mut self, error: Error) {
+	pub fn push(&mut self, error: Diagnostic) {
 		self.0.push(error);
-	}
-
-	pub fn one(span: Span, error: ErrorInfo) -> Self {
-		Errors(vec![Error { span, error }])
 	}
 
 	pub fn is_empty(&self) -> bool {
@@ -69,15 +90,15 @@ impl Errors {
 	}
 }
 
-impl Iterator for Errors {
-	type Item = Error;
+impl Iterator for Diagnostics {
+	type Item = Diagnostic;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.0.pop()
 	}
 }
 
-impl Display for Error {
+impl Display for Diagnostic {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		self.error.fmt(f)
 	}
@@ -88,21 +109,20 @@ impl Display for Error {
 /// # Returns
 ///
 /// The errors that occurred. If no errors occurred, then `errors.is_empty() == true`.
-pub fn check(code: &str) -> Errors {
+pub fn check(code: &str) -> Diagnostics {
 	context().reset();
 	let mut tokens = lexer::tokenize_without_prelude(code);
-	let program = parser::parse(&mut tokens).unwrap();
-	let _module = program.evaluate_at_compile_time().unwrap();
+	let _program = parser::parse(&mut tokens);
 	context().errors().to_owned()
 }
 
-pub fn parse(code: &str) -> (Result<Module, Error>, Errors) {
+pub fn parse(code: &str) -> (Module, Diagnostics) {
 	context().reset();
 	let mut tokens = lexer::tokenize_without_prelude(code);
 	(parser::parse(&mut tokens), context().errors().to_owned())
 }
 
-pub fn tokenize(code: &str) -> (VecDeque<Token>, Errors) {
+pub fn tokenize(code: &str) -> (VecDeque<Token>, Diagnostics) {
 	context().reset();
 	(lexer::tokenize_without_prelude(code), context().errors().to_owned())
 }

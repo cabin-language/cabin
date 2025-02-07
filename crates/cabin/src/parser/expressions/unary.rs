@@ -48,6 +48,7 @@ impl CompileTime for UnaryOperation {
 									vec![Statement::Tail(TailStatement {
 										label: "action".into(),
 										value: Expression::Name("nothing".into()),
+										span: Span::unknown(),
 									})],
 									context().scope_data.new_scope_id(ScopeType::Block),
 									Span::unknown(),

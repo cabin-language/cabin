@@ -9,12 +9,13 @@ mod lsp;
 use lsp::State;
 use regex_macro::regex;
 
+const LOGFILE: &str = "~/.local/state/cabin-language-server-log.md";
+
 fn main() -> anyhow::Result<()> {
-	std::fs::write("/home/violet/Documents/Coding/Developer Tools/Cabin/cabin/crates/cabin-language-server/log.md", "")?;
+	let logfile = shellexpand::tilde(LOGFILE);
+	std::fs::write(logfile.as_ref(), "")?;
 	let mut logger = Logger {
-		file: OpenOptions::new()
-			.append(true)
-			.open("/home/violet/Documents/Coding/Developer Tools/Cabin/cabin/crates/cabin-language-server/log.md")?,
+		file: OpenOptions::new().append(true).open(logfile.as_ref())?,
 	};
 	logger.log("**Cabin Language Server started**")?;
 	if let Err(error) = run(&mut logger) {
