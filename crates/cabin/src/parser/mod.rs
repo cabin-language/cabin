@@ -1,27 +1,22 @@
 use std::collections::{HashMap, VecDeque};
 
-use expressions::{
-	field_access::FieldAccessType,
-	literal::LiteralObject,
-	object::{Field, ObjectConstructor},
-};
-use statements::{
-	declaration::{Declaration, DeclarationType},
-	tag::TagList,
-	Statement,
-};
-
 use crate::{
 	api::{
 		context::context,
 		scope::{ScopeId, ScopeType},
 		traits::TryAs,
 	},
-	bail_err,
 	comptime::{memory::VirtualPointer, CompileTime},
 	lexer::{Span, Token, TokenType},
 	mapped_err,
-	parser::expressions::Spanned,
+	parser::{
+		expressions::{
+			field_access::FieldAccessType,
+			literal::LiteralObject,
+			object::{Field, ObjectConstructor},
+		},
+		statements::{declaration::Declaration, tag::TagList, use_extend::DefaultExtendPointer, Statement},
+	},
 	transpiler::TranspileToC,
 	ErrorInfo,
 };
@@ -29,7 +24,7 @@ use crate::{
 pub mod expressions;
 pub mod statements;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum ParseError {
 	#[error("Unexpected token: Expected {expected} but found {actual}")]
 	UnexpectedToken { expected: TokenType, actual: TokenType },
@@ -59,8 +54,25 @@ pub fn parse(tokens: &mut TokenQueue) -> Result<Module, crate::Error> {
 
 #[derive(Debug)]
 pub struct Module {
-	declarations: Vec<Declaration>,
+	declarations: Vec<TopLevelDeclaration>,
 	inner_scope_id: ScopeId,
+}
+
+#[derive(Debug)]
+pub enum TopLevelDeclaration {
+	Declaration(Declaration),
+	DefaultExtend(DefaultExtendPointer),
+}
+
+impl CompileTime for TopLevelDeclaration {
+	type Output = Self;
+
+	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
+		Ok(match self {
+			Self::Declaration(declaration) => Self::Declaration(declaration.evaluate_at_compile_time()?),
+			Self::DefaultExtend(default_extend) => Self::DefaultExtend(default_extend.evaluate_at_compile_time()?),
+		})
+	}
 }
 
 impl Parse for Module {
@@ -70,18 +82,26 @@ impl Parse for Module {
 		context().scope_data.enter_new_scope(ScopeType::File);
 		let inner_scope_id = context().scope_data.unique_id();
 		let mut declarations = Vec::new();
+
 		while !tokens.is_empty() {
-			let statement = Declaration::parse(tokens)?;
+			let statement = Statement::parse(tokens)?;
 
-			let Statement::Declaration(declaration) = statement else {
-				return Err(crate::Error {
-					span: Span::unknown(),
-					error: ErrorInfo::Parse(ParseError::InvalidTopLevelStatement { statement })
-				});
-            };
-
-			declarations.push(declaration);
+			match statement {
+				Statement::Declaration(declaration) => {
+					declarations.push(TopLevelDeclaration::Declaration(declaration));
+				},
+				Statement::DefaultExtend(default_extend) => {
+					declarations.push(TopLevelDeclaration::DefaultExtend(default_extend));
+				},
+				_ => {
+					return Err(crate::Error {
+						span: Span::unknown(),
+						error: ErrorInfo::Parse(ParseError::InvalidTopLevelStatement { statement }),
+					})
+				},
+			};
 		}
+
 		context().scope_data.exit_scope().unwrap();
 		Ok(Module { declarations, inner_scope_id })
 	}
@@ -111,30 +131,7 @@ impl CompileTime for Module {
 
 impl TranspileToC for Module {
 	fn to_c(&self) -> anyhow::Result<String> {
-		Ok(self
-			.declarations
-			.iter()
-			.map(|declaration| {
-				if declaration.declaration_type() == &DeclarationType::RepresentAs
-					|| declaration
-						.value()
-						.map_err(mapped_err! {
-							while = "getting the value of a declaration",
-						})?
-						.is_pointer()
-				{
-					return Ok(None);
-				}
-				Ok(Some(declaration.to_c()?))
-			})
-			.collect::<anyhow::Result<Vec<_>>>()
-			.map_err(mapped_err! {
-				while = "transpiling the program's global statements to C",
-			})?
-			.into_iter()
-			.flatten()
-			.collect::<Vec<_>>()
-			.join("\n"))
+		todo!()
 	}
 }
 
@@ -330,11 +327,13 @@ impl Module {
 				.declarations
 				.into_iter()
 				.filter_map(|declaration| {
-					(declaration.declaration_type() != &DeclarationType::RepresentAs).then(|| {
+					if let TopLevelDeclaration::Declaration(declaration) = declaration {
 						let name = declaration.name().to_owned();
 						let value = declaration.value().unwrap();
-						(name, value.try_as::<VirtualPointer>().unwrap().to_owned())
-					})
+						Some((name, value.try_as::<VirtualPointer>().unwrap().to_owned()))
+					} else {
+						None
+					}
 				})
 				.collect(),
 			internal_fields: HashMap::new(),
@@ -355,11 +354,13 @@ impl Module {
 				.declarations
 				.into_iter()
 				.filter_map(|declaration| {
-					(declaration.declaration_type() != &DeclarationType::RepresentAs).then(|| {
+					if let TopLevelDeclaration::Declaration(declaration) = declaration {
 						let name = declaration.name().to_owned();
 						let value = Some(declaration.value().unwrap().clone());
-						Field { name, value, field_type: None }
-					})
+						Some(Field { name, value, field_type: None })
+					} else {
+						None
+					}
 				})
 				.collect(),
 			internal_fields: HashMap::new(),

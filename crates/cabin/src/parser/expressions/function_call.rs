@@ -473,7 +473,7 @@ impl CompileTime for FunctionCall {
 
 					inner_debug_section.finish();
 					debug_section.finish();
-					return Ok(Expression::Void(()));
+					return Ok(Expression::ErrorExpression(()));
 				}
 
 				bail_err!(base = "Attempted to call a function that doesn't have a body.",);

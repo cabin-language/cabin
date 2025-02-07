@@ -24,7 +24,8 @@ use crate::{
 		},
 		parse,
 		statements::tag::TagList,
-		Module, TokenQueue,
+		Module,
+		TokenQueue,
 	},
 	STDLIB,
 };
@@ -46,13 +47,7 @@ impl CabinCommand for RunCommand {
 		// Standard Library
 		{
 			let debug_section = debug_start!("{} stdlib module", "Adding".bold().green());
-			let mut stdlib_tokens = tokenize_without_prelude(STDLIB).unwrap_or_else(|error| {
-				eprintln!(
-					"{} A fatal internal error has occurred while tokenizing the Cabin standard library: {error}",
-					"Error:".bold().red()
-				);
-				std::process::exit(1);
-			});
+			let mut stdlib_tokens = tokenize_without_prelude(STDLIB);
 			let stdlib_ast = parse(&mut stdlib_tokens).unwrap_or_else(|error| {
 				eprintln!(
 					"{} A fatal internal error has occurred while parsing the Cabin standard library: {error}",

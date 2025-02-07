@@ -79,7 +79,7 @@ pub enum Expression {
 	Unary(UnaryOperation),
 	Parameter(Parameter),
 	RepresentAs(Extend),
-	Void(()),
+	ErrorExpression(()),
 }
 
 impl Parse for Expression {
@@ -138,7 +138,7 @@ impl CompileTime for Expression {
 					.evaluate_at_compile_time()
 					.map_err(|error| anyhow::anyhow!("{error}\n\t{}", "while evaluating a pointer compile-time".dimmed()))?,
 			),
-			Self::Void(_) => self,
+			Self::ErrorExpression(_) => self,
 		})
 	}
 }
@@ -204,7 +204,7 @@ impl Expression {
 			Self::Name(_) => "name",
 			Self::ObjectConstructor(_) => "object constructor",
 			Self::Unary(_) => "unary operation",
-			Self::Void(_) => "non-existent value",
+			Self::ErrorExpression(_) => "non-existent value",
 			Self::Pointer(_) => "pointer",
 			Self::If(_) => "if expression",
 			Self::ForEachLoop(_) => "for-each loop",
@@ -333,7 +333,7 @@ impl TranspileToC for Expression {
 			Self::Pointer(pointer) => pointer.to_c()?,
 			Self::ObjectConstructor(object_constructor) => object_constructor.to_c()?,
 			Self::Run(run_expression) => run_expression.to_c()?,
-			Self::Void(_) => "void".to_owned(),
+			Self::ErrorExpression(_) => "void".to_owned(),
 			_ => todo!(),
 		})
 	}
@@ -346,7 +346,7 @@ impl Typed for Expression {
 			Expression::FunctionCall(function_call) => function_call.get_type()?,
 			Expression::Run(run_expression) => run_expression.get_type()?,
 			Expression::Parameter(parameter) => parameter.get_type()?,
-			Expression::Void(()) => bail_err! {
+			Expression::ErrorExpression(()) => bail_err! {
 				base = "Attempted to get the type of a non-existent value",
 				while = "getting the type of a generic expression",
 			},
@@ -374,7 +374,7 @@ impl Spanned for Expression {
 			Expression::Match(match_expression) => match_expression.span(),
 			Expression::RepresentAs(represent_as) => represent_as.span(),
 			Expression::Unary(unary) => unary.span(),
-			Expression::Void(_) => todo!(),
+			Expression::ErrorExpression(_) => todo!(),
 		}
 	}
 }
@@ -420,7 +420,7 @@ impl Debug for Expression {
 			Self::Run(run) => run.fmt(formatter),
 			Self::Match(match_expression) => match_expression.fmt(formatter),
 			Self::RepresentAs(represent_as) => represent_as.fmt(formatter),
-			Self::Void(()) => write!(formatter, "{}", "<void>".style(context().theme.keyword())),
+			Self::ErrorExpression(()) => write!(formatter, "{}", "<void>".style(context().theme.keyword())),
 		}
 	}
 }

@@ -2,7 +2,7 @@ let This = group {};
 
 let Nothing = either {
 	nothing
-};
+}; 
 
 let Optional = choice<Data> {
 	Data,
@@ -94,13 +94,13 @@ let Number = group {
 	to = action(this: Number, end: Number): List {
 
 	}
-};
+}; 
 
 let AddableTo = group<Operand: Anything, Result: Anything> {
 	plus: action(this: This, other: Operand): Result
 }; 
 
-default extend Number tobe AddableTo<Number, Number> {
+default extend Number tobe AddableTo<Number, Number> { 
 
 	#[builtin<"Number.plus">]
 	plus = action(this: Number, other: Number): Number,
@@ -151,20 +151,4 @@ let system = new Object {
 let Map = group {
 	get = action(key: Anything): Anything {},
 	set = action(key: Anything, value: Anything): Nothing {}
-};
-
-let Warning = either {
-
-	# The warning that triggers when an either is created that has zero variants.
-	EmptyEither,
-
-	# The warning that triggers when an either is created that has only one variant.
-	SingleVariantEither,
-
-	# The warning that triggers when a runtime-preferred function is called at compile-time.
-	RuntimeFunctionCall,
-};
-
-let WarningSuppressor = group {
-	warning: Warning
 };

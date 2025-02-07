@@ -204,7 +204,7 @@ impl TranspileToC for GroupDeclaration {
 				if let Some(field_type) = &field.field_type {
 					field_type.try_as_literal()?.to_c_type()?
 				} else {
-					field.value.as_ref().unwrap_or(&Expression::Void(())).get_type()?.virtual_deref().to_c_type()?
+					field.value.as_ref().unwrap_or(&Expression::ErrorExpression(())).get_type()?.virtual_deref().to_c_type()?
 				},
 				field.name.to_c()?
 			)

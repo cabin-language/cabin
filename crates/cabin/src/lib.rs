@@ -1,6 +1,7 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, fmt::Display};
 
-use api::context::{context, Context, CONTEXT};
+use api::context::context;
+use comptime::CompileTime;
 use lexer::{Span, Token, TokenizeError};
 use parser::{expressions::Spanned, Module, ParseError};
 
@@ -12,7 +13,7 @@ pub mod lexer;
 pub mod parser;
 pub mod transpiler;
 
-#[derive(thiserror::Error, Debug)]
+#[derive(Clone, thiserror::Error, Debug)]
 pub enum ErrorInfo {
 	#[error("Tokenization error: {0}")]
 	Tokenize(TokenizeError),
@@ -21,7 +22,7 @@ pub enum ErrorInfo {
 	Parse(ParseError),
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(Clone, thiserror::Error, Debug)]
 pub struct Error {
 	span: Span,
 	error: ErrorInfo,
@@ -33,39 +34,77 @@ impl Spanned for Error {
 	}
 }
 
+#[derive(Clone, Debug, thiserror::Error)]
 pub struct Errors(Vec<Error>);
 
-macro_rules! errors {
-	($tokens: tt) => {
-		$crate::Errors::new(vec![tt])
-	};
+impl Display for Errors {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(
+			f,
+			"Multiple errors encountered:\n\n{}",
+			self.0.iter().map(|error| format!("{error}")).collect::<Vec<_>>().join("\n")
+		)
+	}
 }
 
 impl Errors {
+	pub fn none() -> Self {
+		Self(Vec::new())
+	}
+
 	pub fn new(errors: Vec<Error>) -> Self {
 		Self(errors)
+	}
+
+	pub fn push(&mut self, error: Error) {
+		self.0.push(error);
 	}
 
 	pub fn one(span: Span, error: ErrorInfo) -> Self {
 		Errors(vec![Error { span, error }])
 	}
+
+	pub fn is_empty(&self) -> bool {
+		self.0.is_empty()
+	}
 }
 
-impl std::fmt::Display for Error {
+impl Iterator for Errors {
+	type Item = Error;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.0.pop()
+	}
+}
+
+impl Display for Error {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		self.error.fmt(f)
 	}
 }
 
-pub fn parse(code: &str) -> Result<Module, Error> {
+/// Checks a Cabin program for errors.
+///
+/// # Returns
+///
+/// The errors that occurred. If no errors occurred, then `errors.is_empty() == true`.
+pub fn check(code: &str) -> Errors {
 	context().reset();
-	let mut tokens = lexer::tokenize_without_prelude(code)?;
-	parser::parse(&mut tokens)
+	let mut tokens = lexer::tokenize_without_prelude(code);
+	let program = parser::parse(&mut tokens).unwrap();
+	let _module = program.evaluate_at_compile_time().unwrap();
+	context().errors().to_owned()
 }
 
-pub fn tokenize(code: &str) -> Result<VecDeque<Token>, Error> {
+pub fn parse(code: &str) -> (Result<Module, Error>, Errors) {
 	context().reset();
-	lexer::tokenize_without_prelude(code)
+	let mut tokens = lexer::tokenize_without_prelude(code);
+	(parser::parse(&mut tokens), context().errors().to_owned())
+}
+
+pub fn tokenize(code: &str) -> (VecDeque<Token>, Errors) {
+	context().reset();
+	(lexer::tokenize_without_prelude(code), context().errors().to_owned())
 }
 
 /// The Cabin standard library. This is a Cabin file that's automatically imported into every Cabin

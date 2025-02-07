@@ -14,6 +14,7 @@ use crate::{
 	api::context::context,
 	cli::theme::{Style, Styled},
 	ErrorInfo,
+	Errors,
 	PRELUDE,
 };
 
@@ -307,6 +308,7 @@ pub enum TokenType {
 	/// outside of strings of course). Cabin is not a whitespace-sensitive language, so these are intentionally ignored when tokenizing.
 	Whitespace,
 	Unknown,
+	Unrecognized,
 }
 
 impl TokenType {
@@ -393,6 +395,7 @@ impl TokenType {
 			// regex - an "end of line" indicator followed by the letter 'a' - so that it'll never
 			// be naturally matched during tokenization.
 			Self::Unknown => regex!(r"$a"),
+			Self::Unrecognized => regex!(r"[^\s]+"),
 		}
 	}
 
@@ -493,7 +496,9 @@ impl Token {
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub struct Span {
+	/// The zero-indexed start byte index of the span.
 	pub start: usize,
+	/// The length of the span.
 	pub length: usize,
 }
 
@@ -584,7 +589,7 @@ impl Span {
 ///
 /// # Errors
 /// If the given code string is not syntactically valid Cabin code. It needn't be semantically valid, but it must be comprised of the proper tokens.
-pub fn tokenize_program(code: &str, is_prelude: bool) -> Result<VecDeque<Token>, crate::Error> {
+pub fn tokenize_program(code: &str, is_prelude: bool) -> VecDeque<Token> {
 	let mut code = code.to_owned();
 
 	let mut tokens = Vec::new();
@@ -594,27 +599,27 @@ pub fn tokenize_program(code: &str, is_prelude: bool) -> Result<VecDeque<Token>,
 	// This means we can just iterate while code isn't empty.
 	while !code.is_empty() {
 		// We've got a match - we found a token that matches the start of the code
-		if let Some((token_type, value)) = TokenType::find_match(&code) {
-			let length = value.len(); // This must be done early so that we aren't trying to get the length of a moved value
+		let Some((token_type, value)) = TokenType::find_match(&code) else { unreachable!() };
 
-			// Add the token
-			let token = Token {
-				token_type,
-				value,
-				span: Span { start: position, length },
-			};
-			tokens.push(token);
-			position += length;
-
-			code = code.get(length..).unwrap().to_owned();
-		}
-		// Unrecognized token - return an error!
-		else {
-			return Err(crate::Error {
+		if token_type == TokenType::Unrecognized {
+			context().add_error(crate::Error {
 				span: Span { start: position, length: 1 },
-				error: ErrorInfo::Tokenize(TokenizeError::UnrecognizedToken { code }),
+				error: ErrorInfo::Tokenize(TokenizeError::UnrecognizedToken(value.clone())),
 			});
 		}
+
+		let length = value.len(); // This must be done early so that we aren't trying to get the length of a moved value
+
+		// Add the token
+		let token = Token {
+			token_type,
+			value,
+			span: Span { start: position, length },
+		};
+		tokens.push(token);
+		position += length;
+
+		code = code.get(length..).unwrap().to_owned();
 	}
 
 	if !is_prelude {
@@ -626,7 +631,7 @@ pub fn tokenize_program(code: &str, is_prelude: bool) -> Result<VecDeque<Token>,
 		}
 	}
 
-	Ok(VecDeque::from(tokens))
+	VecDeque::from(tokens)
 }
 
 /// Tokenizes a string infallibly. This performs raw tokenization on a string and returns a token
@@ -674,10 +679,10 @@ pub fn tokenize_string(string: &str) -> VecDeque<Token> {
 	VecDeque::from(tokens)
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(Clone, thiserror::Error, Debug)]
 pub enum TokenizeError {
-	#[error("Unrecognized token: {code}")]
-	UnrecognizedToken { code: String },
+	#[error("Unrecognized token: {0}")]
+	UnrecognizedToken(String),
 }
 
 /// Tokenizes a string of Cabin source code into a vector of tokens. This is the first step in compiling Cabin source code. The returned vector of tokens
@@ -701,8 +706,8 @@ pub enum TokenizeError {
 ///
 /// If the given code string is not syntactically valid Cabin code. It needn't be semantically valid, but it must be comprised of the proper tokens.
 pub fn tokenize(code: &str) -> Result<VecDeque<Token>, crate::Error> {
-	let mut tokens = tokenize_program(code, false)?;
-	let mut prelude_tokens = tokenize_program(PRELUDE, true)?;
+	let mut tokens = tokenize_program(code, false);
+	let mut prelude_tokens = tokenize_program(PRELUDE, true);
 	prelude_tokens.append(&mut tokens);
 	Ok(prelude_tokens)
 }
@@ -726,7 +731,7 @@ pub fn tokenize(code: &str) -> Result<VecDeque<Token>, crate::Error> {
 /// # Errors
 ///
 /// If the given code string is not syntactically valid Cabin code. It needn't be semantically valid, but it must be comprised of the proper tokens.
-pub fn tokenize_without_prelude(code: &str) -> Result<VecDeque<Token>, crate::Error> {
+pub fn tokenize_without_prelude(code: &str) -> VecDeque<Token> {
 	tokenize_program(code, false)
 }
 
@@ -745,8 +750,8 @@ pub fn tokenize_without_prelude(code: &str) -> Result<VecDeque<Token>, crate::Er
 /// If an unrecognized token was encountered.
 pub fn tokenize_main(code: &str) -> anyhow::Result<VecDeque<Token>> {
 	let mut tokens = tokenize(code)?;
-	let mut pre_tokens = tokenize_program("let main_function = action {", true)?;
-	let mut post_tokens = tokenize_program("};", true)?;
+	let mut pre_tokens = tokenize_program("let main_function = action {", true);
+	let mut post_tokens = tokenize_program("};", true);
 	pre_tokens.append(&mut tokens);
 	pre_tokens.append(&mut post_tokens);
 	Ok(pre_tokens)

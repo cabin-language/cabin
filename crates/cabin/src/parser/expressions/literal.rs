@@ -248,16 +248,6 @@ impl LiteralObject {
 			return Ok(true);
 		}
 
-		for extension in context().scope_data.default_extensions() {
-			let type_to_extend = *extension.type_to_extend.try_as::<VirtualPointer>()?;
-			let type_to_be = *extension.type_to_be.as_ref().unwrap().0.try_as::<VirtualPointer>()?;
-			if self.is_this_type_assignable_to_type(type_to_extend)? {
-				if target_type.virtual_deref().is_this_type_assignable_to_type(type_to_be)? {
-					return Ok(true);
-				}
-			}
-		}
-
 		Ok(false)
 	}
 

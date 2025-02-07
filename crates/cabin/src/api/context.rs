@@ -16,6 +16,7 @@ use crate::{
 	},
 	comptime::memory::VirtualMemory,
 	lexer::Span,
+	Errors,
 };
 
 pub struct Context {
@@ -36,6 +37,8 @@ pub struct Context {
 	compiler_error_position: Vec<SourceFilePosition>,
 	options: CabinToml,
 	debug_indent: Vec<String>,
+
+	errors: Errors,
 }
 
 impl Default for Context {
@@ -55,6 +58,7 @@ impl Default for Context {
 			theme: Theme::default(),
 			colored_program: Vec::new(),
 			debug_indent: Vec::new(),
+			errors: Errors::none(),
 		}
 	}
 }
@@ -72,6 +76,10 @@ impl Context {
 		let _ = self.side_effects_stack.pop();
 	}
 
+	pub fn errors(&self) -> &Errors {
+		&self.errors
+	}
+
 	pub fn has_side_effects(&self) -> bool {
 		self.side_effects_stack.last().copied().unwrap_or(true)
 	}
@@ -80,6 +88,10 @@ impl Context {
 		if self.error_location.is_none() {
 			self.error_location = Some(position);
 		}
+	}
+
+	pub fn add_error(&mut self, error: crate::Error) {
+		self.errors.push(error);
 	}
 
 	pub fn set_error_details(&mut self, error_details: &str) {

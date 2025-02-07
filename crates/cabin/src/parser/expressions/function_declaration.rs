@@ -137,12 +137,12 @@ impl Parse for FunctionDeclaration {
 			for parameter in &compile_time_parameters {
 				context()
 					.scope_data
-					.declare_new_variable_from_id(parameter.name().clone(), Expression::Void(()), block.inner_scope_id())?;
+					.declare_new_variable_from_id(parameter.name().clone(), Expression::ErrorExpression(()), block.inner_scope_id())?;
 			}
 			for parameter in &parameters {
 				context()
 					.scope_data
-					.declare_new_variable_from_id(parameter.name().clone(), Expression::Void(()), block.inner_scope_id())?;
+					.declare_new_variable_from_id(parameter.name().clone(), Expression::ErrorExpression(()), block.inner_scope_id())?;
 			}
 			end = block.span();
 			(Expression::Block(block), inner_scope_id)

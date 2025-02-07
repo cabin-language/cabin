@@ -8,7 +8,14 @@ use crate::{
 	lexer::TokenType,
 	parse_list,
 	parser::{
-		expressions::{literal::LiteralConvertible, parameter::Parameter, Expression},
+		expressions::{
+			literal::LiteralConvertible,
+			name::Name,
+			object::{Field, Fields as _},
+			parameter::Parameter,
+			Expression,
+		},
+		statements::tag::TagList,
 		ListType,
 		Parse,
 		TokenQueue,
@@ -20,8 +27,9 @@ use crate::{
 pub struct DefaultExtend {
 	compile_time_parameters: Vec<VirtualPointer>,
 	pub type_to_extend: Expression,
-	pub type_to_be: Option<(Expression, Expression)>,
+	pub type_to_be: Option<Expression>,
 	pub id: usize,
+	pub fields: Vec<Field>,
 }
 
 static DEFAULT_EXTEND_ID: AtomicUsize = AtomicUsize::new(0);
@@ -57,12 +65,34 @@ impl Parse for DefaultExtend {
 		let type_to_be = if_then_some!(tokens.next_is(TokenType::KeywordToBe), {
 			let _ = tokens.pop(TokenType::KeywordToBe)?;
 			let type_to_be = Expression::parse(tokens)?;
-			let _ = tokens.pop(TokenType::KeywordWith)?;
-			let declaration = Expression::parse(tokens)?;
-			(type_to_be, declaration)
+			type_to_be
 		});
 
-		let _ = tokens.pop(TokenType::Semicolon)?;
+		let mut fields = Vec::new();
+		let end = parse_list!(tokens, ListType::Braced, {
+			// Parse tags
+			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::parse(tokens)?);
+
+			// Name
+			let name = Name::parse(tokens)?;
+
+			// Value
+			let _ = tokens.pop(TokenType::Equal)?;
+			let mut value = Expression::parse(tokens)?;
+
+			// Set tags
+			if let Some(tags) = tags {
+				value.set_tags(tags);
+			}
+
+			// Add field
+			fields.add_or_overwrite_field(Field {
+				name,
+				value: Some(value),
+				field_type: None,
+			});
+		})
+		.span;
 
 		let id = DEFAULT_EXTEND_ID.fetch_add(1, Ordering::Relaxed);
 
@@ -71,7 +101,10 @@ impl Parse for DefaultExtend {
 			type_to_be,
 			type_to_extend,
 			id,
+			fields,
 		};
+
+		let _ = tokens.pop(TokenType::Semicolon)?;
 
 		context().scope_data.add_default_extension(extension);
 
@@ -99,10 +132,7 @@ impl CompileTime for DefaultExtend {
 
 	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
 		let type_to_extend = self.type_to_extend.evaluate_at_compile_time()?;
-		let type_to_be = self
-			.type_to_be
-			.map(|(to_be, declaration)| anyhow::Ok((to_be.evaluate_at_compile_time()?, declaration.evaluate_at_compile_time()?)))
-			.transpose()?;
+		let type_to_be = self.type_to_be.map(|to_be| to_be.evaluate_at_compile_time()).transpose()?;
 		let compile_time_parameters = self
 			.compile_time_parameters
 			.into_iter()
@@ -114,6 +144,7 @@ impl CompileTime for DefaultExtend {
 			type_to_extend,
 			compile_time_parameters,
 			id: self.id,
+			fields: self.fields,
 		})
 	}
 }

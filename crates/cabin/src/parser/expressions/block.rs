@@ -61,9 +61,7 @@ impl Block {
 	///
 	/// If an unexpected token was encountered.
 	pub fn parse_with_scope_type(tokens: &mut TokenQueue, scope_type: ScopeType) -> Result<Block, crate::Error> {
-		let debug_section = debug_start!("{} a {} expression", "Compile-Time Evaluating".bold().green(), "block".cyan());
 		context().scope_data.enter_new_scope(scope_type);
-
 		let scope_id = context().scope_data.unique_id();
 
 		let start = tokens.pop(TokenType::LeftBrace)?.span;
@@ -77,7 +75,6 @@ impl Block {
 
 		context().scope_data.exit_scope().unwrap();
 
-		debug_section.finish();
 		Ok(Block {
 			statements,
 			inner_scope_id: scope_id,

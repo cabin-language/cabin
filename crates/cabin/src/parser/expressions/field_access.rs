@@ -66,27 +66,7 @@ impl CompileTime for FieldAccess {
 			match literal.field_access_type() {
 				// Object fields
 				FieldAccessType::Normal => {
-					let mut field = literal.get_field(self.right.clone());
-
-					if field.is_none() {
-						for extension in context().scope_data.default_extensions() {
-							if literal
-								.get_type()?
-								.virtual_deref()
-								.is_this_type_assignable_to_type(*extension.type_to_extend.try_as::<VirtualPointer>()?)?
-							{
-								let extension = *extension.type_to_be.as_ref().unwrap().1.try_as::<VirtualPointer>()?;
-								let fields = extension.virtual_deref().get_internal_field::<Vec<Field>>("fields")?;
-								field = fields
-									.iter()
-									.find_map(|field| (field.name == self.right).then(|| *field.value.as_ref().unwrap().try_as::<VirtualPointer>().unwrap()));
-								if field.is_some() {
-									break;
-								}
-							}
-						}
-					}
-
+					let field = literal.get_field(self.right.clone());
 					let field = field.ok_or_else(|| {
 						anyhow::anyhow!(
 							"Attempted to access a the field \"{}\" on an object, but no field with that name exists on that object.",

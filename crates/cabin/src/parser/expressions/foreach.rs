@@ -52,7 +52,7 @@ impl Parse for ForEachLoop {
 		let inner_scope_id = body.inner_scope_id();
 		context()
 			.scope_data
-			.declare_new_variable_from_id(binding_name.clone(), Expression::Void(()), inner_scope_id)?;
+			.declare_new_variable_from_id(binding_name.clone(), Expression::ErrorExpression(()), inner_scope_id)?;
 
 		Ok(ForEachLoop {
 			binding_name,

@@ -52,7 +52,7 @@ impl Parse for Match {
 				Some(type_to_match) => {
 					context()
 						.scope_data
-						.declare_new_variable_from_id(first.clone(), Expression::Void(()), body.inner_scope_id())?;
+						.declare_new_variable_from_id(first.clone(), Expression::ErrorExpression(()), body.inner_scope_id())?;
 					MatchBranch {
 						type_to_match,
 						name: Some(first),

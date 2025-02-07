@@ -51,7 +51,7 @@ impl Parse for OneOf {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, ListType::AngleBracketed, {
 				let name = Name::parse(tokens)?;
-				context().scope_data.declare_new_variable(name.clone(), Expression::Void(()))?;
+				context().scope_data.declare_new_variable(name.clone(), Expression::ErrorExpression(()))?;
 				compile_time_parameters.push(name);
 			});
 			compile_time_parameters

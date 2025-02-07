@@ -6,8 +6,6 @@ A dead simple, highly performant, extremely safe programming language.
 
 ## Installation
 
-**Please read the `## Syntax Gotchas` section under `# Limitations` before using Cabin to avoid confusion.**
-
 Cabin is not yet available for installation, because it's *that* early on. It will release in 0.1 for alpha testing.
 
 ## Philosophy & Motivation
@@ -28,41 +26,33 @@ There are other attempts to fill this hole as well, such as Nim and V. This is j
 
 Cabin is primarily inspired by Lua, Rust, Go, and Zig, except it aims to be type-safer than Lua, simpler than Rust, faster than Go, and memory-safer than Zig. That is the niche Cabin aims to fill.
 
-There will never be a Cabin 2.0; In fact, there will never even be a Cabin 1.1. Once the features of the language are added and 1.0 is released, Cabin will only change for bugfixes from then on. No new syntax, no changes to the standard library.
-
 ## Niceties
 
 Cabin has several features that make it attractive. Below are just some examples.
 
 ### Detailed and Readable errors
 
-Cabin generates very detailed and human-readable errors at the command line. Here's an extreme example with all verbosity and debug information enabled:
+Cabin generates very detailed and human-readable errors at the command line. Here's a (very) extreme example with all verbosity and debug information enabled:
 
 ![errors](/docs/errors.png)
-
-Cabin does allow, through flags, more "structured" errors &mdash; i.e., errors printed in formats like JSON or TOML. This is mainly used for IDEs and linters to integrate Cabin errors as diagnostics. The default formatting mode is human readable, which will output what you can see above.
-
-### Thoughtless Memory Management Without Garbage Collection
-
-Cabin provides no memory semantics to the developer. That is, memory is not manually managed through things like `malloc` or `free`, there are no ownership or borrowing semantics, etc. However, Cabin **is not garbage collected**. Cabin has its own system of determining when variables need to be cleaned up at compile-time instead of runtime. You can think of it as "compile-time garbage collection" &mdash; meaning you get the ergonomics of garbage collection without the performance hit.
 
 ### Compile-Time by default
 
 Cabin has a unique capability to be able to run code at compile-time. However, unlike most other languages with this capability (like Zig's `comptime` or Jai's `#run`), Cabin *runs code at compile-time as the default*. What this means is that if your code *can* be run at compile-time, it will be. This means Cabin can report errors that are normally completely impossible for other languages to detect, and automatically optimizes for maximum runtime performance.
 
-Of course, if you would like to perform an action at runtime like writing a file, you can force it with the `run` keyword, which in this case would look something like `run write_file(filename, contents)`. The run keyword forces the expression after it (but not its sub-expressions!) to be run at runtime instead of compile-time. Cabin *can* write to files at compile-time, but you probably don't want to, so this is where you'd use a `run` expression. Some functions, including `write_file`, are marked with `#[runtime_preferred]`; Calling these functions at compile-time will give a (suppressible) warning that you're calling a function at compile-time which is typically used at runtime.
+Of course, if you would like to perform an action at runtime, like writing a file, you can force it with the `run` keyword, which in that case would look something like `run write_file(filename, contents)`. The run keyword forces the expression after it (but not its sub-expressions!) to be run at runtime instead of compile-time. Cabin *can* write to files at compile-time, but you probably don't want to, so this is where you'd use a `run` expression. Some functions, including `write_file`, are tagged with `#[prefer_runtime]`; Calling these functions at compile-time will give a (suppressible) warning that you're calling a function at compile-time that's typically used at runtime.
 
-You can think about "what can be run at compile-time" as a tree &mdash; The arguments passed to a Cabin program at the command-line aren't known at compile-time. The expressions that depend on those arguments are thus also not evaluated at compile-time. The expressions that depend on the results of *those* expressions are also not evaluated at compile-time, and so on. Any expression in the expression tree that doesn't rely on user input can be and will be evaluated at compile-time.
+You can think about "what can be run at compile-time" as a tree&mdash;The arguments passed to a Cabin program at the command-line aren't known at compile-time. The expressions that depend on those arguments are thus also not evaluated at compile-time. The expressions that depend on the results of *those* expressions are also not evaluated at compile-time, and so on. Any expression in the expression tree that doesn't rely on user input (or a `run` expression) can and will be evaluated at compile-time.
 
-One of the nice features about Cabin's compile-time code compared to Zig's is that Cabin uses a unified API to run compile-time code and runtime code. For example, to read a file at compile-time in Zig, you use `@embedFile`, but to read a file at runtime, you do something along the lines of `try std.fs.cwd().openFile(filename, .{});` and read it with a reader from there. In Cabin, the API is the same: You do `read_file(filename)` to read a file at compile-time or runtime, which is just a regular Cabin function that, like all functions in Cabin, can be called at runtime or compile-time. This means you don't need to remember two different ways of doing the same thing.
+One of the nice features about Cabin's compile-time code compared to Zig's is that Cabin uses a unified API to run compile-time code and runtime code. For example, to read a file at compile-time in Zig, you use `@embedFile`, but to read a file at runtime, you'd do something along the lines of `try std.fs.cwd().openFile(filename, .{});` and read it with a reader from there. In Cabin, the API is the same: You do `read_file(filename)` to read a file at compile-time or runtime, which is just a regular Cabin function that, like all functions in Cabin, can be called at runtime or compile-time. This means you don't need to remember two different ways of doing the same thing.
 
 ### Safety to the Max
 
 Cabin is designed to be extremely safe, both in memory and in types. In terms of type safety specifically, Cabin makes no compromises. In Cabin, you can't assign `null` (what we call `nothing`) to any type; You must specify that the type is a union of some other type or `nothing`. Cabin is also statically typed, so there doesn't exist any sort of "type error" or "missing property error" at runtime at all.
 
-In fact, Cabin doesn't have runtime errors *at all*. Part of the philosophy of Cabin's functional style is that each function should be responsible for doing whatever it's job is, and when something goes wrong, it should just report that back to the caller (return an error). There is no immediate panicking or exiting the program; No one function should have the power to determine what to do with the entire program when an error is encountered; Instead, it should simply pass the error up the error stack. You can do this repeatedly for functions in functions, and only when the global scope (or "main function" if you'd like to think of it that way) encounters an error will the program actually terminate.
+In fact, Cabin doesn't have runtime errors *at all*. Part of the philosophy of Cabin's functional style is that each function should be responsible for doing whatever it's job is, and when something goes wrong, it should just report that back to the caller (return an error). There is no immediate panicking or exiting the program; No single function should have the power to determine what to do with the entire program when an error is encountered; Instead, it should simply report back "hey, I wasn't able to do my individual job". You can do this repeatedly for functions in functions, and only when the global scope (or "main function" if you'd like to think of it that way) encounters an error will the program actually terminate.
 
-Furthermore, memory unsafety doesn't exist in Cabin. It's impossible to memory leak. It's impossible to have a dangling reference. No, it's not garbage collected.
+Furthermore, memory unsafety doesn't exist in Cabin. It's impossible to memory leak. It's impossible to have a dangling reference.
 
 ## Tooling Reference
 
@@ -129,30 +119,6 @@ The Cabin toolchain has several commands for package management:
 ## Limitations
 
 While Cabin was designed to give certain specific benefits, some of them come with drawbacks. Some are listed here.
-
-### Syntax Gotchas
-
-Cabin's syntax makes a few compromises to be as terse and expressive as it is. For example, when comparing things with less-than and greater-than, you must use spaces around the comparison operator:
-
-```cabin
-if a<b { ... } // Not valid
-if a < b { ... } // Valid
-```
-
-While this may seem arbitrary, this is necessary to be able to distinguish what's a function call or parameterized group from a comparison. For example, consider this case:
-
-```cabin
-if a<b and c>(d) { ... }
-```
-
-this could be a function called `a`, with a compile time parameter of the expression `b and c`, and a runtime parameter `d`, or, this could be checking if `a < b` and `c > d`. This is ambiguous and the compiler has no way of knowing what you're trying to do here. So, We require that you use spaces around comparison operators and no spaces around compile-time parameters:
-
-```cabin
-foo < hi > // Not a valid function call
-foo<hi> // Valid!
-```
-
-This is standard formatting anyway, but whitespace-sensitivity can definitely be confusing and a "gotcha" for some people, so it's good to make note of.
 
 ### No Caching
 
