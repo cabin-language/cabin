@@ -1,0 +1,6 @@
+#!/usr/bin/bash
+
+set -e
+
+cargo build --release
+cp target/release/cabin-language-server ~/.local/share/nvim/cabin/crates/cabin-language-server/target/release/cabin-language-server
