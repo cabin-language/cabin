@@ -1,18 +1,14 @@
 use std::fmt::Debug;
 
-use colored::Colorize as _;
 // This is required because of a bug in `try_as`
 use try_as::traits::{self as try_as_traits, TryAsMut};
 
-use super::{Parse, TokenQueueFunctionality as _};
 use crate::{
 	api::{context::context, scope::ScopeData, traits::TryAs as _},
 	bail_err,
 	cli::theme::Styled,
-	comptime::{memory::VirtualPointer, CompileTime},
-	debug_log,
+	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
 	lexer::Span,
-	mapped_err,
 	parser::{
 		expressions::{
 			block::Block,
@@ -24,7 +20,6 @@ use crate::{
 			group::GroupDeclaration,
 			if_expression::IfExpression,
 			literal::{LiteralConvertible, LiteralObject},
-			match_expression::Match,
 			name::Name,
 			object::ObjectConstructor,
 			operators::BinaryExpression,
@@ -33,10 +28,14 @@ use crate::{
 			unary::UnaryOperation,
 		},
 		statements::tag::TagList,
+		Parse,
 		TokenQueue,
+		TokenQueueFunctionality as _,
 		TryParse,
 	},
 	transpiler::TranspileToC,
+	Diagnostic,
+	DiagnosticInfo,
 };
 
 pub mod block;
@@ -49,7 +48,6 @@ pub mod function_declaration;
 pub mod group;
 pub mod if_expression;
 pub mod literal;
-pub mod match_expression;
 pub mod name;
 pub mod object;
 pub mod oneof;
@@ -71,7 +69,6 @@ pub enum Expression {
 	FieldAccess(FieldAccess),
 	FunctionCall(FunctionCall),
 	If(IfExpression),
-	Match(Match),
 	Name(Name),
 	ObjectConstructor(ObjectConstructor),
 	ForEachLoop(ForEachLoop),
@@ -106,94 +103,50 @@ impl Parse for Expression {
 impl CompileTime for Expression {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		Ok(match self {
-			Self::Block(block) => block
-				.evaluate_at_compile_time()
-				.map_err(|error| anyhow::anyhow!("{error}\n\t{}", "while evaluating a block at compile-time".dimmed()))?,
-			Self::FieldAccess(field_access) => field_access
-				.evaluate_at_compile_time()
-				.map_err(|error| anyhow::anyhow!("{error}\n\t{}", "while evaluating a field access at compile-time".dimmed()))?,
-			Self::FunctionCall(function_call) => function_call
-				.evaluate_at_compile_time()
-				.map_err(|error| anyhow::anyhow!("{error}\n\t{}", "while evaluating a function call at compile-time".dimmed()))?,
-			Self::If(if_expression) => if_expression
-				.evaluate_at_compile_time()
-				.map_err(|error| anyhow::anyhow!("{error}\n\t{}", "while evaluating an if expression at compile-time".dimmed()))?,
-			Self::RepresentAs(represent_as) => Expression::RepresentAs(represent_as.evaluate_at_compile_time().map_err(mapped_err! {
-				while = "evaluating a represent-as expression at compile-time",
-			})?),
-			Self::Name(name) => name.clone().evaluate_at_compile_time().map_err(mapped_err! {
-				while = format!("evaluating the name \"{}\" at compile-time", name.unmangled_name().bold().cyan()),
-			})?,
-			Self::ObjectConstructor(constructor) => constructor.evaluate_at_compile_time().map_err(mapped_err! {
-				while = "evaluating a object constructor expression at compile-time",
-			})?,
-			Self::Match(match_expression) => match_expression.evaluate_at_compile_time().map_err(mapped_err! {
-				while = "evaluating a match expression at compile-time",
-			})?,
-			Self::Parameter(parameter) => Expression::Parameter(parameter.evaluate_at_compile_time().map_err(mapped_err! {
-				while = "evaluating a parameter expression at compile-time",
-			})?),
-			Self::Unary(unary) => unary.evaluate_at_compile_time().map_err(mapped_err! {
-				while = "evaluating a unary operation expression at compile-time",
-			})?,
-			Self::ForEachLoop(for_loop) => for_loop
-				.evaluate_at_compile_time()
-				.map_err(|error| anyhow::anyhow!("{error}\n\t{}", "while evaluating a for-each loop at compile-time".dimmed()))?,
-			Self::Run(run_expression) => Expression::Run(
-				run_expression
-					.evaluate_at_compile_time()
-					.map_err(|error| anyhow::anyhow!("{error}\n\t{}", "while evaluating a for-each loop at compile-time".dimmed()))?,
-			),
-			Self::Pointer(pointer) => Expression::Pointer(
-				pointer
-					.evaluate_at_compile_time()
-					.map_err(|error| anyhow::anyhow!("{error}\n\t{}", "while evaluating a pointer compile-time".dimmed()))?,
-			),
+	fn evaluate_at_compile_time(self) -> Self::Output {
+		match self {
+			Self::Block(block) => block.evaluate_at_compile_time(),
+			Self::FieldAccess(field_access) => field_access.evaluate_at_compile_time(),
+			Self::FunctionCall(function_call) => function_call.evaluate_at_compile_time(),
+			Self::If(if_expression) => if_expression.evaluate_at_compile_time(),
+			Self::RepresentAs(represent_as) => Expression::RepresentAs(represent_as.evaluate_at_compile_time()),
+			Self::Name(name) => name.clone().evaluate_at_compile_time(),
+			Self::ObjectConstructor(constructor) => constructor.evaluate_at_compile_time(),
+			Self::Parameter(parameter) => Expression::Parameter(parameter.evaluate_at_compile_time()),
+			Self::Unary(unary) => unary.evaluate_at_compile_time(),
+			Self::ForEachLoop(for_loop) => for_loop.evaluate_at_compile_time(),
+			Self::Run(run_expression) => Expression::Run(run_expression.evaluate_at_compile_time()),
+			Self::Pointer(pointer) => Expression::Pointer(pointer.evaluate_at_compile_time()),
 			Self::ErrorExpression(_) => self,
-		})
+		}
 	}
 }
 
 impl Expression {
 	pub fn try_as_literal(&self) -> anyhow::Result<&'static LiteralObject> {
-		debug_log!("Interpreting {} as a literal", self.kind_name().cyan());
 		Ok(match self {
 			Self::Pointer(pointer) => pointer.virtual_deref(),
-			Self::Name(name) => name
-				.clone()
-				.evaluate_at_compile_time()
-				.map_err(mapped_err! {
-					while = format!("evaluating the name \"{}\" at compile-time", name.unmangled_name().bold().cyan()),
-				})?
-				.try_as_literal()?,
+			Self::Name(name) => name.clone().evaluate_at_compile_time().try_as_literal()?,
 			_ => bail_err! {
 				base = format!("A value that's not fully known at compile-time was used as a type; It can only be evaluated into a {} at compile-time.", self.kind_name().bold().yellow()),
 			},
 		})
 	}
 
-	pub fn is_fully_known_at_compile_time(&self) -> anyhow::Result<bool> {
-		Ok(match self {
+	pub fn is_fully_known_at_compile_time(&self) -> bool {
+		match self {
 			Self::Pointer(_) => true,
 			Self::Parameter(_) => true,
-			Self::Name(name) => name
-				.clone()
-				.evaluate_at_compile_time()
-				.map_err(mapped_err! {
-					while = format!("evaluating the name \"{}\" at compile-time", name.unmangled_name().bold().cyan()),
-				})?
-				.is_fully_known_at_compile_time()?,
+			Self::Name(name) => name.clone().evaluate_at_compile_time().is_fully_known_at_compile_time(),
 			_ => false,
-		})
+		}
 	}
 
-	pub fn evaluate_as_type(self) -> anyhow::Result<Expression> {
-		Ok(match self {
+	pub fn evaluate_as_type(self) -> Expression {
+		match self {
 			Self::Pointer(pointer) => Expression::Pointer(pointer),
-			_ => self.evaluate_at_compile_time()?,
-		})
+			_ => self.evaluate_at_compile_time(),
+		}
 	}
 
 	/// Returns whether this expression is a virtual pointer.
@@ -223,7 +176,6 @@ impl Expression {
 			Self::ForEachLoop(_) => "for-each loop",
 			Self::Run(_) => "run expression",
 			Self::Parameter(_) => "parameter",
-			Self::Match(_) => "match",
 			Self::RepresentAs(_) => "represent-as expression",
 		}
 	}
@@ -384,7 +336,6 @@ impl Spanned for Expression {
 			Expression::FieldAccess(field_access) => field_access.span(),
 			Expression::ForEachLoop(for_each_loop) => for_each_loop.span(),
 			Expression::Parameter(parameter) => parameter.span(),
-			Expression::Match(match_expression) => match_expression.span(),
 			Expression::RepresentAs(represent_as) => represent_as.span(),
 			Expression::Unary(unary) => unary.span(),
 			Expression::ErrorExpression(span) => *span,
@@ -407,13 +358,17 @@ pub trait Spanned {
 }
 
 impl RuntimeableExpression for Expression {
-	fn evaluate_subexpressions_at_compile_time(self) -> anyhow::Result<Self> {
-		Ok(match self {
-			Self::FunctionCall(function_call) => Expression::FunctionCall(function_call.evaluate_subexpressions_at_compile_time()?),
-			_ => bail_err! {
-				base = format!("Attempted to use a run-expression on a {}, but forcing this type of expression to run at runtime is pointless.", self.kind_name()),
+	fn evaluate_subexpressions_at_compile_time(self) -> Self {
+		match self {
+			Self::FunctionCall(function_call) => Expression::FunctionCall(function_call.evaluate_subexpressions_at_compile_time()),
+			_ => {
+				context().add_diagnostic(Diagnostic {
+					span: self.span(),
+					error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::RunNonFunctionCall)),
+				});
+				self
 			},
-		})
+		}
 	}
 }
 
@@ -431,7 +386,6 @@ impl Debug for Expression {
 			Self::Parameter(parameter) => parameter.fmt(formatter),
 			Self::Pointer(pointer) => pointer.fmt(formatter),
 			Self::Run(run) => run.fmt(formatter),
-			Self::Match(match_expression) => match_expression.fmt(formatter),
 			Self::RepresentAs(represent_as) => represent_as.fmt(formatter),
 			Self::ErrorExpression(_span) => write!(formatter, "{}", "<void>".style(context().theme.keyword())),
 		}

@@ -6,7 +6,6 @@ use crate::{
 		scope::{ScopeId, ScopeType},
 	},
 	comptime::CompileTime,
-	debug_start,
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{Expression, Spanned},
@@ -99,16 +98,16 @@ impl CompileTime for Block {
 	/// statement was present.
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
+	fn evaluate_at_compile_time(self) -> Self::Output {
 		let mut statements = Vec::new();
 		let _scope_reverter = context().scope_data.set_current_scope(self.inner_scope_id);
 		for statement in self.statements {
-			let evaluated_statement = statement.evaluate_at_compile_time()?;
+			let evaluated_statement = statement.evaluate_at_compile_time();
 
 			// Tail statement
 			if let Statement::Tail(tail_statement) = evaluated_statement {
 				if tail_statement.value.try_as_literal().is_ok() {
-					return Ok(tail_statement.value);
+					return tail_statement.value;
 				}
 				statements.push(Statement::Tail(tail_statement));
 			}
@@ -118,11 +117,11 @@ impl CompileTime for Block {
 			}
 		}
 
-		Ok(Expression::Block(Block {
+		Expression::Block(Block {
 			statements,
 			inner_scope_id: self.inner_scope_id,
 			span: self.span,
-		}))
+		})
 	}
 }
 

@@ -4,7 +4,6 @@ use colored::Colorize as _;
 
 use super::{context::context, traits::TryAs as _};
 use crate::{
-	bail_err,
 	comptime::memory::VirtualPointer,
 	debug_log,
 	parser::{
@@ -100,7 +99,7 @@ impl Scope {
 		extensions
 	}
 
-	pub fn map_default_extension<E, F: FnOnce(DefaultExtend) -> Result<DefaultExtend, E>>(&mut self, id: usize, map: F) -> Result<(), E> {
+	pub fn map_default_extension<F: FnOnce(DefaultExtend) -> DefaultExtend>(&mut self, id: usize, map: F) {
 		let index = self
 			.default_extensions
 			.iter()
@@ -109,9 +108,8 @@ impl Scope {
 			.unwrap();
 
 		let value = self.default_extensions.remove(index);
-		let result = map(value)?;
+		let result = map(value);
 		self.default_extensions.insert(index, result);
-		Ok(())
 	}
 
 	/// Returns the information about a variable declared in this scope with the given name. Note that this only checks variables declared exactly
@@ -425,7 +423,7 @@ impl ScopeData {
 	///
 	/// # Returns
 	/// An immutable reference to the global scope stored in this scope tree.
-	fn get_global_scope(&self) -> &Scope {
+	pub fn get_global_scope(&self) -> &Scope {
 		let mut current = self.current();
 		while let Some(parent_index) = current.parent {
 			current = self.scopes.get(parent_index).unwrap();
@@ -445,27 +443,22 @@ impl ScopeData {
 	///
 	/// # Errors
 	/// Errors if no variable with the given name exists in the current scope.
-	pub fn reassign_variable_from_id(&mut self, name: &Name, mut value: Expression, id: ScopeId) -> anyhow::Result<()> {
-		debug_log!(
-			"Reassigning the variable called {} in a scope of type {:?} to be {value:?}",
-			name.unmangled_name().red(),
-			self.get_scope_from_id(id).scope_type
-		);
+	pub fn reassign_variable_from_id(&mut self, name: &Name, mut value: Expression, id: ScopeId) {
 		// Traverse up the parent tree looking for the declaration and reassign it
 		let mut current = Some(id.0);
 		while let Some(current_index) = current {
 			// If we find it, we're done (return Ok), if not, we continue
 			match self.scopes.get_mut(current_index).unwrap().reassign_variable_direct(name, value) {
-				Ok(()) => return Ok(()),
+				Ok(()) => return,
 				Err(returned_value) => value = returned_value,
 			}
 			current = self.scopes.get(current_index).unwrap().parent;
 		}
 
 		// No variable found
-		bail_err! {
-			base = format!("attempting to reassign the variable \"{name}\", but no variable with the name \"{name}\" exists in this scope", name = name.unmangled_name().cyan()),
-		};
+		// bail_err! {
+		// 	base = format!("attempting to reassign the variable \"{name}\", but no variable with the name \"{name}\" exists in this scope", name = name.unmangled_name().cyan()),
+		// };
 	}
 
 	/// Reassigns a variable in the current scope. This will traverse up the scope tree through the current scope's parents to find the declaration for the given
@@ -480,7 +473,7 @@ impl ScopeData {
 	///
 	/// # Errors
 	/// Returns an error if no variable with the given name exists in the current scope.
-	pub fn reassign_variable(&mut self, name: &Name, value: Expression) -> anyhow::Result<()> {
+	pub fn reassign_variable(&mut self, name: &Name, value: Expression) {
 		self.reassign_variable_from_id(name, value, ScopeId(self.current_scope))
 	}
 
@@ -565,7 +558,7 @@ impl ScopeData {
 		self.current_mut().default_extensions.push(extension);
 	}
 
-	pub fn map_default_extension_from_id<E, F: FnOnce(DefaultExtend) -> Result<DefaultExtend, E>>(&mut self, scope_id: ScopeId, extend_id: usize, map: F) -> Result<(), E> {
+	pub fn map_default_extension_from_id<F: FnOnce(DefaultExtend) -> DefaultExtend>(&mut self, scope_id: ScopeId, extend_id: usize, map: F) {
 		self.get_scope_mut_from_id(scope_id).map_default_extension(extend_id, map)
 	}
 }

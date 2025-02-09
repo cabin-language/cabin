@@ -1,6 +1,5 @@
 use std::{collections::HashMap, fmt::Write as _};
 
-use colored::Colorize as _;
 use convert_case::{Case, Casing};
 
 use crate::{
@@ -23,7 +22,6 @@ use crate::{
 		TryParse,
 	},
 	transpiler::TranspileToC,
-	warn,
 	Diagnostic,
 	DiagnosticInfo,
 	Warning,
@@ -96,24 +94,19 @@ impl TryParse for Either {
 impl CompileTime for Either {
 	type Output = Either;
 
-	fn evaluate_at_compile_time(mut self) -> anyhow::Result<Self::Output> {
+	fn evaluate_at_compile_time(mut self) -> Self::Output {
 		// Tags
-		self.tags = self.tags.evaluate_at_compile_time()?;
+		self.tags = self.tags.evaluate_at_compile_time();
 
 		// Warning for empty either
 		if self.variants.is_empty() && !self.tags.suppresses_warning(CompilerWarning::EmptyEither) {
-			warn!("An empty either was created, which can never be instantiated.");
+			context().add_diagnostic(Diagnostic {
+				span: self.span(),
+				error: DiagnosticInfo::Warning(Warning::EmptyEither),
+			});
 		}
 
-		// Warning for single item either
-		if self.variants.len() == 1 && !self.tags.suppresses_warning(CompilerWarning::SingleVariantEither) {
-			warn!(
-				"An either was created with only one variant (\"{}\"), which can only ever be instantiated to that one value.",
-				self.variants.first().unwrap().0.unmangled_name().red()
-			);
-		}
-
-		Ok(self)
+		self
 	}
 }
 

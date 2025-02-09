@@ -1,17 +1,7 @@
 use crate::{
-	api::{context::context, scope::ScopeType},
 	comptime::CompileTime,
 	lexer::Span,
-	parser::{
-		expressions::{
-			block::Block,
-			match_expression::{Match, MatchBranch},
-			Expression,
-			Spanned,
-			Typed,
-		},
-		statements::{tail::TailStatement, Statement},
-	},
+	parser::expressions::{Expression, Spanned},
 };
 
 /// A unary operator. These are types of operators that take a single expression and operate on it.
@@ -33,40 +23,8 @@ pub struct UnaryOperation {
 impl CompileTime for UnaryOperation {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		let expression = self.expression.evaluate_as_type()?;
-		match self.operator {
-			UnaryOperator::QuestionMark => {
-				if expression.get_type()?.virtual_deref().type_name() == &"Attempted".into() {
-					Ok(Expression::Block(Block::new(
-						vec![Statement::Expression(Expression::Match(Match {
-							expression: Box::new(expression),
-							branches: vec![MatchBranch {
-								name: None,
-								type_to_match: Expression::Name("Nothing".into()),
-								body: Block::new(
-									vec![Statement::Tail(TailStatement {
-										label: "action".into(),
-										value: Expression::Name("nothing".into()),
-										span: Span::unknown(),
-									})],
-									context().scope_data.new_scope_id(ScopeType::Block),
-									Span::unknown(),
-								),
-							}],
-							span: Span::unknown(),
-						}))],
-						context().scope_data.new_scope_id(ScopeType::Block),
-						Span::unknown(),
-					)))
-				} else {
-					todo!()
-				}
-			},
-			UnaryOperator::ExclamationPoint => {
-				todo!()
-			},
-		}
+	fn evaluate_at_compile_time(self) -> Self::Output {
+		todo!()
 	}
 }
 

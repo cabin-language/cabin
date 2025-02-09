@@ -92,12 +92,12 @@ macro_rules! function {
 
 /// This should only be called after parse-time.
 pub fn string(value: &str, span: Span) -> Expression {
-	ObjectConstructor::string(value, span).evaluate_at_compile_time().unwrap()
+	ObjectConstructor::string(value, span).evaluate_at_compile_time()
 }
 
 /// This should only be called after parse-time.
 pub fn number(number: f64, span: Span) -> Expression {
-	ObjectConstructor::number(number, span).evaluate_at_compile_time().unwrap()
+	ObjectConstructor::number(number, span).evaluate_at_compile_time()
 }
 
 /// Returns the second value provided wrapped in `Some()` if the first value is true; Otherwise, returns `None`.

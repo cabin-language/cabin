@@ -4,8 +4,6 @@ use super::Statement;
 use crate::{
 	api::{context::context, scope::ScopeId},
 	comptime::CompileTime,
-	debug_start,
-	err,
 	if_then_some,
 	lexer::{Span, TokenType},
 	mapped_err,
@@ -42,12 +40,8 @@ impl Declaration {
 		&self.name
 	}
 
-	pub fn value(&self) -> anyhow::Result<&Expression> {
-		context().scope_data.get_variable_from_id(self.name.clone(), self.scope_id).ok_or_else(|| {
-			err! {
-				base = format!("Attempted to get the value for the declaration of \"{}\", but it has no value stored.", self.name.unmangled_name().bold().cyan()),
-			}
-		})
+	pub fn value(&self) -> &Expression {
+		context().scope_data.get_variable_from_id(self.name.clone(), self.scope_id).unwrap()
 	}
 
 	pub const fn declaration_type(&self) -> &DeclarationType {
@@ -139,24 +133,10 @@ impl TryParse for Declaration {
 impl CompileTime for Declaration {
 	type Output = Declaration;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		let debug_section = debug_start!(
-			"{} the declaration for the variable {}",
-			"Compile-Time Evaluating".bold().green(),
-			self.name.unmangled_name().red()
-		);
-		let evaluated = self
-			.value()
-			.map_err(mapped_err! {
-				while = format!("getting the value of the declaration of \"{}\"", self.name.unmangled_name().bold().cyan()),
-			})?
-			.clone()
-			.evaluate_at_compile_time()?; // TODO: use a mapping function instead of cloning
-		context().scope_data.reassign_variable_from_id(&self.name, evaluated, self.scope_id)?;
-
-		// Return the declaration
-		debug_section.finish();
-		Ok(self)
+	fn evaluate_at_compile_time(self) -> Self::Output {
+		let evaluated = self.value().clone().evaluate_at_compile_time(); // TODO: use a mapping function instead of cloning
+		context().scope_data.reassign_variable_from_id(&self.name, evaluated, self.scope_id);
+		self
 	}
 }
 
@@ -165,7 +145,7 @@ impl TranspileToC for Declaration {
 		Ok(format!(
 			"void* {} = {};",
 			self.name.to_c()?,
-			self.value()?.to_c().map_err(mapped_err! {
+			self.value().to_c().map_err(mapped_err! {
 				while = format!("transpiling the value of the initial declaration for the variable \"{}\" to C", self.name.unmangled_name()),
 			})?
 		))

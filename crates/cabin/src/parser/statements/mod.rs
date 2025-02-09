@@ -1,14 +1,13 @@
 use use_extend::{DefaultExtend, DefaultExtendPointer};
 
-use super::{expressions::Spanned, Parse};
 use crate::{
 	api::context::context,
 	comptime::CompileTime,
 	lexer::{Span, TokenType},
-	mapped_err,
 	parser::{
-		expressions::Expression,
+		expressions::{Expression, Spanned},
 		statements::{declaration::Declaration, tail::TailStatement},
+		Parse,
 		TokenQueue,
 		TokenQueueFunctionality as _,
 		TryParse,
@@ -93,22 +92,14 @@ impl Parse for Statement {
 impl CompileTime for Statement {
 	type Output = Statement;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		Ok(match self {
-			Statement::Declaration(declaration) => Statement::Declaration(declaration.evaluate_at_compile_time().map_err(mapped_err! {
-				while = "evaluating a name declaration at compile-time",
-			})?),
-			Statement::DefaultExtend(default_extend) => Statement::DefaultExtend(default_extend.evaluate_at_compile_time().map_err(mapped_err! {
-				while = "evaluating a default-extend statement at compile-time",
-			})?),
-			Statement::Expression(expression) => Statement::Expression(expression.evaluate_at_compile_time().map_err(mapped_err! {
-				while = "evaluating an expression statement at compile-time",
-			})?),
-			Statement::Tail(tail) => Statement::Tail(tail.evaluate_at_compile_time().map_err(mapped_err! {
-				while = format!("evaluating a {} at compile-time", "tail statement".bold().cyan()),
-			})?),
+	fn evaluate_at_compile_time(self) -> Self::Output {
+		match self {
+			Statement::Declaration(declaration) => Statement::Declaration(declaration.evaluate_at_compile_time()),
+			Statement::DefaultExtend(default_extend) => Statement::DefaultExtend(default_extend.evaluate_at_compile_time()),
+			Statement::Expression(expression) => Statement::Expression(expression.evaluate_at_compile_time()),
+			Statement::Tail(tail) => Statement::Tail(tail.evaluate_at_compile_time()),
 			Statement::Error(span) => Statement::Error(span),
-		})
+		}
 	}
 }
 

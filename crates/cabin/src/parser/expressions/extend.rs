@@ -10,7 +10,6 @@ use crate::{
 	if_then_else_default,
 	if_then_some,
 	lexer::{Span, TokenType},
-	mapped_err,
 	parse_list,
 	parser::{
 		expressions::{
@@ -143,31 +142,15 @@ impl TryParse for Extend {
 impl CompileTime for Extend {
 	type Output = Extend;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
+	fn evaluate_at_compile_time(self) -> Self::Output {
 		let _scope_reverter = context().scope_data.set_current_scope(self.inner_scope_id);
 
-		let type_to_extend = Box::new(self.type_to_extend.evaluate_at_compile_time().map_err(mapped_err! {
-			while = "evaluating the type to represent in a represent-as declaration at compile-time",
-		})?);
-
-		let type_to_be = self
-			.type_to_be
-			.map(|to_be| {
-				anyhow::Ok(Box::new(to_be.evaluate_at_compile_time().map_err(mapped_err! {
-					while = "evaluating the type to represent as in a represent-as declaration at compile-time",
-				})?))
-			})
-			.transpose()?;
+		let type_to_extend = Box::new(self.type_to_extend.evaluate_at_compile_time());
+		let type_to_be = self.type_to_be.map(|to_be| Box::new(to_be.evaluate_at_compile_time()));
 
 		let mut fields = Vec::new();
-
 		for field in self.fields {
-			let field_value = field.value.unwrap().evaluate_at_compile_time().map_err(mapped_err! {
-				while = format!(
-					"evaluating the value of the field \"{}\" of a represent-as declaration at compile-time",
-					field.name.unmangled_name().bold().cyan()
-				),
-			})?;
+			let field_value = field.value.unwrap().evaluate_at_compile_time();
 
 			fields.add_or_overwrite_field(Field {
 				name: field.name,
@@ -181,12 +164,9 @@ impl CompileTime for Extend {
 			.compile_time_parameters
 			.into_iter()
 			.map(|parameter| parameter.evaluate_at_compile_time())
-			.collect::<anyhow::Result<Vec<_>>>()
-			.map_err(mapped_err! {
-				while = "evaluating the compile-time parameters of a represent-as declaration at compile-time",
-			})?;
+			.collect::<Vec<_>>();
 
-		Ok(Extend {
+		Extend {
 			type_to_extend,
 			type_to_be,
 			name: self.name,
@@ -195,7 +175,7 @@ impl CompileTime for Extend {
 			inner_scope_id: self.inner_scope_id,
 			outer_scope_id: self.outer_scope_id,
 			compile_time_parameters,
-		})
+		}
 	}
 }
 

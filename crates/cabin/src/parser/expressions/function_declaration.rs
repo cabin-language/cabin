@@ -1,6 +1,5 @@
-use std::{collections::HashMap, fmt::Debug};
+use std::{collections::HashMap, fmt::Debug, sync::LazyLock};
 
-use super::{field_access::FieldAccessType, parameter::Parameter};
 use crate::{
 	api::{
 		builtin::transpile_builtin_to_c,
@@ -20,9 +19,11 @@ use crate::{
 	parser::{
 		expressions::{
 			block::Block,
+			field_access::FieldAccessType,
 			literal::{LiteralConvertible, LiteralObject},
 			name::Name,
 			object::InternalFieldValue,
+			parameter::Parameter,
 			Expression,
 			Spanned,
 			TryParse,
@@ -172,26 +173,18 @@ impl TryParse for FunctionDeclaration {
 impl CompileTime for FunctionDeclaration {
 	type Output = FunctionDeclaration;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		let debug_section = debug_start!(
-			"{} a {} called {}",
-			"Compile-Time Evaluating".bold().green(),
-			"function declaration".cyan(),
-			self.name.unmangled_name().blue()
-		);
-
+	fn evaluate_at_compile_time(self) -> Self::Output {
 		// Compile-time parameters
 		let compile_time_parameters = {
 			let mut compile_time_parameters = Vec::new();
 			for parameter in self.compile_time_parameters {
-				compile_time_parameters.push(parameter.evaluate_at_compile_time()?);
+				compile_time_parameters.push(parameter.evaluate_at_compile_time());
 			}
 			compile_time_parameters
 		};
 
 		// Parameters
 		let parameters = {
-			let parameters_debug = debug_start!("{} the parameters of a {}", "Compile-Time Evaluating".green().bold(), "function declaration".cyan());
 			let mut parameters = Vec::new();
 			for parameter in self.parameters {
 				let parameter_debug = debug_start!(
@@ -201,28 +194,23 @@ impl CompileTime for FunctionDeclaration {
 					parameter.parameter_type(),
 					"function declaration".cyan()
 				);
-				parameters.push(parameter.evaluate_at_compile_time().map_err(mapped_err! {
-					while = "evaluating a parameter at compile-time",
-				})?);
+				parameters.push(parameter.evaluate_at_compile_time());
 				parameter_debug.finish();
 			}
-			parameters_debug.finish();
 			parameters
 		};
 
 		// Return type
-		debug_log!("Compile-Time Evaluating the return type of a {}", "function declaration".cyan());
-		let return_type = self.return_type.map(|return_type| return_type.evaluate_as_type()).transpose()?;
+		let return_type = self.return_type.map(|return_type| return_type.evaluate_as_type());
 
 		let tags = {
 			let tag_debug = debug_start!("Evaluating the tags on a {}", "function declaration".cyan());
-			let evaluated = self.tags.evaluate_at_compile_time()?;
+			let evaluated = self.tags.evaluate_at_compile_time();
 			tag_debug.finish();
 			evaluated
 		};
 
 		// Return
-		debug_section.finish();
 		let function = FunctionDeclaration {
 			compile_time_parameters,
 			parameters,
@@ -237,7 +225,7 @@ impl CompileTime for FunctionDeclaration {
 		};
 
 		// Return as a pointer
-		Ok(function)
+		function
 	}
 }
 
@@ -296,6 +284,19 @@ impl TranspileToC for FunctionDeclaration {
 	}
 }
 
+static ERROR: LazyLock<FunctionDeclaration> = LazyLock::new(|| FunctionDeclaration {
+	tags: TagList::default(),
+	compile_time_parameters: Vec::new(),
+	parameters: Vec::new(),
+	return_type: None,
+	body: None,
+	outer_scope_id: context().scope_data.unique_id(),
+	inner_scope_id: None,
+	this_object: None,
+	name: "Error".into(),
+	span: Span::unknown(),
+});
+
 impl LiteralConvertible for FunctionDeclaration {
 	fn to_literal(self) -> LiteralObject {
 		LiteralObject {
@@ -319,6 +320,10 @@ impl LiteralConvertible for FunctionDeclaration {
 	}
 
 	fn from_literal(literal: &LiteralObject) -> anyhow::Result<Self> {
+		if literal.type_name() != &"Function".into() {
+			anyhow::bail!("")
+		}
+
 		Ok(FunctionDeclaration {
 			compile_time_parameters: literal.get_internal_field::<Vec<Parameter>>("compile_time_parameters")?.to_owned(),
 			parameters: literal.get_internal_field::<Vec<Parameter>>("parameters")?.to_owned(),
@@ -341,6 +346,10 @@ impl Spanned for FunctionDeclaration {
 }
 
 impl FunctionDeclaration {
+	pub fn error() -> &'static FunctionDeclaration {
+		&ERROR
+	}
+
 	pub const fn body(&self) -> Option<&Expression> {
 		self.body.as_ref()
 	}

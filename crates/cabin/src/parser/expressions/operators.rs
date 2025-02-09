@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use super::{extend::Extend, match_expression::Match, sugar::string::CabinString};
+use super::{extend::Extend, sugar::string::CabinString};
 use crate::{
 	lexer::{Token, TokenType},
 	parser::{
@@ -112,8 +112,6 @@ impl TryParse for PrimaryExpression {
 
 			// Parse one-of declaration expression
 			TokenType::KeywordOneOf => Expression::Pointer(OneOf::try_parse(tokens)?),
-
-			TokenType::KeywordMatch => Expression::Match(Match::try_parse(tokens)?),
 
 			TokenType::KeywordEither => Expression::Pointer(Either::try_parse(tokens)?),
 			TokenType::KeywordIf => Expression::If(IfExpression::try_parse(tokens)?),

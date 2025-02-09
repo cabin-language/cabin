@@ -122,34 +122,34 @@ impl TryParse for DefaultExtend {
 impl CompileTime for DefaultExtendPointer {
 	type Output = DefaultExtendPointer;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
+	fn evaluate_at_compile_time(self) -> Self::Output {
 		context()
 			.scope_data
-			.map_default_extension_from_id(self.scope_id, self.id, DefaultExtend::evaluate_at_compile_time)?;
+			.map_default_extension_from_id(self.scope_id, self.id, DefaultExtend::evaluate_at_compile_time);
 
-		Ok(self)
+		self
 	}
 }
 
 impl CompileTime for DefaultExtend {
 	type Output = DefaultExtend;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		let type_to_extend = self.type_to_extend.evaluate_at_compile_time()?;
-		let type_to_be = self.type_to_be.map(|to_be| to_be.evaluate_at_compile_time()).transpose()?;
+	fn evaluate_at_compile_time(self) -> Self::Output {
+		let type_to_extend = self.type_to_extend.evaluate_at_compile_time();
+		let type_to_be = self.type_to_be.map(|to_be| to_be.evaluate_at_compile_time());
 		let compile_time_parameters = self
 			.compile_time_parameters
 			.into_iter()
 			.map(|parameter| parameter.evaluate_at_compile_time())
-			.collect::<anyhow::Result<Vec<_>>>()?;
+			.collect::<Vec<_>>();
 
-		Ok(DefaultExtend {
+		DefaultExtend {
 			type_to_be,
 			type_to_extend,
 			compile_time_parameters,
 			id: self.id,
 			fields: self.fields,
-		})
+		}
 	}
 }
 

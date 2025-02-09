@@ -1,10 +1,10 @@
 use std::{collections::VecDeque, fmt::Display};
 
 use api::context::context;
+use comptime::{CompileTime, CompileTimeError};
 use convert_case::{Case, Casing as _};
 use lexer::{Span, Token, TokenizeError};
 use parser::{expressions::Spanned, Module, ParseError};
-use strum_macros::Display;
 
 pub mod api;
 pub mod cli;
@@ -21,6 +21,9 @@ pub enum Warning {
 
 	#[error("Variable names should be in snake_case: Change \"{original_name}\" to \"{}\"", .original_name.to_case(Case::Snake))]
 	NonSnakeCaseName { original_name: String },
+
+	#[error("This either has no variants, meaning it can never be instantiated")]
+	EmptyEither,
 }
 
 #[derive(Clone, thiserror::Error, Debug)]
@@ -30,6 +33,9 @@ pub enum Error {
 
 	#[error("Parse error: {0}")]
 	Parse(ParseError),
+
+	#[error("Evaluation error: {0}")]
+	CompileTime(CompileTimeError),
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -112,19 +118,20 @@ impl Display for Diagnostic {
 pub fn check(code: &str) -> Diagnostics {
 	context().reset();
 	let mut tokens = lexer::tokenize_without_prelude(code);
-	let _program = parser::parse(&mut tokens);
-	context().errors().to_owned()
+	let program = parser::parse(&mut tokens);
+	let _ = program.evaluate_at_compile_time();
+	context().diagnostics().to_owned()
 }
 
 pub fn parse(code: &str) -> (Module, Diagnostics) {
 	context().reset();
 	let mut tokens = lexer::tokenize_without_prelude(code);
-	(parser::parse(&mut tokens), context().errors().to_owned())
+	(parser::parse(&mut tokens), context().diagnostics().to_owned())
 }
 
 pub fn tokenize(code: &str) -> (VecDeque<Token>, Diagnostics) {
 	context().reset();
-	(lexer::tokenize_without_prelude(code), context().errors().to_owned())
+	(lexer::tokenize_without_prelude(code), context().diagnostics().to_owned())
 }
 
 /// The Cabin standard library. This is a Cabin file that's automatically imported into every Cabin

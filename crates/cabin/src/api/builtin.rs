@@ -3,35 +3,27 @@ use std::{collections::VecDeque, fmt::Write as _, io::Write};
 use colored::Colorize as _;
 
 use crate::{
-	api::{
-		context::context,
-		macros::{number, string},
-		scope::ScopeId,
-		traits::TryAs as _,
-	},
+	api::{context::context, macros::string, scope::ScopeId, traits::TryAs as _},
 	comptime::{memory::VirtualPointer, CompileTime},
-	debug_start,
 	err,
 	lexer::Span,
-	mapped_err,
-	parser::expressions::{name::Name, object::ObjectConstructor, Expression, Spanned, Typed},
+	parser::expressions::{name::Name, object::ObjectConstructor, Expression},
 };
 
 pub struct BuiltinFunction {
-	evaluate_at_compile_time: fn(ScopeId, Vec<Expression>, Span) -> anyhow::Result<Expression>,
+	evaluate_at_compile_time: fn(ScopeId, Vec<Expression>, Span) -> Expression,
 	to_c: fn(&[String]) -> anyhow::Result<String>,
 }
 
 static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 	"terminal.print" => BuiltinFunction {
 		evaluate_at_compile_time: |caller_scope_id, arguments, span| {
-			let debug_section = debug_start!("{} built-in function {}.{}", "Calling".green().bold(), "terminal".red(), "print".blue());
 			let mut arguments = VecDeque::from(arguments);
-			let pointer = arguments.pop_front().ok_or_else(|| anyhow::anyhow!("Missing argument to print"))?;
-			let returned_object = call_builtin_at_compile_time("Anything.to_string", caller_scope_id, vec![pointer], span)?;
-			let string_value = returned_object.try_as_literal()?.try_as::<String>()?.to_owned();
+			let pointer = arguments.pop_front().unwrap_or_else(|| Expression::ErrorExpression(span));
+			let returned_object = call_builtin_at_compile_time("Anything.to_string", caller_scope_id, vec![pointer], span);
+			let string_value = returned_object.try_as_literal().unwrap().try_as::<String>().unwrap().to_owned();
 
-			let options = arguments.pop_front().unwrap().try_as::<VirtualPointer>()?.virtual_deref();
+			let options = arguments.pop_front().unwrap().try_as::<VirtualPointer>().unwrap_or(&VirtualPointer::ERROR).virtual_deref();
 			let newline = Expression::Pointer(options.get_field("newline").unwrap()).is_true();
 
 			if context().lines_printed == 0 && !context().config().options().quiet() {
@@ -43,12 +35,11 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 				println!("{string_value}");
 			} else {
 				print!("{string_value}");
-				std::io::stdout().flush()?;
+				std::io::stdout().flush().unwrap();
 			}
 			context().lines_printed += string_value.chars().filter(|character| character == &'\n').count() + 1;
 
-			debug_section.finish();
-			Ok(Expression::ErrorExpression(Span::unknown()))
+			Expression::ErrorExpression(Span::unknown())
 		},
 		to_c: |parameter_names| {
 			let text_address = context().scope_data.get_variable("Text").unwrap().try_as::<VirtualPointer>().unwrap();
@@ -66,7 +57,7 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 	"terminal.input" => BuiltinFunction {
 		evaluate_at_compile_time: |_caller_scope_id, arguments, span| {
 			let mut arguments = VecDeque::from(arguments);
-			let options = arguments.pop_front().unwrap().try_as::<VirtualPointer>()?.virtual_deref();
+			let options = arguments.pop_front().unwrap().try_as::<VirtualPointer>().unwrap_or(&VirtualPointer::ERROR).virtual_deref();
 			let prompt = options.get_field_literal("prompt").unwrap().get_internal_field::<String>("internal_value").unwrap();
 
 			if context().lines_printed == 0 {
@@ -76,11 +67,11 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 
 			context().lines_printed += 1;
 			print!("{prompt}");
-			std::io::stdout().flush()?;
+			std::io::stdout().flush().unwrap();
 			let mut line = String::new();
-			let _ = std::io::stdin().read_line(&mut line)?;
+			let _ = std::io::stdin().read_line(&mut line).unwrap();
 			line = line.get(0..line.len() - 1).unwrap().to_owned();
-			Ok(Expression::Pointer(*ObjectConstructor::string(&line, span).evaluate_at_compile_time()?.try_as::<VirtualPointer>()?))
+			Expression::Pointer(*ObjectConstructor::string(&line, span).evaluate_at_compile_time().try_as::<VirtualPointer>().unwrap_or(&VirtualPointer::ERROR))
 		},
 		to_c: |parameter_names| {
 			let return_address = parameter_names.first().unwrap();
@@ -88,66 +79,17 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 			Ok(format!("char* buffer = malloc(sizeof(char) * 256);\nfgets(buffer, 256, stdin);\n*{return_address} = (group_u_Text_{text_address}) {{ .internal_value = buffer }};"))
 		}
 	},
-	"Number.plus" => BuiltinFunction {
-		evaluate_at_compile_time: |_caller_scope_id, arguments, _span| {
-			let first = arguments.first().ok_or_else(|| anyhow::anyhow!("Missing argument to Number.plus"))?;
-			let first_number = first.try_as_literal()?.try_as::<f64>()?.to_owned();
-			let second = arguments.get(1).ok_or_else(|| anyhow::anyhow!("Missing argument to Number.plus"))?;
-			let second_number = second.try_as_literal()?.try_as::<f64>()?;
-
-			Ok(number(first_number + second_number, first.span().to(second.span())))
-		},
-		to_c: |parameter_names| {
-			let number_address = context().scope_data.get_variable("Number").unwrap().try_as::<VirtualPointer>().unwrap();
-			let first = parameter_names.first().unwrap();
-			let second = parameter_names.get(1).unwrap();
-			let number_type = format!("group_u_Number_{number_address}");
-			Ok(format!("*return_address = ({number_type}) {{ .internal_value = {first}->internal_value + {second}->internal_value }};"))
-		}
-	},
-	"Number.minus" => BuiltinFunction {
-		evaluate_at_compile_time: |_caller_scope_id, arguments, _span| {
-			let first = arguments.first().ok_or_else(|| anyhow::anyhow!("Missing argument to Number.plus"))?;
-			let first_number = first.try_as_literal()?.try_as::<f64>()?.to_owned();
-			let second = arguments.get(1).ok_or_else(|| anyhow::anyhow!("Missing argument to Number.plus"))?;
-			let second_number = second.try_as_literal()?.try_as::<f64>()?;
-
-			Ok(number(first_number - second_number, first.span().to(second.span())))
-		},
-		to_c: |_parameter_names| {
-			Ok(String::new())
-		}
-	},
-	"Text.plus" => BuiltinFunction {
-		evaluate_at_compile_time: |_caller_scope_id, arguments, _span| {
-			let first = arguments.first().ok_or_else(|| anyhow::anyhow!("Missing argument to Number.plus"))?;
-			let first_number = first.try_as_literal()?.try_as::<String>()?.to_owned();
-			let second = arguments.get(1).ok_or_else(|| anyhow::anyhow!("Missing argument to Number.plus"))?;
-			let second_number = second.try_as_literal()?.try_as::<String>()?;
-
-			Ok(string(&(first_number + second_number), first.span().to(second.span())))
-		},
-		to_c: |parameter_names| {
-			let number_address = context().scope_data.get_variable("Number").unwrap().try_as::<VirtualPointer>().unwrap();
-			let first = parameter_names.first().unwrap();
-			let second = parameter_names.get(1).unwrap();
-			let number_type = format!("group_u_Number_{number_address}");
-			Ok(format!("*return_address = ({number_type}) {{ .internal_value = {first}->internal_value + {second}->internal_value }};"))
-		}
-	},
 	"Anything.to_string" => BuiltinFunction {
-		evaluate_at_compile_time: |_caller_scope_id, arguments, span| {
+		evaluate_at_compile_time: |_caller_scope_id, arguments,span| {
 			let this = arguments
 				.first()
-				.ok_or_else(|| anyhow::anyhow!("Missing argument to {}", format!("{}.{}()", "Anything".yellow(), "to_string".blue()).bold()))?
-				.try_as_literal().map_err(mapped_err! {
-					while = format!("Interpreting the first argument to {} as a literal", format!("{}.{}()", "Anything".yellow(), "to_string".blue()).bold()),
-				})?;
+				.unwrap_or(&Expression::ErrorExpression(span))
+				.try_as_literal().unwrap();
 
 			let type_name = this.get_internal_field::<Name>("representing_type_name").unwrap_or_else(|_| this.type_name());
-			Ok(string(&match type_name.unmangled_name() {
-				"Number" => this.try_as::<f64>()?.to_string(),
-				"Text" => this.try_as::<String>()?.to_owned(),
+			string(&match type_name.unmangled_name() {
+				"Number" => this.try_as::<f64>().unwrap().to_string(),
+				"Text" => this.try_as::<String>().unwrap().to_owned(),
 				_ => {
 					let mut builder = "{".to_owned();
 
@@ -163,7 +105,7 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 
 					builder
 				}
-			}, span))
+			}, span)
 		},
 		to_c: |parameter_names| {
 			let object = parameter_names.first().unwrap();
@@ -198,15 +140,6 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 			)))
 		}
 	},
-	"Anything.type" => BuiltinFunction {
-		evaluate_at_compile_time: |_caller_scope_id, arguments, _span| {
-			let this = arguments.first().unwrap();
-			Ok(Expression::Pointer(this.get_type()?))
-		},
-		to_c: |_parameter_names| {
-			Ok(String::new())
-		}
-	},
 };
 
 /// Calls a built-in function at compile-time. Built-in functions are called at compiled time with Rust code. This is used in
@@ -228,19 +161,8 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 /// If there is no built-in function with the given name, an error is returned.
 ///
 /// Also, if the built-in function throws an error while being called, that error is returned as well.
-pub fn call_builtin_at_compile_time(name: &str, caller_scope_id: ScopeId, arguments: Vec<Expression>, span: Span) -> anyhow::Result<Expression> {
-	(BUILTINS
-		.get(name)
-		.ok_or_else(|| {
-			anyhow::anyhow!(
-				"Attempted to call the built-in function \"{}\", but no built-in function with that name exists.",
-				name.bold().cyan()
-			)
-		})?
-		.evaluate_at_compile_time)(caller_scope_id, arguments, span)
-	.map_err(mapped_err! {
-		while = format!("calling the built-in function \"{}\" at compile-time", name.bold().cyan()).dimmed(),
-	})
+pub fn call_builtin_at_compile_time(name: &str, caller_scope_id: ScopeId, arguments: Vec<Expression>, span: Span) -> Expression {
+	(BUILTINS.get(name).unwrap().evaluate_at_compile_time)(caller_scope_id, arguments, span)
 }
 
 /// Transpiles a built-in function to C code. This is used during transpilation to supply built-in functions with bodies.

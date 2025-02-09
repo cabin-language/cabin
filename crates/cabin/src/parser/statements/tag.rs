@@ -3,9 +3,6 @@ use std::{fmt::Debug, ops::Deref};
 use crate::{
 	api::traits::TryAs as _,
 	comptime::{memory::VirtualPointer, CompileTime},
-	debug_log,
-	debug_start,
-	mapped_err,
 	parse_list,
 	parser::{
 		expressions::{literal::CompilerWarning, Expression},
@@ -36,18 +33,13 @@ impl TryParse for TagList {
 impl CompileTime for TagList {
 	type Output = TagList;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		let debug_section = debug_start!("{} a {}", "Compile-Time Evaluating".green().bold(), "tag list".cyan());
+	fn evaluate_at_compile_time(self) -> Self::Output {
 		let mut values = Vec::new();
 		for value in self.values {
-			let evaluated = value.evaluate_at_compile_time().map_err(mapped_err! {
-				while = "evaluating a tag at compile-time",
-			})?;
-			debug_log!("Evaluated tag into {}", evaluated.kind_name().cyan());
+			let evaluated = value.evaluate_at_compile_time();
 			values.push(evaluated);
 		}
-		debug_section.finish();
-		Ok(TagList { values })
+		TagList { values }
 	}
 }
 

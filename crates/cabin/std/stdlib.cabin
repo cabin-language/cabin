@@ -1,11 +1,5 @@
 let This = group {};
 
-let Unique = group {};
-
-default extend Unique tobe Comparable {
-
-};
-
 let Nothing = either {
 	nothing
 }; 
@@ -137,9 +131,4 @@ let system = new Object {
 			system.terminal.print(object);
 		},
 	},
-};
-
-let Map = group {
-	get = action(key: Anything): Anything {},
-	set = action(key: Anything, value: Anything): Nothing {}
 };

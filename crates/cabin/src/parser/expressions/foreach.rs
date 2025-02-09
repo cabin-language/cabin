@@ -1,7 +1,7 @@
 use super::Spanned;
 use crate::{
 	api::{context::context, scope::ScopeId, traits::TryAs as _},
-	comptime::CompileTime,
+	comptime::{CompileTime, CompileTimeError},
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{block::Block, name::Name, Expression},
@@ -11,6 +11,8 @@ use crate::{
 		TryParse,
 	},
 	transpiler::TranspileToC,
+	Diagnostic,
+	DiagnosticInfo,
 };
 
 #[derive(Debug, Clone)]
@@ -36,7 +38,7 @@ pub struct ForEachLoop {
 impl TryParse for ForEachLoop {
 	type Output = ForEachLoop;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordForEach)?.span;
 
 		let binding_name = Name::try_parse(tokens)?;
@@ -68,25 +70,35 @@ impl TryParse for ForEachLoop {
 impl CompileTime for ForEachLoop {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(mut self) -> anyhow::Result<Self::Output> {
-		self.iterable = Box::new(self.iterable.evaluate_at_compile_time()?);
+	fn evaluate_at_compile_time(mut self) -> Self::Output {
+		self.iterable = Box::new(self.iterable.evaluate_at_compile_time());
+
+		let default = Vec::new();
 		if let Ok(literal) = self.iterable.try_as_literal() {
 			let elements = literal
-				.try_as::<Vec<Expression>>()?
+				.try_as::<Vec<Expression>>()
+				.unwrap_or_else(|_| {
+					context().add_diagnostic(Diagnostic {
+						span: self.iterable.span(),
+						error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::IterateOverNonList)),
+					});
+					&default
+				})
 				.to_owned()
 				.into_iter()
 				.map(|element| element.evaluate_at_compile_time())
-				.collect::<anyhow::Result<Vec<_>>>()?;
+				.collect::<Vec<_>>();
+
 			for element in elements {
-				context().scope_data.reassign_variable_from_id(&self.binding_name, element.clone(), self.inner_scope_id)?;
-				let value = self.body.clone().evaluate_at_compile_time()?;
+				context().scope_data.reassign_variable_from_id(&self.binding_name, element.clone(), self.inner_scope_id);
+				let value = self.body.clone().evaluate_at_compile_time();
 				if value.is_pointer() {
-					return Ok(value);
+					return value;
 				}
 			}
 		}
 
-		Ok(Expression::ForEachLoop(self))
+		Expression::ForEachLoop(self)
 	}
 }
 

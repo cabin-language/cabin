@@ -8,7 +8,6 @@ use crate::{
 	},
 	comptime::{memory::VirtualPointer, CompileTime},
 	lexer::{Span, Token, TokenType},
-	mapped_err,
 	parser::{
 		expressions::{
 			field_access::FieldAccessType,
@@ -68,11 +67,11 @@ pub enum TopLevelDeclaration {
 impl CompileTime for TopLevelDeclaration {
 	type Output = Self;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		Ok(match self {
-			Self::Declaration(declaration) => Self::Declaration(declaration.evaluate_at_compile_time()?),
-			Self::DefaultExtend(default_extend) => Self::DefaultExtend(default_extend.evaluate_at_compile_time()?),
-		})
+	fn evaluate_at_compile_time(self) -> Self::Output {
+		match self {
+			Self::Declaration(declaration) => Self::Declaration(declaration.evaluate_at_compile_time()),
+			Self::DefaultExtend(default_extend) => Self::DefaultExtend(default_extend.evaluate_at_compile_time()),
+		}
 	}
 }
 
@@ -110,22 +109,13 @@ impl Parse for Module {
 impl CompileTime for Module {
 	type Output = Module;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
+	fn evaluate_at_compile_time(self) -> Self::Output {
 		let _scope_reverter = context().scope_data.set_current_scope(self.inner_scope_id);
 		let evaluated = Self {
-			declarations: self
-				.declarations
-				.into_iter()
-				.map(|statement| statement.evaluate_at_compile_time())
-				.collect::<anyhow::Result<Vec<_>>>()
-				.map_err(mapped_err! {
-					while = "evaluating the program's global statements at compile-time",
-				})?
-				.into_iter()
-				.collect(),
+			declarations: self.declarations.into_iter().map(|statement| statement.evaluate_at_compile_time()).collect(),
 			inner_scope_id: self.inner_scope_id,
 		};
-		Ok(evaluated)
+		evaluated
 	}
 }
 
@@ -335,7 +325,7 @@ impl Module {
 				.filter_map(|declaration| {
 					if let TopLevelDeclaration::Declaration(declaration) = declaration {
 						let name = declaration.name().to_owned();
-						let value = declaration.value().unwrap();
+						let value = declaration.value();
 						Some((name, value.try_as::<VirtualPointer>().unwrap().to_owned()))
 					} else {
 						None
@@ -362,7 +352,7 @@ impl Module {
 				.filter_map(|declaration| {
 					if let TopLevelDeclaration::Declaration(declaration) = declaration {
 						let name = declaration.name().to_owned();
-						let value = Some(declaration.value().unwrap().clone());
+						let value = Some(declaration.value().clone());
 						Some(Field { name, value, field_type: None })
 					} else {
 						None

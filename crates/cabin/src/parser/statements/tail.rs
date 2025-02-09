@@ -39,13 +39,13 @@ impl TryParse for TailStatement {
 impl CompileTime for TailStatement {
 	type Output = TailStatement;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		let value = self.value.evaluate_at_compile_time()?;
-		Ok(TailStatement {
+	fn evaluate_at_compile_time(self) -> Self::Output {
+		let value = self.value.evaluate_at_compile_time();
+		TailStatement {
 			label: self.label,
 			value,
 			span: self.span,
-		})
+		}
 	}
 }
 

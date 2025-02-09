@@ -1,6 +1,3 @@
-use colored::Colorize as _;
-
-use super::{object::Field, Typed};
 use crate::{
 	api::{context::context, scope::ScopeId, traits::TryAs as _},
 	comptime::{memory::VirtualPointer, CompileTime},
@@ -57,8 +54,9 @@ impl TryParse for FieldAccess {
 impl CompileTime for FieldAccess {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		let left_evaluated = self.left.evaluate_at_compile_time()?;
+	fn evaluate_at_compile_time(self) -> Self::Output {
+		let span = self.span();
+		let left_evaluated = self.left.evaluate_at_compile_time();
 
 		// Resolvable at compile-time
 		if let Ok(pointer) = left_evaluated.try_as_literal().map(|value| value.address.unwrap()) {
@@ -67,21 +65,16 @@ impl CompileTime for FieldAccess {
 				// Object fields
 				FieldAccessType::Normal => {
 					let field = literal.get_field(self.right.clone());
-					let field = field.ok_or_else(|| {
-						anyhow::anyhow!(
-							"Attempted to access a the field \"{}\" on an object, but no field with that name exists on that object.",
-							self.right.unmangled_name().bold().cyan()
-						)
-					})?;
+					let field = field.unwrap_or(VirtualPointer::ERROR);
 
 					let field_value_literal = field.virtual_deref();
 					if field_value_literal.type_name() == &"Function".into() {
 						let mut function_declaration = FunctionDeclaration::from_literal(field_value_literal).unwrap();
 						function_declaration.set_this_object(left_evaluated);
 						context().virtual_memory.replace(field.to_owned(), function_declaration.to_literal());
-						Ok(Expression::Pointer(field.to_owned()))
+						Expression::Pointer(field.to_owned())
 					} else {
-						Ok(Expression::Pointer(field))
+						Expression::Pointer(field)
 					}
 				},
 
@@ -91,23 +84,18 @@ impl CompileTime for FieldAccess {
 					variants
 						.iter()
 						.find_map(|(name, value)| (name == &self.right).then_some(Expression::Pointer(value.to_owned())))
-						.ok_or_else(|| {
-							anyhow::anyhow!(
-								"Attempted to access a variant called \"{}\" on an either, but the either has no variant with that name.",
-								self.right.unmangled_name().cyan().bold()
-							)
-						})
+						.unwrap_or(Expression::ErrorExpression(span))
 				},
 			}
 		}
 		// Not resolvable at compile-time - return the original expression
 		else {
-			Ok(Expression::FieldAccess(FieldAccess {
+			Expression::FieldAccess(FieldAccess {
 				left: Box::new(left_evaluated),
 				right: self.right,
 				scope_id: self.scope_id,
 				span: self.span,
-			}))
+			})
 		}
 	}
 }
@@ -115,7 +103,7 @@ impl CompileTime for FieldAccess {
 impl TranspileToC for FieldAccess {
 	fn to_c(&self) -> anyhow::Result<String> {
 		let left = if let Ok(name) = self.left.as_ref().try_as::<Name>() {
-			format!("{}_{}", self.left.to_c()?, name.clone().evaluate_at_compile_time()?.try_as_literal()?.address.unwrap())
+			format!("{}_{}", self.left.to_c()?, name.clone().evaluate_at_compile_time().try_as_literal()?.address.unwrap())
 		} else {
 			self.left.to_c()?
 		};

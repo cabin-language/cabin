@@ -1,7 +1,4 @@
-use std::{
-	fmt::Write as _,
-	sync::{Arc, LazyLock, Mutex},
-};
+use std::{fmt::Write as _, sync::LazyLock};
 
 use colored::{ColoredString, Colorize as _};
 
@@ -76,7 +73,7 @@ impl Context {
 		let _ = self.side_effects_stack.pop();
 	}
 
-	pub fn errors(&self) -> &Diagnostics {
+	pub fn diagnostics(&self) -> &Diagnostics {
 		&self.errors
 	}
 

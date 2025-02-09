@@ -85,7 +85,7 @@ impl TryParse for OneOf {
 impl CompileTime for OneOf {
 	type Output = OneOf;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
+	fn evaluate_at_compile_time(self) -> Self::Output {
 		let mut choices = Vec::new();
 		for choice in self.choices {
 			if let Expression::Name(choice_name) = &choice {
@@ -95,18 +95,18 @@ impl CompileTime for OneOf {
 				}
 			}
 
-			let choice_value = choice.evaluate_at_compile_time()?;
+			let choice_value = choice.evaluate_at_compile_time();
 			choices.push(choice_value);
 		}
 
-		Ok(OneOf {
+		OneOf {
 			choices,
 			outer_scope_id: self.outer_scope_id,
 			inner_scope_id: self.inner_scope_id,
 			compile_time_parameters: self.compile_time_parameters,
 			span: self.span,
 			name: self.name,
-		})
+		}
 	}
 }
 

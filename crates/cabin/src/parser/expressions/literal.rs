@@ -1,6 +1,7 @@
 use std::{
 	collections::HashMap,
 	fmt::{Debug, Write as _},
+	sync::LazyLock,
 };
 
 use colored::Colorize;
@@ -16,7 +17,6 @@ use crate::{
 	bail_err,
 	cli::theme::Styled,
 	comptime::{memory::VirtualPointer, CompileTime},
-	debug_start,
 	err,
 	lexer::Span,
 	parser::{
@@ -83,6 +83,19 @@ pub struct LiteralObject {
 	pub tags: TagList,
 }
 
+static ERROR: LazyLock<LiteralObject> = LazyLock::new(|| LiteralObject {
+	type_name: "Error".into(),
+	fields: HashMap::new(),
+	internal_fields: HashMap::new(),
+	field_access_type: FieldAccessType::Normal,
+	outer_scope_id: context().scope_data.unique_id(),
+	inner_scope_id: None,
+	name: "error".into(),
+	address: Some(VirtualPointer::ERROR),
+	span: Span::unknown(),
+	tags: TagList::default(),
+});
+
 impl TryFrom<ObjectConstructor> for LiteralObject {
 	type Error = anyhow::Error;
 
@@ -131,12 +144,16 @@ impl TryFrom<ObjectConstructor> for LiteralObject {
 			name: object.name,
 			address: None,
 			span: object.span,
-			tags: object.tags.evaluate_at_compile_time()?,
+			tags: object.tags.evaluate_at_compile_time(),
 		})
 	}
 }
 
 impl LiteralObject {
+	pub fn error() -> &'static LiteralObject {
+		&ERROR
+	}
+
 	pub fn empty(span: Span) -> Self {
 		Self {
 			type_name: "Object".into(),
@@ -381,27 +398,19 @@ impl Typed for LiteralObject {
 impl CompileTime for LiteralObject {
 	type Output = LiteralObject;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		let debug_section = debug_start!(
-			"{} {} of type {}",
-			"Compile-Time Evaluating".green().bold(),
-			"literal".cyan(),
-			self.type_name.unmangled_name().yellow()
-		);
+	fn evaluate_at_compile_time(self) -> Self::Output {
 		let address = self.address;
 		let mut literal = match self.type_name().unmangled_name() {
-			"Function" => FunctionDeclaration::from_literal(&self)?.evaluate_at_compile_time()?.to_literal(),
-			"Group" => GroupDeclaration::from_literal(&self)?.evaluate_at_compile_time()?.to_literal(),
-			"Either" => Either::from_literal(&self)?.evaluate_at_compile_time()?.to_literal(),
-			"OneOf" => OneOf::from_literal(&self)?.evaluate_at_compile_time()?.to_literal(),
-			"RepresentAs" => Extend::from_literal(&self)?.evaluate_at_compile_time()?.to_literal(),
-			"Parameter" => Parameter::from_literal(&self)?.evaluate_at_compile_time()?.to_literal(),
+			"Function" => FunctionDeclaration::from_literal(&self).unwrap().evaluate_at_compile_time().to_literal(),
+			"Group" => GroupDeclaration::from_literal(&self).unwrap().evaluate_at_compile_time().to_literal(),
+			"Either" => Either::from_literal(&self).unwrap().evaluate_at_compile_time().to_literal(),
+			"OneOf" => OneOf::from_literal(&self).unwrap().evaluate_at_compile_time().to_literal(),
+			"RepresentAs" => Extend::from_literal(&self).unwrap().evaluate_at_compile_time().to_literal(),
+			"Parameter" => Parameter::from_literal(&self).unwrap().evaluate_at_compile_time().to_literal(),
 			_ => self,
 		};
 		literal.address = address;
-
-		debug_section.finish();
-		Ok(literal)
+		literal
 	}
 }
 

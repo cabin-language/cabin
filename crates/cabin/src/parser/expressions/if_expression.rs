@@ -5,7 +5,6 @@ use crate::{
 	api::{context::context, scope::ScopeId},
 	comptime::CompileTime,
 	lexer::{Span, TokenType},
-	mapped_err,
 	parser::{
 		expressions::{block::Block, Expression},
 		Parse as _,
@@ -54,52 +53,40 @@ impl TryParse for IfExpression {
 impl CompileTime for IfExpression {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
+	fn evaluate_at_compile_time(self) -> Self::Output {
 		// Check condition
-		let condition = self.condition.evaluate_at_compile_time().map_err(mapped_err! {
-			while = "evaluating the condition of an if-expression at compile-time",
-		})?;
+		let condition = self.condition.evaluate_at_compile_time();
 		let condition_is_true = condition.is_true();
 
 		// Evaluate body
 		context().toggle_side_effects(condition_is_true);
-		let body = self
-			.body
-			.evaluate_at_compile_time()
-			.map_err(mapped_err! { while = "evaluating the body of an if-expression at compile-time", })?;
+		let body = self.body.evaluate_at_compile_time();
 		context().untoggle_side_effects();
 
 		// Evaluate else body
 		context().toggle_side_effects(!condition_is_true);
-		let else_body = self
-			.else_body
-			.map(|else_body| {
-				anyhow::Ok(Box::new(else_body.evaluate_at_compile_time().map_err(mapped_err! {
-					while = "evaluating the otherwise-body of an if-expression at compile-time",
-				})?))
-			})
-			.transpose()?;
+		let else_body = self.else_body.map(|else_body| Box::new(else_body.evaluate_at_compile_time()));
 		context().untoggle_side_effects();
 
 		// Fully evaluated: return the value (only if true)
 		if condition_is_true {
 			if let Ok(literal) = body.try_clone_pointer() {
-				return Ok(literal);
+				return literal;
 			}
 		} else if let Some(else_body) = &else_body {
 			if let Ok(literal) = else_body.try_clone_pointer() {
-				return Ok(literal);
+				return literal;
 			}
 		}
 
 		// Non-literal: Return as an if-expression
-		Ok(Expression::If(IfExpression {
+		Expression::If(IfExpression {
 			condition: Box::new(condition),
 			body: Box::new(body),
 			else_body,
 			span: self.span,
 			inner_scope_id: self.inner_scope_id,
-		}))
+		})
 	}
 }
 

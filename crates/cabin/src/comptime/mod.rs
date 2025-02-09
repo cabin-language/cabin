@@ -13,5 +13,20 @@ pub trait CompileTime {
 	///
 	/// An error can occur during compile-time evaluation for any number of reasons, such as the user writing a
 	/// variable name that doesn't exist. The specific error returned by this is implementation-specific.
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output>;
+	fn evaluate_at_compile_time(self) -> Self::Output;
+}
+
+#[derive(thiserror::Error, Debug, Clone)]
+pub enum CompileTimeError {
+	#[error("This expression can't be fully evaluated at compile-time; Default values for group fields must be known at compile-time.")]
+	GroupValueNotKnownAtCompileTime,
+
+	#[error("run has no effect on this type of expression")]
+	RunNonFunctionCall,
+
+	#[error("This type of value can't be iterated over")]
+	IterateOverNonList,
+
+	#[error("This type of value can't be called")]
+	CallNonFunction,
 }

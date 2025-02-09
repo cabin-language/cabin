@@ -42,6 +42,8 @@ impl Debug for VirtualPointer {
 }
 
 impl VirtualPointer {
+	pub const ERROR: VirtualPointer = VirtualPointer(0);
+
 	/// Retrieves the `LiteralObject` value that this pointer points to.
 	///
 	/// This is theoretically infallible and will always yield a valid `LiteralObject`; Read the documentation on `VirtualPointers`
@@ -65,10 +67,10 @@ impl VirtualPointer {
 impl CompileTime for VirtualPointer {
 	type Output = VirtualPointer;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		let evaluated = self.virtual_deref().clone().evaluate_at_compile_time()?;
+	fn evaluate_at_compile_time(self) -> Self::Output {
+		let evaluated = self.virtual_deref().clone().evaluate_at_compile_time();
 		let _ = context().virtual_memory.memory.insert(self.0, evaluated);
-		Ok(self)
+		self
 	}
 }
 
@@ -175,7 +177,7 @@ impl VirtualMemory {
 	///
 	/// The first address in virtual memory that doesn't point to an object.
 	fn next_unused_virtual_address(&self) -> usize {
-		let mut next_unused_virtual_address = 0;
+		let mut next_unused_virtual_address = 1;
 		while self.memory.contains_key(&next_unused_virtual_address) {
 			next_unused_virtual_address += 1;
 		}

@@ -6,10 +6,7 @@ use super::Spanned;
 use crate::{
 	api::context::context,
 	comptime::CompileTime,
-	debug_log,
-	debug_start,
 	lexer::{Span, TokenType},
-	mapped_err,
 	parser::{expressions::Expression, ToCabin, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::TranspileToC,
 };
@@ -50,40 +47,10 @@ impl TryParse for Name {
 impl CompileTime for Name {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		let debug_section = debug_start!("{} the name {}", "Compile-Time Evaluating".bold().green(), self.unmangled_name().red());
-		let value = context()
-			.scope_data
-			.get_variable(self.clone())
-			.ok_or_else(|| anyhow::anyhow!("No variable found with the name {}", self.unmangled_name().bold().cyan()))
-			.map_err(mapped_err! {
-				while = format!("attempting to get the original value of the name \"{}\" to evaluate it at compile-time", self.unmangled_name().bold().cyan()),
-				position = self.span(),
-				details = unindent::unindent(&format!(
-					"
-					Here you reference a variable called \"{name}\", but no variable called \"{name}\" exists at this
-					part of the program. If this is a typo and you don't expect a variable with this name to exist, you
-					may be trying to refer to one of these variables, which are the ones with the closest names that are
-					present here:
-
-					{closest}
-					", 
-					name = self.unmangled_name().bold().red(),
-					closest = context()
-						.scope_data
-						.get_closest_variables(&self, 3)
-						.iter()
-						.map(|(name, _)| format!("    - {}", name.unmangled_name().bold().green()))
-						.collect::<Vec<_>>()
-						.join("\n")
-						.trim_start()
-				)),
-			})?;
-
-		debug_log!("Name {} evaluated to a {}", self.unmangled_name().red(), value.kind_name().cyan());
-
-		debug_section.finish();
-		Ok(value.try_clone_pointer().unwrap_or(Expression::Name(self)))
+	fn evaluate_at_compile_time(self) -> Self::Output {
+		let error = Expression::ErrorExpression(Span::unknown());
+		let value = context().scope_data.get_variable(self.clone()).unwrap_or(&error);
+		value.try_clone_pointer().unwrap_or(Expression::Name(self))
 	}
 }
 

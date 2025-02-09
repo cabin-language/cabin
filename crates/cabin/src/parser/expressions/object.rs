@@ -5,12 +5,9 @@ use try_as::traits as try_as_traits;
 use crate::{
 	api::{context::context, scope::ScopeId},
 	comptime::{memory::VirtualPointer, CompileTime},
-	debug_log,
-	debug_start,
 	if_then_else_default,
 	if_then_some,
 	lexer::{Span, TokenType},
-	mapped_err,
 	parse_list,
 	parser::{
 		expressions::{field_access::FieldAccessType, group::GroupDeclaration, literal::LiteralConvertible as _, name::Name, parameter::Parameter, Expression, Spanned},
@@ -148,7 +145,7 @@ impl TryParse for ObjectConstructor {
 		// Name
 		let name = Name::try_parse(tokens)?;
 
-		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
+		let _compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, ListType::AngleBracketed, {
 				let parameter = Parameter::try_parse(tokens)?;
@@ -209,31 +206,12 @@ impl TryParse for ObjectConstructor {
 impl CompileTime for ObjectConstructor {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(mut self) -> anyhow::Result<Self::Output> {
-		let debug_section = debug_start!(
-			"{} an object of type {}",
-			"Compile-Time Evaluating".green().bold(),
-			self.type_name.unmangled_name().yellow()
-		);
+	fn evaluate_at_compile_time(mut self) -> Self::Output {
 		let _scope_reverter = context().scope_data.set_current_scope(self.inner_scope_id);
 
 		// Get object type
 		let object_type = if_then_some!(!matches!(self.type_name.unmangled_name(), "Group" | "Module" | "Object"), {
-			GroupDeclaration::from_literal(
-				self.type_name
-					.clone()
-					.evaluate_at_compile_time()
-					.map_err(mapped_err! {
-						while = format!("evaluating the type of an object constructor at compile time"),
-					})?
-					.try_as_literal()
-					.map_err(mapped_err! {
-						while = format!("interpreting an object constructor's type (\"{}\") as a literal", self.type_name.unmangled_name().bold().cyan()),
-					})?,
-			)
-			.map_err(mapped_err! {
-				while = "converting an object constructor's type from a literal to a group declaration",
-			})?
+			GroupDeclaration::from_literal(self.type_name.clone().evaluate_at_compile_time().try_as_literal().unwrap()).unwrap()
 		});
 
 		// Default fields
@@ -251,15 +229,9 @@ impl CompileTime for ObjectConstructor {
 
 		// Explicit fields
 		for field in self.fields.clone() {
-			debug_log!("{} the object field {}", "Compile-Time Evaluating".green().bold(), field.name.unmangled_name().red());
 			let field_value = field.value.clone().unwrap();
 
-			let field_value = field_value.evaluate_at_compile_time().map_err(mapped_err! {
-				while = format!(
-					"evaluating the value of the field \"{}\" of an object at compile-time",
-					field.name.unmangled_name().bold().cyan()
-				),
-			})?;
+			let field_value = field_value.evaluate_at_compile_time();
 
 			let evaluated_field = Field {
 				name: field.name.clone(),
@@ -270,17 +242,16 @@ impl CompileTime for ObjectConstructor {
 			self.fields.add_or_overwrite_field(evaluated_field);
 		}
 
-		self.tags = self.tags.evaluate_at_compile_time()?;
+		self.tags = self.tags.evaluate_at_compile_time();
 
 		let result = if self.is_literal() {
-			let literal = self.try_into()?;
+			let literal = self.try_into().unwrap();
 			let address = context().virtual_memory.store(literal);
-			Ok(Expression::Pointer(address))
+			Expression::Pointer(address)
 		} else {
-			Ok(Expression::ObjectConstructor(self))
+			Expression::ObjectConstructor(self)
 		};
 
-		debug_section.finish();
 		result
 	}
 }
@@ -307,7 +278,7 @@ impl TranspileToC for ObjectConstructor {
 		let name = if self.type_name == "Object".into() {
 			format!("type_{}_UNKNOWN", self.name.to_c()?) // TODO
 		} else {
-			self.type_name.clone().evaluate_at_compile_time()?.to_c()?
+			self.type_name.clone().evaluate_at_compile_time().to_c()?
 		};
 
 		let mut builder = format!("({name}) {{");

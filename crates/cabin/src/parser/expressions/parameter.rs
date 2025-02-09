@@ -10,11 +10,9 @@ use super::{
 	Typed,
 };
 use crate::{
-	api::{context::context, scope::ScopeId, traits::TerminalOutput},
-	bail_err,
+	api::{context::context, scope::ScopeId},
 	comptime::{memory::VirtualPointer, CompileTime},
 	debug_log,
-	debug_start,
 	lexer::{Span, TokenType},
 	parser::{statements::tag::TagList, Parse as _, TokenQueue, TokenQueueFunctionality, TryParse},
 };
@@ -48,22 +46,9 @@ impl TryParse for Parameter {
 impl CompileTime for Parameter {
 	type Output = Parameter;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		let debug_section = debug_start!("{} a {}", "Compile-Time Evaluating".bold().green(), "parameter".cyan());
+	fn evaluate_at_compile_time(self) -> Self::Output {
 		debug_log!("Compile-Time Evaluating the type of a parameter");
-		let evaluated = self.parameter_type.evaluate_as_type()?;
-
-		if !matches!(evaluated, Expression::Name(_) | Expression::Pointer(_)) {
-			bail_err! {
-				base = format!(
-					"
-                    A value that's not fully known at compile-time was used as a parameter 
-                    type. Instead, it's a {} that can't be further evaluated at compile-time.
-                    ",
-					evaluated.kind_name().bold().cyan()
-				).as_terminal_output(),
-			}
-		}
+		let evaluated = self.parameter_type.evaluate_as_type();
 
 		let parameter = Parameter {
 			name: self.name.clone(),
@@ -72,8 +57,7 @@ impl CompileTime for Parameter {
 			scope_id: self.scope_id,
 		};
 
-		debug_section.finish();
-		Ok(parameter)
+		parameter
 	}
 }
 

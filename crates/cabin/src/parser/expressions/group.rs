@@ -10,13 +10,10 @@ use crate::{
 		scope::{ScopeId, ScopeType},
 	},
 	bail_err,
-	comptime::{memory::VirtualPointer, CompileTime},
-	debug_log,
-	debug_start,
+	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
 	if_then_else_default,
 	if_then_some,
 	lexer::{Span, Token, TokenType},
-	mapped_err,
 	parse_list,
 	parser::{
 		expressions::{
@@ -35,6 +32,8 @@ use crate::{
 		TokenQueueFunctionality,
 	},
 	transpiler::TranspileToC,
+	Diagnostic,
+	DiagnosticInfo,
 };
 
 #[derive(Debug, Clone)]
@@ -49,13 +48,13 @@ pub struct GroupDeclaration {
 impl TryParse for GroupDeclaration {
 	type Output = VirtualPointer;
 
-	fn try_parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordGroup)?.span;
 		let outer_scope_id = context().scope_data.unique_id();
 		context().scope_data.enter_new_scope(ScopeType::Group);
 		let inner_scope_id = context().scope_data.unique_id();
 
-		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
+		let _compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, ListType::AngleBracketed, {
 				let parameter = Parameter::try_parse(tokens)?;
@@ -118,41 +117,20 @@ impl TryParse for GroupDeclaration {
 impl CompileTime for GroupDeclaration {
 	type Output = GroupDeclaration;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		let debug_section = debug_start!(
-			"{} a {} called {}",
-			"Compile-Time Evaluating".bold().green(),
-			"group".cyan(),
-			self.name.unmangled_name().yellow()
-		);
+	fn evaluate_at_compile_time(self) -> Self::Output {
 		let _scope_reverter = context().scope_data.set_current_scope(self.inner_scope_id);
 		let mut fields = Vec::new();
 
 		for field in self.fields {
-			let field_debug = debug_start!(
-				"{} the {} field {}",
-				"Compile-Time Evaluating".bold().green(),
-				"group".cyan(),
-				field.name.unmangled_name().red()
-			);
-
 			// Field value
-			debug_log!(
-				"{} the value of the {} field {}",
-				"Compile-Time Evaluating".bold().green(),
-				"group".cyan(),
-				field.name.unmangled_name().red()
-			);
 			let value = if let Some(value) = field.value {
-				let evaluated = value.evaluate_at_compile_time().map_err(mapped_err! {
-					while = format!("evaluating the default value of the field \"{}\" of a group declaration at compile-time", field.name.unmangled_name().bold().cyan()),
-				})?;
+				let evaluated = value.evaluate_at_compile_time();
 
 				if !evaluated.is_pointer() {
-					bail_err! {
-						base = "Attempted to assign a default value to a group field that's not known at compile-time",
-						while = format!("while checking the default value of the field \"{}\"", field.name.unmangled_name().bold().cyan()),
-					};
+					context().add_diagnostic(Diagnostic {
+						span: evaluated.span(),
+						error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::GroupValueNotKnownAtCompileTime)),
+					});
 				}
 
 				Some(evaluated)
@@ -161,14 +139,8 @@ impl CompileTime for GroupDeclaration {
 			};
 
 			// Field type
-			debug_log!("{} the type of the field {}", "Compile-Time Evaluating".bold().green(), field.name.unmangled_name().red());
 			let field_type = if let Some(field_type) = field.field_type {
-				Some(field_type.evaluate_at_compile_time().map_err(mapped_err! {
-					while = format!(
-						"evaluating the value of the field \"{}\" of a group declaration at compile-time",
-						field.name.unmangled_name().bold().cyan()
-					),
-				})?)
+				Some(field_type.evaluate_at_compile_time())
 			} else {
 				None
 			};
@@ -179,18 +151,16 @@ impl CompileTime for GroupDeclaration {
 				value,
 				field_type,
 			});
-			field_debug.finish();
 		}
 
 		// Store in memory and return a pointer
-		debug_section.finish();
-		Ok(GroupDeclaration {
+		GroupDeclaration {
 			fields,
 			inner_scope_id: self.inner_scope_id,
 			outer_scope_id: self.outer_scope_id,
 			name: self.name,
 			span: self.span,
-		})
+		}
 	}
 }
 

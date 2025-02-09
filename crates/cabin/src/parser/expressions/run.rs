@@ -1,6 +1,5 @@
 use crate::{
 	comptime::CompileTime,
-	debug_log,
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{Expression, Spanned, Typed},
@@ -56,11 +55,11 @@ impl TryParse for RunExpression {
 impl CompileTime for RunExpression {
 	type Output = RunExpression;
 
-	fn evaluate_at_compile_time(self) -> anyhow::Result<Self::Output> {
-		Ok(RunExpression {
-			expression: Box::new(self.expression.evaluate_subexpressions_at_compile_time()?),
+	fn evaluate_at_compile_time(self) -> Self::Output {
+		RunExpression {
+			expression: Box::new(self.expression.evaluate_subexpressions_at_compile_time()),
 			span: self.span,
-		})
+		}
 	}
 }
 
@@ -86,5 +85,5 @@ impl Spanned for RunExpression {
 /// the expression needs to implement how the `run` keyword should act on it via
 /// `evaluate_subexpressions_at_compile_time()`.
 pub trait RuntimeableExpression: Sized {
-	fn evaluate_subexpressions_at_compile_time(self) -> anyhow::Result<Self>;
+	fn evaluate_subexpressions_at_compile_time(self) -> Self;
 }
