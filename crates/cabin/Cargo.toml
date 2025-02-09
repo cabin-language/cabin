@@ -17,13 +17,10 @@ path = "src/bin.rs"
 
 [dependencies]
 anyhow = "1.0.93"
-clap = { version = "4.5.21", features = ["derive"] }
 colored = "2.1.0"
 convert_case = "0.6.0"
-enum_dispatch = "0.3.13"
 expression-formatter = "0.1.0"
 paste = "1.0.15"
-pathdiff = "0.2.2"
 phf = { version = "0.11.2", features = ["macros"] }
 regex-macro = "0.2.0"
 semver = "1.0.23"
@@ -51,7 +48,7 @@ single_use_lifetimes = "warn"
 trivial_numeric_casts = "warn"
 unnameable_types = "warn"
 unsafe_code = "deny"
-#unused_crate_dependencies = "forbid"
+unused_crate_dependencies = "forbid"
 unused_extern_crates = "forbid"
 unused_import_braces = "warn"
 unused_lifetimes = "warn"

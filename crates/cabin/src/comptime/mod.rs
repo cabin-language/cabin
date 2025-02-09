@@ -29,4 +29,13 @@ pub enum CompileTimeError {
 
 	#[error("This type of value can't be called")]
 	CallNonFunction,
+
+	#[error("Unknown variable \"{0}\"")]
+	UnknownVariable(String),
+
+	#[error("This expression is being used as a type, but it can't be fully evaluated at compile-time")]
+	ExpressionUsedAsType,
+
+	#[error("No property \"{0}\" exists on this value")]
+	FieldNotFound(String),
 }

@@ -154,8 +154,6 @@ pub const NO_THEME: Theme = Theme {
 	function: Style::foreground(),
 };
 
-/// An enum of all themes which can be parsed by `clap` from the command line. This is convertible, and implicitly dereferences to, a `Theme` object reference.
-#[derive(Clone, clap::ValueEnum)]
 pub enum ParseableTheme {
 	/// The "one midnight" theme. This is Cabin's default theme; It's a midnight blurple with classic Atom One Dark foreground colors.
 	OneMidnight,

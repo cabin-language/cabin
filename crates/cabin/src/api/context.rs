@@ -2,15 +2,13 @@ use std::{fmt::Write as _, sync::LazyLock};
 
 use colored::{ColoredString, Colorize as _};
 
+use super::project::Project;
 use crate::{
 	api::{
 		config_files::{CabinToml, CabinTomlWriteOnDrop},
 		scope::ScopeData,
 	},
-	cli::{
-		theme::{Styled as _, Theme},
-		RunningContext,
-	},
+	cli::theme::{Styled as _, Theme},
 	comptime::memory::VirtualMemory,
 	lexer::Span,
 	Diagnostics,
@@ -20,11 +18,11 @@ pub struct Context {
 	// Publicly mutable
 	pub scope_data: ScopeData,
 	pub virtual_memory: VirtualMemory,
-	pub running_context: RunningContext,
 	pub lines_printed: usize,
 	pub theme: Theme,
 	pub colored_program: Vec<ColoredString>,
 	pub phase: Phase,
+	pub project: Option<Project>,
 
 	// Privately mutable
 	warnings: Vec<String>,
@@ -51,11 +49,11 @@ impl Default for Context {
 			compiler_error_position: Vec::new(),
 			warnings: Vec::new(),
 			lines_printed: 0,
-			running_context: RunningContext::try_from(&std::env::current_dir().unwrap()).unwrap(),
 			theme: Theme::default(),
 			colored_program: Vec::new(),
 			debug_indent: Vec::new(),
 			errors: Diagnostics::none(),
+			project: None,
 		}
 	}
 }
@@ -235,10 +233,7 @@ impl Context {
 	/// If the compiler is currently operating on a single file instead of in a project that contains options, since
 	/// single Cabin files can't contain compiler configuration.
 	pub fn cabin_toml_mut(&mut self) -> anyhow::Result<CabinTomlWriteOnDrop> {
-		let RunningContext::Project(project) = &self.running_context else {
-			anyhow::bail!("Attempted to get a mutable reference to the cabin.toml, but Cabin is not currently running in a project.");
-		};
-		Ok(CabinTomlWriteOnDrop::new(&mut self.options, project.root_directory().to_owned()))
+		Ok(CabinTomlWriteOnDrop::new(&mut self.options, self.project.as_ref().unwrap().root_directory().to_owned()))
 	}
 
 	pub fn add_warning(&mut self, warning: String) {

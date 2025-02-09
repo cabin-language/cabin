@@ -28,13 +28,13 @@ pub enum Warning {
 
 #[derive(Clone, thiserror::Error, Debug)]
 pub enum Error {
-	#[error("Tokenization error: {0}")]
+	#[error("{0}")]
 	Tokenize(TokenizeError),
 
-	#[error("Parse error: {0}")]
+	#[error("{0}")]
 	Parse(ParseError),
 
-	#[error("Evaluation error: {0}")]
+	#[error("{0}")]
 	CompileTime(CompileTimeError),
 }
 
@@ -43,7 +43,7 @@ pub enum DiagnosticInfo {
 	#[error("{0}")]
 	Error(Error),
 
-	#[error("Warning: {0}")]
+	#[error("{0}")]
 	Warning(Warning),
 }
 

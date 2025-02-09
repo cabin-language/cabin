@@ -1,6 +1,5 @@
 use convert_case::{Case, Casing};
 
-use super::Statement;
 use crate::{
 	api::{context::context, scope::ScopeId},
 	comptime::CompileTime,
@@ -9,7 +8,7 @@ use crate::{
 	mapped_err,
 	parser::{
 		expressions::{name::Name, Expression, Spanned},
-		statements::tag::TagList,
+		statements::{tag::TagList, Statement},
 		Parse as _,
 		TokenQueue,
 		TokenQueueFunctionality,
@@ -80,7 +79,7 @@ impl TryParse for Declaration {
 				|| literal.type_name() == &"OneOf".into()
 				|| literal.type_name() == &"RepresentAs".into()
 			{
-				if name.unmangled_name() != name.unmangled_name().to_case(Case::Pascal) {
+				if !name.unmangled_name().is_case(Case::Pascal) {
 					context().add_diagnostic(Diagnostic {
 						span: name.span(),
 						error: DiagnosticInfo::Warning(Warning::NonPascalCaseGroup {
@@ -89,7 +88,7 @@ impl TryParse for Declaration {
 						}),
 					});
 				}
-			} else if name.unmangled_name() != name.unmangled_name().to_case(Case::Snake) {
+			} else if !name.unmangled_name().is_case(Case::Snake) {
 				context().add_diagnostic(Diagnostic {
 					span: name.span(),
 					error: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
@@ -97,7 +96,7 @@ impl TryParse for Declaration {
 					}),
 				});
 			}
-		} else if name.unmangled_name() != name.unmangled_name().to_case(Case::Snake) {
+		} else if !name.unmangled_name().is_case(Case::Snake) {
 			context().add_diagnostic(Diagnostic {
 				span: name.span(),
 				error: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {

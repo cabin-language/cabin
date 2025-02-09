@@ -5,10 +5,12 @@ use colored::Colorize as _;
 use super::Spanned;
 use crate::{
 	api::context::context,
-	comptime::CompileTime,
+	comptime::{CompileTime, CompileTimeError},
 	lexer::{Span, TokenType},
 	parser::{expressions::Expression, ToCabin, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::TranspileToC,
+	Diagnostic,
+	DiagnosticInfo,
 };
 
 #[derive(Clone, Eq)]
@@ -33,7 +35,7 @@ pub struct Name {
 impl TryParse for Name {
 	type Output = Self;
 
-	fn try_parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output, Diagnostic> {
 		let token = tokens.pop(TokenType::Identifier)?;
 
 		Ok(Name {
@@ -49,7 +51,18 @@ impl CompileTime for Name {
 
 	fn evaluate_at_compile_time(self) -> Self::Output {
 		let error = Expression::ErrorExpression(Span::unknown());
-		let value = context().scope_data.get_variable(self.clone()).unwrap_or(&error);
+		let value = context().scope_data.get_variable(self.clone()).unwrap_or_else(|| {
+			context().add_diagnostic(Diagnostic {
+				span: self.span(),
+				error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::UnknownVariable(self.unmangled_name().to_owned()))),
+			});
+			&error
+		});
+
+		if matches!(value, Expression::ErrorExpression(_)) {
+			return value.clone();
+		}
+
 		value.try_clone_pointer().unwrap_or(Expression::Name(self))
 	}
 }

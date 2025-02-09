@@ -1,6 +1,6 @@
 use crate::{
 	api::{context::context, scope::ScopeId, traits::TryAs as _},
-	comptime::{memory::VirtualPointer, CompileTime},
+	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{function_declaration::FunctionDeclaration, literal::LiteralConvertible as _, name::Name, operators::PrimaryExpression, Expression, Spanned},
@@ -9,6 +9,8 @@ use crate::{
 		TryParse,
 	},
 	transpiler::TranspileToC,
+	Diagnostic,
+	DiagnosticInfo,
 };
 
 /// A type describing how fields are accessed on this type of objects via the dot operator.
@@ -32,7 +34,7 @@ pub struct FieldAccess {
 impl TryParse for FieldAccess {
 	type Output = Expression;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
 		let mut expression = PrimaryExpression::try_parse(tokens)?; // There should be no map_err here
 		let start = expression.span();
 		while tokens.next_is(TokenType::Dot) {
@@ -65,7 +67,13 @@ impl CompileTime for FieldAccess {
 				// Object fields
 				FieldAccessType::Normal => {
 					let field = literal.get_field(self.right.clone());
-					let field = field.unwrap_or(VirtualPointer::ERROR);
+					let field = field.unwrap_or_else(|| {
+						context().add_diagnostic(Diagnostic {
+							span: self.right.span(),
+							error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::FieldNotFound(self.right.unmangled_name().to_owned()))),
+						});
+						VirtualPointer::ERROR
+					});
 
 					let field_value_literal = field.virtual_deref();
 					if field_value_literal.type_name() == &"Function".into() {
@@ -84,7 +92,13 @@ impl CompileTime for FieldAccess {
 					variants
 						.iter()
 						.find_map(|(name, value)| (name == &self.right).then_some(Expression::Pointer(value.to_owned())))
-						.unwrap_or(Expression::ErrorExpression(span))
+						.unwrap_or_else(|| {
+							context().add_diagnostic(Diagnostic {
+								span: self.right.span(),
+								error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::FieldNotFound(self.right.unmangled_name().to_owned()))),
+							});
+							Expression::ErrorExpression(span)
+						})
 				},
 			}
 		}

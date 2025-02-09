@@ -195,7 +195,7 @@ impl CompileTime for FunctionCall {
 		// Compile-time arguments
 		let builtin = context()
 			.scope_data
-			.get_variable_from_id("builtin", ScopeData::get_stdlib_id())
+			.get_variable("builtin")
 			.unwrap()
 			.try_as::<VirtualPointer>()
 			.unwrap_or(&VirtualPointer::ERROR);
@@ -218,22 +218,11 @@ impl CompileTime for FunctionCall {
 				.store_in_memory(),
 			)]
 		} else {
-			let compile_args_debug = debug_start!(
-				"{} a {} compile-time arguments at compile-time",
-				"Compile-Time Evaluating".bold().green(),
-				"function call's".cyan()
-			);
 			let mut evaluated_compile_time_arguments = Vec::new();
 			for compile_time_argument in self.compile_time_arguments {
-				debug_log!(
-					"Evaluating compile-time argument {} of a {}",
-					evaluated_compile_time_arguments.len() + 1,
-					"function call".cyan()
-				);
 				let evaluated = compile_time_argument.evaluate_at_compile_time();
 				evaluated_compile_time_arguments.push(evaluated);
 			}
-			compile_args_debug.finish();
 			evaluated_compile_time_arguments
 		};
 
@@ -267,9 +256,13 @@ impl CompileTime for FunctionCall {
 		// Evaluate function
 		let literal = function.try_as_literal();
 		if let Ok(function_declaration) = literal {
+			if function_declaration.type_name() == &"Group".into() {
+				return Expression::Pointer(function_declaration.address.unwrap());
+			}
+
 			let function_declaration = FunctionDeclaration::from_literal(function_declaration).map(Cow::Owned).unwrap_or_else(|_| {
 				context().add_diagnostic(Diagnostic {
-					span: function_declaration.span(),
+					span,
 					error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::CallNonFunction)),
 				});
 				Cow::Borrowed(FunctionDeclaration::error())

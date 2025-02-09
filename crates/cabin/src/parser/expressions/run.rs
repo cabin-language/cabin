@@ -1,5 +1,5 @@
 use crate::{
-	comptime::CompileTime,
+	comptime::{memory::VirtualPointer, CompileTime},
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{Expression, Spanned, Typed},
@@ -70,7 +70,7 @@ impl TranspileToC for RunExpression {
 }
 
 impl Typed for RunExpression {
-	fn get_type(&self) -> anyhow::Result<crate::comptime::memory::VirtualPointer> {
+	fn get_type(&self) -> anyhow::Result<VirtualPointer> {
 		self.expression.get_type()
 	}
 }

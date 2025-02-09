@@ -1,5 +1,3 @@
-use use_extend::{DefaultExtend, DefaultExtendPointer};
-
 use crate::{
 	api::context::context,
 	comptime::CompileTime,
@@ -18,14 +16,12 @@ use crate::{
 pub mod declaration;
 pub mod tag;
 pub mod tail;
-pub mod use_extend;
 
 #[derive(Debug, Clone)]
 pub enum Statement {
 	Declaration(Declaration),
 	Tail(TailStatement),
 	Expression(Expression),
-	DefaultExtend(DefaultExtendPointer),
 	Error(Span),
 }
 
@@ -34,7 +30,6 @@ impl Spanned for Statement {
 		match self {
 			Self::Declaration(declaration) => declaration.span(),
 			Self::Tail(tail) => tail.span(),
-			Self::DefaultExtend(extend) => extend.span(),
 			Self::Expression(expression) => expression.span(),
 			Self::Error(span) => *span,
 		}
@@ -48,7 +43,6 @@ impl Parse for Statement {
 		fn try_parse(tokens: &mut TokenQueue) -> Result<Statement, crate::Diagnostic> {
 			let statement = match tokens.peek_type()? {
 				TokenType::KeywordLet | TokenType::TagOpening => Declaration::try_parse(tokens)?,
-				TokenType::KeywordDefault => Statement::DefaultExtend(DefaultExtend::try_parse(tokens)?),
 				TokenType::Identifier => {
 					if tokens.peek_type2()? == TokenType::KeywordIs {
 						let tail = Statement::Tail(TailStatement::try_parse(tokens)?);
@@ -95,7 +89,6 @@ impl CompileTime for Statement {
 	fn evaluate_at_compile_time(self) -> Self::Output {
 		match self {
 			Statement::Declaration(declaration) => Statement::Declaration(declaration.evaluate_at_compile_time()),
-			Statement::DefaultExtend(default_extend) => Statement::DefaultExtend(default_extend.evaluate_at_compile_time()),
 			Statement::Expression(expression) => Statement::Expression(expression.evaluate_at_compile_time()),
 			Statement::Tail(tail) => Statement::Tail(tail.evaluate_at_compile_time()),
 			Statement::Error(span) => Statement::Error(span),

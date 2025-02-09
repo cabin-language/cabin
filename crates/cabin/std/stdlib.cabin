@@ -53,15 +53,10 @@ let runtime = action<reason: Text>: RuntimeTag {
 	};
 };
 
-let Field = group {
-	name: Text,
-	value: Anything,
-};
+let List = group {};
 
-let List = group<Element: Anything> {};
-
-let Either = group<Type: Anything> {
-	variants: List<Type>
+let Either = group {
+	variants: List
 };
 
 let Boolean = either {
@@ -89,7 +84,10 @@ let AddableTo = group<Operand: Anything, Result: Anything> {
 	plus: action(this: This, other: Operand): Result
 }; 
 
-default extend Number tobe AddableTo<Number, Number> { 
+let Addable = group {};
+
+#[default]
+let AddNumbers = extend Number tobe Addable { 
 
 	#[builtin<"Number.plus">]
 	plus = action(this: Number, other: Number): Number,

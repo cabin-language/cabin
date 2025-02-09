@@ -208,7 +208,6 @@ pub enum TokenType {
 	/// Like all keywords, this enum variant declaration *must* come before `Identifier`. If it doesn't, then `while` will be tokenized incorrectly as
 	/// identifiers, which will cause issues when parsing. Please be careful when moving around this keyword or the `Identifier` token type!
 	KeywordWhile,
-	KeywordDefault,
 
 	KeywordEither,
 
@@ -330,7 +329,6 @@ impl TokenType {
 			Self::KeywordAction => regex!(r"^action\b"),
 			Self::KeywordAnd => regex!(r"^and\b"),
 			Self::KeywordOr => regex!(r"^or\b"),
-			Self::KeywordDefault => regex!(r"^default\b"),
 			Self::KeywordEither => regex!(r"^either\b"),
 			Self::KeywordExtend => regex!(r"^extend\b"),
 			Self::KeywordForEach => regex!(r"^foreach\b"),
@@ -473,7 +471,6 @@ impl Token {
 			| TokenType::KeywordForEach
 			| TokenType::KeywordIn
 			| TokenType::KeywordWhile
-			| TokenType::KeywordDefault
 			| TokenType::KeywordEither => context().theme.keyword(),
 
 			// Identifiers

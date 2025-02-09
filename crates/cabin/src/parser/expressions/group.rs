@@ -124,11 +124,12 @@ impl CompileTime for GroupDeclaration {
 		for field in self.fields {
 			// Field value
 			let value = if let Some(value) = field.value {
+				let span = value.span();
 				let evaluated = value.evaluate_at_compile_time();
 
-				if !evaluated.is_pointer() {
+				if !evaluated.is_pointer() && !evaluated.is_error() {
 					context().add_diagnostic(Diagnostic {
-						span: evaluated.span(),
+						span,
 						error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::GroupValueNotKnownAtCompileTime)),
 					});
 				}

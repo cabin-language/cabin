@@ -1,20 +1,27 @@
 use std::{collections::HashMap, fmt::Debug};
 
-use super::{
-	field_access::FieldAccessType,
-	literal::{LiteralConvertible, LiteralObject},
-	name::Name,
-	object::InternalFieldValue,
-	Expression,
-	Spanned,
-	Typed,
-};
 use crate::{
 	api::{context::context, scope::ScopeId},
-	comptime::{memory::VirtualPointer, CompileTime},
-	debug_log,
+	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
 	lexer::{Span, TokenType},
-	parser::{statements::tag::TagList, Parse as _, TokenQueue, TokenQueueFunctionality, TryParse},
+	parser::{
+		expressions::{
+			field_access::FieldAccessType,
+			literal::{LiteralConvertible, LiteralObject},
+			name::Name,
+			object::InternalFieldValue,
+			Expression,
+			Spanned,
+			Typed,
+		},
+		statements::tag::TagList,
+		Parse as _,
+		TokenQueue,
+		TokenQueueFunctionality,
+		TryParse,
+	},
+	Diagnostic,
+	DiagnosticInfo,
 };
 
 #[derive(Clone)]
@@ -28,7 +35,7 @@ pub struct Parameter {
 impl TryParse for Parameter {
 	type Output = VirtualPointer;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
 		let name = Name::try_parse(tokens)?;
 		let _ = tokens.pop(TokenType::Colon)?;
 		let parameter_type = Expression::parse(tokens);
@@ -47,8 +54,15 @@ impl CompileTime for Parameter {
 	type Output = Parameter;
 
 	fn evaluate_at_compile_time(self) -> Self::Output {
-		debug_log!("Compile-Time Evaluating the type of a parameter");
+		let type_span = self.parameter_type.span();
 		let evaluated = self.parameter_type.evaluate_as_type();
+
+		if !matches!(evaluated, Expression::Pointer(_)) {
+			context().add_diagnostic(Diagnostic {
+				span: type_span,
+				error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::ExpressionUsedAsType)),
+			});
+		}
 
 		let parameter = Parameter {
 			name: self.name.clone(),

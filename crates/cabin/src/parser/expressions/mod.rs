@@ -142,6 +142,10 @@ impl Expression {
 		}
 	}
 
+	pub fn is_error(&self) -> bool {
+		matches!(self, Expression::ErrorExpression(_))
+	}
+
 	pub fn evaluate_as_type(self) -> Expression {
 		match self {
 			Self::Pointer(pointer) => Expression::Pointer(pointer),
