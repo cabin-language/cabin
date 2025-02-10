@@ -21,22 +21,14 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 			let mut arguments = VecDeque::from(arguments);
 			let pointer = arguments.pop_front().unwrap_or_else(|| Expression::ErrorExpression(span));
 			let returned_object = call_builtin_at_compile_time("Anything.to_string", caller_scope_id, vec![pointer], span);
-			let string_value = returned_object.try_as_literal().unwrap().try_as::<String>().unwrap().to_owned();
-
-			let options = arguments.pop_front().unwrap().try_as::<VirtualPointer>().unwrap_or(&VirtualPointer::ERROR).virtual_deref();
-			let newline = Expression::Pointer(options.get_field("newline").unwrap()).is_true();
+			let string_value = returned_object.try_as_literal().try_as::<String>().unwrap().to_owned();
 
 			if context().lines_printed == 0 && !context().config().options().quiet() {
-				println!("\n");
+				//println!("\n");
 				context().lines_printed += 1;
 			}
 
-			if newline {
-				println!("{string_value}");
-			} else {
-				print!("{string_value}");
-				std::io::stdout().flush().unwrap();
-			}
+			println!("{string_value}");
 			context().lines_printed += string_value.chars().filter(|character| character == &'\n').count() + 1;
 
 			Expression::ErrorExpression(Span::unknown())
@@ -84,7 +76,7 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 			let this = arguments
 				.first()
 				.unwrap_or(&Expression::ErrorExpression(span))
-				.try_as_literal().unwrap();
+				.try_as_literal();
 
 			let type_name = this.get_internal_field::<Name>("representing_type_name").unwrap_or_else(|_| this.type_name());
 			string(&match type_name.unmangled_name() {

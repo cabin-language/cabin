@@ -2,7 +2,7 @@ use std::{fmt::Write as _, sync::LazyLock};
 
 use colored::{ColoredString, Colorize as _};
 
-use super::project::Project;
+use super::{diagnostics::Diagnostic, project::Project};
 use crate::{
 	api::{
 		config_files::{CabinToml, CabinTomlWriteOnDrop},
@@ -52,7 +52,7 @@ impl Default for Context {
 			theme: Theme::default(),
 			colored_program: Vec::new(),
 			debug_indent: Vec::new(),
-			errors: Diagnostics::none(),
+			errors: Diagnostics::empty(),
 			project: None,
 		}
 	}
@@ -85,7 +85,7 @@ impl Context {
 		}
 	}
 
-	pub fn add_diagnostic(&mut self, error: crate::Diagnostic) {
+	pub fn add_diagnostic(&mut self, error: Diagnostic) {
 		self.errors.push(error);
 	}
 

@@ -2,6 +2,7 @@ use super::Spanned;
 use crate::{
 	api::{context::context, scope::ScopeId, traits::TryAs as _},
 	comptime::{CompileTime, CompileTimeError},
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{block::Block, name::Name, Expression},
@@ -11,8 +12,6 @@ use crate::{
 		TryParse,
 	},
 	transpiler::TranspileToC,
-	Diagnostic,
-	DiagnosticInfo,
 };
 
 #[derive(Debug, Clone)]
@@ -55,7 +54,7 @@ impl TryParse for ForEachLoop {
 		let inner_scope_id = body.inner_scope_id();
 		context()
 			.scope_data
-			.declare_new_variable_from_id(binding_name.clone(), Expression::ErrorExpression(Span::unknown()), inner_scope_id)?;
+			.declare_new_variable_from_id(binding_name.clone(), Expression::ErrorExpression(Span::unknown()), inner_scope_id);
 
 		Ok(ForEachLoop {
 			binding_name,
@@ -74,13 +73,14 @@ impl CompileTime for ForEachLoop {
 		self.iterable = Box::new(self.iterable.evaluate_at_compile_time());
 
 		let default = Vec::new();
-		if let Ok(literal) = self.iterable.try_as_literal() {
+		let literal = self.iterable.try_as_literal();
+		if !literal.is_error() {
 			let elements = literal
 				.try_as::<Vec<Expression>>()
 				.unwrap_or_else(|_| {
 					context().add_diagnostic(Diagnostic {
 						span: self.iterable.span(),
-						error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::IterateOverNonList)),
+						info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::IterateOverNonList)),
 					});
 					&default
 				})

@@ -1,5 +1,6 @@
 use crate::{
 	api::context::context,
+	diagnostics::Diagnostic,
 	parse_list,
 	parser::{
 		expressions::{
@@ -22,7 +23,7 @@ pub struct List;
 impl TryParse for List {
 	type Output = Expression;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
 		let mut list = Vec::new();
 		let start = tokens.current_position().unwrap();
 		let end = parse_list!(tokens, ListType::Bracketed, { list.push(Expression::parse(tokens)) }).span;

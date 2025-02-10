@@ -1,3 +1,4 @@
-foreach number in 1.to(100) {
+let Text = builtin.Text;
 
-};
+let print = builtin.system.terminal.print;
+print("Hello world");

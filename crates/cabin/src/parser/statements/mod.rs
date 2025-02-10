@@ -1,6 +1,7 @@
 use crate::{
 	api::context::context,
 	comptime::CompileTime,
+	diagnostics::Diagnostic,
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{Expression, Spanned},
@@ -40,7 +41,7 @@ impl Parse for Statement {
 	type Output = Statement;
 
 	fn parse(tokens: &mut TokenQueue) -> Self::Output {
-		fn try_parse(tokens: &mut TokenQueue) -> Result<Statement, crate::Diagnostic> {
+		fn try_parse(tokens: &mut TokenQueue) -> Result<Statement, Diagnostic> {
 			let statement = match tokens.peek_type()? {
 				TokenType::KeywordLet | TokenType::TagOpening => Declaration::try_parse(tokens)?,
 				TokenType::Identifier => {

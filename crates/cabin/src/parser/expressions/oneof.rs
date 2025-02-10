@@ -7,6 +7,7 @@ use crate::{
 		scope::{ScopeId, ScopeType},
 	},
 	comptime::{memory::VirtualPointer, CompileTime},
+	diagnostics::Diagnostic,
 	if_then_else_default,
 	lexer::{Span, TokenType},
 	parse_list,
@@ -40,7 +41,7 @@ pub struct OneOf {
 impl TryParse for OneOf {
 	type Output = VirtualPointer;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordOneOf)?.span;
 
 		// Enter inner scope
@@ -52,7 +53,7 @@ impl TryParse for OneOf {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, ListType::AngleBracketed, {
 				let name = Name::try_parse(tokens)?;
-				context().scope_data.declare_new_variable(name.clone(), Expression::ErrorExpression(Span::unknown()))?;
+				context().scope_data.declare_new_variable(name.clone(), Expression::ErrorExpression(Span::unknown()));
 				compile_time_parameters.push(name);
 			});
 			compile_time_parameters
@@ -86,7 +87,10 @@ impl CompileTime for OneOf {
 	type Output = OneOf;
 
 	fn evaluate_at_compile_time(self) -> Self::Output {
+		let _scope_reverter = context().scope_data.set_current_scope(self.inner_scope_id);
+
 		let mut choices = Vec::new();
+
 		for choice in self.choices {
 			if let Expression::Name(choice_name) = &choice {
 				if self.compile_time_parameters.contains(choice_name) {

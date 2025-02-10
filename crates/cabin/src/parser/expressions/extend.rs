@@ -7,6 +7,7 @@ use crate::{
 		traits::TryAs,
 	},
 	comptime::{memory::VirtualPointer, CompileTime},
+	diagnostics::Diagnostic,
 	if_then_else_default,
 	if_then_some,
 	lexer::{Span, TokenType},
@@ -69,7 +70,7 @@ pub struct Extend {
 impl TryParse for Extend {
 	type Output = VirtualPointer;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordExtend)?.span;
 		let outer_scope_id = context().scope_data.unique_id();
 
@@ -83,7 +84,7 @@ impl TryParse for Extend {
 				context().scope_data.declare_new_variable(
 					Parameter::from_literal(parameter.virtual_deref()).unwrap().name().to_owned(),
 					Expression::Pointer(parameter),
-				)?;
+				);
 				parameters.push(parameter);
 			});
 			parameters

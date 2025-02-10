@@ -3,10 +3,13 @@ use std::{collections::HashMap, fmt::Debug};
 use colored::Colorize as _;
 
 use crate::{
-	api::context::context,
+	api::{context::context, scope::ScopeId},
 	comptime::CompileTime,
 	lexer::Span,
-	parser::expressions::{literal::LiteralObject, Spanned, Typed},
+	parser::{
+		expressions::{field_access::FieldAccessType, literal::LiteralObject, Spanned, Typed},
+		statements::tag::TagList,
+	},
 	transpiler::TranspileToC,
 };
 
@@ -126,7 +129,20 @@ impl VirtualMemory {
 	///
 	/// The created empty virtual memory.
 	pub fn empty() -> VirtualMemory {
-		VirtualMemory { memory: HashMap::new() }
+		VirtualMemory {
+			memory: HashMap::from([(0, LiteralObject {
+				type_name: "Error".into(),
+				fields: HashMap::new(),
+				internal_fields: HashMap::new(),
+				field_access_type: FieldAccessType::Normal,
+				outer_scope_id: ScopeId::global(),
+				inner_scope_id: None,
+				name: "error".into(),
+				address: Some(VirtualPointer::ERROR),
+				span: Span::unknown(),
+				tags: TagList::default(),
+			})]),
+		}
 	}
 
 	/// Stores a value in virtual memory. This takes ownership of the value, and the value will live for as long as virtual memory,

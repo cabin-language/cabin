@@ -8,6 +8,7 @@ use crate::{
 	bail_err,
 	cli::theme::Styled,
 	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::Span,
 	parser::{
 		expressions::{
@@ -34,8 +35,6 @@ use crate::{
 		TryParse,
 	},
 	transpiler::TranspileToC,
-	Diagnostic,
-	DiagnosticInfo,
 };
 
 pub mod block;
@@ -123,14 +122,12 @@ impl CompileTime for Expression {
 }
 
 impl Expression {
-	pub fn try_as_literal(&self) -> anyhow::Result<&'static LiteralObject> {
-		Ok(match self {
+	pub fn try_as_literal(&self) -> &'static LiteralObject {
+		match self {
 			Self::Pointer(pointer) => pointer.virtual_deref(),
-			Self::Name(name) => name.clone().evaluate_at_compile_time().try_as_literal()?,
-			_ => bail_err! {
-				base = format!("A value that's not fully known at compile-time was used as a type; It can only be evaluated into a {} at compile-time.", self.kind_name().bold().yellow()),
-			},
-		})
+			Self::Name(name) => name.clone().evaluate_at_compile_time().try_as_literal(),
+			_ => VirtualPointer::ERROR.virtual_deref(),
+		}
 	}
 
 	pub fn is_fully_known_at_compile_time(&self) -> bool {
@@ -368,7 +365,7 @@ impl RuntimeableExpression for Expression {
 			_ => {
 				context().add_diagnostic(Diagnostic {
 					span: self.span(),
-					error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::RunNonFunctionCall)),
+					info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::RunNonFunctionCall)),
 				});
 				self
 			},

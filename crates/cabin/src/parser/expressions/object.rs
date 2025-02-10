@@ -5,6 +5,7 @@ use try_as::traits as try_as_traits;
 use crate::{
 	api::{context::context, scope::ScopeId},
 	comptime::{memory::VirtualPointer, CompileTime},
+	diagnostics::Diagnostic,
 	if_then_else_default,
 	if_then_some,
 	lexer::{Span, TokenType},
@@ -139,7 +140,7 @@ impl ObjectConstructor {
 impl TryParse for ObjectConstructor {
 	type Output = ObjectConstructor;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordNew)?.span;
 
 		// Name
@@ -149,9 +150,7 @@ impl TryParse for ObjectConstructor {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, ListType::AngleBracketed, {
 				let parameter = Parameter::try_parse(tokens)?;
-				context()
-					.scope_data
-					.declare_new_variable(parameter.virtual_deref().name(), Expression::Pointer(parameter))?;
+				context().scope_data.declare_new_variable(parameter.virtual_deref().name(), Expression::Pointer(parameter));
 				compile_time_parameters.push(parameter);
 			});
 			compile_time_parameters
@@ -161,11 +160,7 @@ impl TryParse for ObjectConstructor {
 		let mut fields = Vec::new();
 		let end = parse_list!(tokens, ListType::Braced, {
 			// Parse tags
-			let tags = if tokens.next_is(TokenType::TagOpening) {
-				Some(TagList::try_parse(tokens)?)
-			} else {
-				None
-			};
+			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens)?);
 
 			// Name
 			let field_name = Name::try_parse(tokens)?;
@@ -209,9 +204,11 @@ impl CompileTime for ObjectConstructor {
 	fn evaluate_at_compile_time(mut self) -> Self::Output {
 		let _scope_reverter = context().scope_data.set_current_scope(self.inner_scope_id);
 
+		self.tags = self.tags.evaluate_at_compile_time();
+
 		// Get object type
 		let object_type = if_then_some!(!matches!(self.type_name.unmangled_name(), "Group" | "Module" | "Object"), {
-			GroupDeclaration::from_literal(self.type_name.clone().evaluate_at_compile_time().try_as_literal().unwrap()).unwrap()
+			GroupDeclaration::from_literal(self.type_name.clone().evaluate_at_compile_time().try_as_literal()).unwrap()
 		});
 
 		// Default fields
@@ -241,8 +238,6 @@ impl CompileTime for ObjectConstructor {
 
 			self.fields.add_or_overwrite_field(evaluated_field);
 		}
-
-		self.tags = self.tags.evaluate_at_compile_time();
 
 		let result = if self.is_literal() {
 			let literal = self.try_into().unwrap();

@@ -3,7 +3,8 @@ use std::{
 	fmt::Write as _,
 };
 
-use super::field_access::FieldAccessType;
+use convert_case::{Case, Casing as _};
+
 use crate::{
 	api::{
 		context::context,
@@ -11,12 +12,14 @@ use crate::{
 	},
 	bail_err,
 	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
+	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	if_then_else_default,
 	if_then_some,
 	lexer::{Span, Token, TokenType},
 	parse_list,
 	parser::{
 		expressions::{
+			field_access::FieldAccessType,
 			literal::{LiteralConvertible, LiteralObject},
 			name::Name,
 			object::{Field, InternalFieldValue},
@@ -32,8 +35,6 @@ use crate::{
 		TokenQueueFunctionality,
 	},
 	transpiler::TranspileToC,
-	Diagnostic,
-	DiagnosticInfo,
 };
 
 #[derive(Debug, Clone)]
@@ -58,9 +59,7 @@ impl TryParse for GroupDeclaration {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, ListType::AngleBracketed, {
 				let parameter = Parameter::try_parse(tokens)?;
-				context()
-					.scope_data
-					.declare_new_variable(parameter.virtual_deref().name(), Expression::Pointer(parameter))?;
+				context().scope_data.declare_new_variable(parameter.virtual_deref().name(), Expression::Pointer(parameter));
 				compile_time_parameters.push(parameter);
 			});
 			compile_time_parameters
@@ -74,6 +73,14 @@ impl TryParse for GroupDeclaration {
 
 			// Group field name
 			let name = Name::try_parse(tokens)?;
+			if !name.unmangled_name().is_case(Case::Snake) {
+				context().add_diagnostic(Diagnostic {
+					span: name.span(),
+					info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
+						original_name: name.unmangled_name().to_owned(),
+					}),
+				});
+			}
 
 			// Group field type
 			let field_type = if_then_some!(tokens.next_is(TokenType::Colon), {
@@ -130,7 +137,7 @@ impl CompileTime for GroupDeclaration {
 				if !evaluated.is_pointer() && !evaluated.is_error() {
 					context().add_diagnostic(Diagnostic {
 						span,
-						error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::GroupValueNotKnownAtCompileTime)),
+						info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::GroupValueNotKnownAtCompileTime)),
 					});
 				}
 
@@ -174,7 +181,7 @@ impl TranspileToC for GroupDeclaration {
 				builder,
 				"\n\t{}* {};",
 				if let Some(field_type) = &field.field_type {
-					field_type.try_as_literal()?.to_c_type()?
+					field_type.try_as_literal().to_c_type()?
 				} else {
 					field
 						.value
@@ -226,9 +233,9 @@ impl LiteralConvertible for GroupDeclaration {
 		}
 
 		Ok(GroupDeclaration {
-			fields: literal.get_internal_field::<Vec<Field>>("fields")?.to_owned(),
+			fields: literal.get_internal_field::<Vec<Field>>("fields").cloned().unwrap_or(Vec::new()),
 			outer_scope_id: literal.outer_scope_id(),
-			inner_scope_id: literal.inner_scope_id.unwrap(),
+			inner_scope_id: literal.inner_scope_id.unwrap_or(ScopeId::global()),
 			name: literal.name.clone(),
 			span: literal.span,
 		})

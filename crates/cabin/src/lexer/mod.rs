@@ -1,19 +1,13 @@
 use std::collections::VecDeque;
 
-// Bring the `Casing` trait into scope, which allows us to use `.to_case()` on strings. This is used to convert `TokenType` enum variant names into Title Case,
-// which is useful for outputting human-readable errors. We assign this to `as _` to indicate clearly that The trait is not referenced directly and only used
-// to bring its methods into scope to be called.
 use convert_case::Casing as _;
 use regex_macro::{regex, Regex};
-// Bring the `IntoEnumIterator` trait into scope, which allows us to use `::iter()` on enums that `#[derive(strum_macros::EnumIter)]`. Specifically here, this is used
-// on `TokenType` to iterate over the values of the enum to test which one matches a specific string of Cabin code. We assign this to `as _` to indicate clearly that
-// The trait is not referenced directly and only used to bring its methods into scope to be called.
 use strum::IntoEnumIterator as _;
 
 use crate::{
 	api::context::context,
 	cli::theme::{Style, Styled},
-	DiagnosticInfo,
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	Error,
 	PRELUDE,
 };
@@ -535,12 +529,12 @@ impl Span {
 		self.length
 	}
 
-	pub fn start_line_column(&self, text: &str) -> (usize, usize) {
+	pub fn start_line_column(&self, text: &str) -> Option<(usize, usize)> {
 		let mut line = 0;
 		let mut column = 0;
 		for (position, character) in text.chars().enumerate() {
 			if position == self.start() {
-				return (line, column);
+				return Some((line, column));
 			}
 
 			column += 1;
@@ -550,15 +544,15 @@ impl Span {
 			}
 		}
 
-		unreachable!()
+		None
 	}
 
-	pub fn end_line_column(&self, text: &str) -> (usize, usize) {
+	pub fn end_line_column(&self, text: &str) -> Option<(usize, usize)> {
 		let mut line = 0;
 		let mut column = 0;
 		for (position, character) in text.chars().enumerate() {
 			if position == self.end() {
-				return (line, column);
+				return Some((line, column));
 			}
 
 			column += 1;
@@ -568,7 +562,7 @@ impl Span {
 			}
 		}
 
-		unreachable!()
+		None
 	}
 }
 
@@ -599,9 +593,9 @@ pub fn tokenize_program(code: &str, is_prelude: bool) -> VecDeque<Token> {
 		let Some((token_type, value)) = TokenType::find_match(&code) else { unreachable!() };
 
 		if token_type == TokenType::Unrecognized {
-			context().add_diagnostic(crate::Diagnostic {
+			context().add_diagnostic(Diagnostic {
 				span: Span { start: position, length: 1 },
-				error: DiagnosticInfo::Error(Error::Tokenize(TokenizeError::UnrecognizedToken(value.clone()))),
+				info: DiagnosticInfo::Error(Error::Tokenize(TokenizeError::UnrecognizedToken(value.clone()))),
 			});
 		}
 
@@ -702,7 +696,7 @@ pub enum TokenizeError {
 /// # Errors
 ///
 /// If the given code string is not syntactically valid Cabin code. It needn't be semantically valid, but it must be comprised of the proper tokens.
-pub fn tokenize(code: &str) -> Result<VecDeque<Token>, crate::Diagnostic> {
+pub fn tokenize(code: &str) -> Result<VecDeque<Token>, Diagnostic> {
 	let mut tokens = tokenize_program(code, false);
 	let mut prelude_tokens = tokenize_program(PRELUDE, true);
 	prelude_tokens.append(&mut tokens);

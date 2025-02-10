@@ -5,6 +5,7 @@ use try_as::traits as try_as_traits;
 
 use crate::{
 	api::{context::context, traits::TryAs as _},
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{tokenize_string, Span, Token, TokenType},
 	parser::{
 		expressions::{field_access::FieldAccess, function_call::FunctionCall, object::ObjectConstructor, Expression},
@@ -14,7 +15,6 @@ use crate::{
 		TokenQueueFunctionality as _,
 		TryParse,
 	},
-	DiagnosticInfo,
 	Error,
 };
 
@@ -67,7 +67,7 @@ pub struct CabinString;
 impl TryParse for CabinString {
 	type Output = Expression;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
 		let token = tokens.pop(TokenType::String)?;
 		let with_quotes = token.value;
 		let mut without_quotes = with_quotes.get(1..with_quotes.len() - 1).unwrap().to_owned();
@@ -94,9 +94,9 @@ impl TryParse for CabinString {
 
 					// Pop closing brace
 					if without_quotes.chars().next().unwrap() != '}' {
-						return Err(crate::Diagnostic {
+						return Err(Diagnostic {
 							span: token.span,
-							error: DiagnosticInfo::Error(Error::Parse(ParseError::InvalidFormatString(with_quotes))),
+							info: DiagnosticInfo::Error(Error::Parse(ParseError::InvalidFormatString(with_quotes))),
 						});
 					}
 					without_quotes = without_quotes.get(1..without_quotes.len()).unwrap().to_owned();

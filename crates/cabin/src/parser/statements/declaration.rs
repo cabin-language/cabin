@@ -1,8 +1,9 @@
-use convert_case::{Case, Casing};
+use convert_case::{Case, Casing as _};
 
 use crate::{
 	api::{context::context, scope::ScopeId},
 	comptime::CompileTime,
+	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	if_then_some,
 	lexer::{Span, TokenType},
 	mapped_err,
@@ -15,9 +16,6 @@ use crate::{
 		TryParse,
 	},
 	transpiler::TranspileToC,
-	Diagnostic,
-	DiagnosticInfo,
-	Warning,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,7 +80,7 @@ impl TryParse for Declaration {
 				if !name.unmangled_name().is_case(Case::Pascal) {
 					context().add_diagnostic(Diagnostic {
 						span: name.span(),
-						error: DiagnosticInfo::Warning(Warning::NonPascalCaseGroup {
+						info: DiagnosticInfo::Warning(Warning::NonPascalCaseGroup {
 							original_name: name.unmangled_name().to_owned(),
 							type_name: literal.type_name().unmangled_name().to_owned(),
 						}),
@@ -91,7 +89,7 @@ impl TryParse for Declaration {
 			} else if !name.unmangled_name().is_case(Case::Snake) {
 				context().add_diagnostic(Diagnostic {
 					span: name.span(),
-					error: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
+					info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
 						original_name: name.unmangled_name().to_owned(),
 					}),
 				});
@@ -99,7 +97,7 @@ impl TryParse for Declaration {
 		} else if !name.unmangled_name().is_case(Case::Snake) {
 			context().add_diagnostic(Diagnostic {
 				span: name.span(),
-				error: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
+				info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
 					original_name: name.unmangled_name().to_owned(),
 				}),
 			});
@@ -115,7 +113,7 @@ impl TryParse for Declaration {
 		value.try_set_scope_label(name.clone());
 
 		// Add the name declaration to the scope
-		context().scope_data.declare_new_variable(name.clone(), value)?;
+		context().scope_data.declare_new_variable(name.clone(), value);
 
 		let _ = tokens.pop(TokenType::Semicolon)?;
 

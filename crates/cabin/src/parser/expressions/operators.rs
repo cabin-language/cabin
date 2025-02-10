@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use super::{extend::Extend, sugar::string::CabinString};
 use crate::{
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 	parser::{
 		expressions::{
@@ -24,7 +25,6 @@ use crate::{
 		TokenQueueFunctionality,
 		TryParse,
 	},
-	DiagnosticInfo,
 	Error,
 };
 
@@ -47,7 +47,7 @@ impl BinaryOperation {
 	/// - `tokens` - The token stream to parse
 	/// - `current_scope` - The current scope
 	/// - `debug_info` - The debug information
-	fn parse_precedent(&self, tokens: &mut VecDeque<Token>) -> Result<Expression, crate::Diagnostic> {
+	fn parse_precedent(&self, tokens: &mut VecDeque<Token>) -> Result<Expression, Diagnostic> {
 		if let Some(precedent) = self.precedent {
 			parse_binary_expression(precedent, tokens)
 		} else {
@@ -60,7 +60,7 @@ impl BinaryOperation {
 #[derive(Clone, Debug)]
 pub struct BinaryExpression;
 
-fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<Token>) -> Result<Expression, crate::Diagnostic> {
+fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<Token>) -> Result<Expression, Diagnostic> {
 	let mut expression = operation.parse_precedent(tokens)?;
 
 	while tokens.next_is_one_of(operation.token_types) {
@@ -75,7 +75,7 @@ fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<To
 impl TryParse for BinaryExpression {
 	type Output = Expression;
 
-	fn try_parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, Diagnostic> {
 		parse_binary_expression(&COMBINATOR, tokens)
 	}
 }
@@ -85,7 +85,7 @@ pub struct PrimaryExpression;
 impl TryParse for PrimaryExpression {
 	type Output = Expression;
 
-	fn try_parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, Diagnostic> {
 		Ok(match tokens.peek_type()? {
 			TokenType::LeftParenthesis => {
 				let _ = tokens.pop(TokenType::LeftParenthesis).unwrap_or_else(|_| unreachable!());
@@ -138,9 +138,9 @@ impl TryParse for PrimaryExpression {
 
 			// bad :<
 			token_type => {
-				return Err(crate::Diagnostic {
+				return Err(Diagnostic {
 					span: tokens.current_position().unwrap(),
-					error: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedTokenExpected {
+					info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedTokenExpected {
 						expected: "primary expression",
 						actual: token_type,
 					})),

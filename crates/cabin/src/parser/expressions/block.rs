@@ -6,6 +6,7 @@ use crate::{
 		scope::{ScopeId, ScopeType},
 	},
 	comptime::CompileTime,
+	diagnostics::Diagnostic,
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{Expression, Spanned},
@@ -60,7 +61,7 @@ impl Block {
 	/// # Errors
 	///
 	/// If an unexpected token was encountered.
-	pub fn parse_with_scope_type(tokens: &mut TokenQueue, scope_type: ScopeType) -> Result<Block, crate::Diagnostic> {
+	pub fn parse_with_scope_type(tokens: &mut TokenQueue, scope_type: ScopeType) -> Result<Block, Diagnostic> {
 		context().scope_data.enter_new_scope(scope_type);
 		let scope_id = context().scope_data.unique_id();
 
@@ -86,7 +87,7 @@ impl Block {
 impl TryParse for Block {
 	type Output = Block;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
 		Block::parse_with_scope_type(tokens, ScopeType::Block)
 	}
 }
@@ -106,7 +107,7 @@ impl CompileTime for Block {
 
 			// Tail statement
 			if let Statement::Tail(tail_statement) = evaluated_statement {
-				if tail_statement.value.try_as_literal().is_ok() {
+				if !tail_statement.value.try_as_literal().is_error() {
 					return tail_statement.value;
 				}
 				statements.push(Statement::Tail(tail_statement));

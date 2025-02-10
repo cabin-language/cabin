@@ -1,3 +1,7 @@
+use std::fmt::Display;
+
+use cabin::Span;
+
 pub mod diagnostics;
 pub mod did_change;
 pub mod hover;
@@ -32,13 +36,19 @@ pub struct Position {
 	character: usize,
 }
 
+impl Display for Position {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "line {}, column {}", self.line, self.character)
+	}
+}
+
 impl Position {
-	pub fn to_span(&self, text: &str) -> cabin::lexer::Span {
+	pub fn to_span(&self, text: &str) -> cabin::Span {
 		let mut line = 0;
 		let mut column = 0;
 		for (position, character) in text.chars().enumerate() {
 			if line as usize == self.line && column as usize == self.character {
-				return cabin::lexer::Span::new(position as usize, 1);
+				return Span::new(position as usize, 1);
 			}
 
 			column += 1;

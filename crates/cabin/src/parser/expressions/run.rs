@@ -1,5 +1,6 @@
 use crate::{
 	comptime::{memory::VirtualPointer, CompileTime},
+	diagnostics::Diagnostic,
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{Expression, Spanned, Typed},
@@ -44,7 +45,7 @@ pub struct RunExpression {
 impl TryParse for RunExpression {
 	type Output = RunExpression;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
 		let mut span = tokens.pop(TokenType::KeywordRuntime)?.span;
 		let expression = Box::new(Expression::parse(tokens));
 		span = span.to(expression.span());

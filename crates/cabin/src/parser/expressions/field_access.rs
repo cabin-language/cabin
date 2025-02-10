@@ -1,6 +1,7 @@
 use crate::{
 	api::{context::context, scope::ScopeId, traits::TryAs as _},
 	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{function_declaration::FunctionDeclaration, literal::LiteralConvertible as _, name::Name, operators::PrimaryExpression, Expression, Spanned},
@@ -9,8 +10,6 @@ use crate::{
 		TryParse,
 	},
 	transpiler::TranspileToC,
-	Diagnostic,
-	DiagnosticInfo,
 };
 
 /// A type describing how fields are accessed on this type of objects via the dot operator.
@@ -61,7 +60,8 @@ impl CompileTime for FieldAccess {
 		let left_evaluated = self.left.evaluate_at_compile_time();
 
 		// Resolvable at compile-time
-		if let Ok(pointer) = left_evaluated.try_as_literal().map(|value| value.address.unwrap()) {
+		let pointer = left_evaluated.try_as_literal().address.unwrap();
+		if pointer != VirtualPointer::ERROR {
 			let literal = pointer.virtual_deref();
 			match literal.field_access_type() {
 				// Object fields
@@ -70,7 +70,7 @@ impl CompileTime for FieldAccess {
 					let field = field.unwrap_or_else(|| {
 						context().add_diagnostic(Diagnostic {
 							span: self.right.span(),
-							error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::FieldNotFound(self.right.unmangled_name().to_owned()))),
+							info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::FieldNotFound(self.right.unmangled_name().to_owned()))),
 						});
 						VirtualPointer::ERROR
 					});
@@ -95,7 +95,7 @@ impl CompileTime for FieldAccess {
 						.unwrap_or_else(|| {
 							context().add_diagnostic(Diagnostic {
 								span: self.right.span(),
-								error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::FieldNotFound(self.right.unmangled_name().to_owned()))),
+								info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::FieldNotFound(self.right.unmangled_name().to_owned()))),
 							});
 							Expression::ErrorExpression(span)
 						})
@@ -117,7 +117,7 @@ impl CompileTime for FieldAccess {
 impl TranspileToC for FieldAccess {
 	fn to_c(&self) -> anyhow::Result<String> {
 		let left = if let Ok(name) = self.left.as_ref().try_as::<Name>() {
-			format!("{}_{}", self.left.to_c()?, name.clone().evaluate_at_compile_time().try_as_literal()?.address.unwrap())
+			format!("{}_{}", self.left.to_c()?, name.clone().evaluate_at_compile_time().try_as_literal().address.unwrap())
 		} else {
 			self.left.to_c()?
 		};

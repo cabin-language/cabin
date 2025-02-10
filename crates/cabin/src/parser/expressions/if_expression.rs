@@ -4,6 +4,7 @@ use super::Spanned;
 use crate::{
 	api::{context::context, scope::ScopeId},
 	comptime::CompileTime,
+	diagnostics::Diagnostic,
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{block::Block, Expression},
@@ -27,7 +28,7 @@ pub struct IfExpression {
 impl TryParse for IfExpression {
 	type Output = IfExpression;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordIf)?.span;
 		let condition = Box::new(Expression::parse(tokens));
 		let body = Block::try_parse(tokens)?;

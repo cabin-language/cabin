@@ -5,15 +5,11 @@ use std::{
 };
 
 use crate::{
-	api::{
-		builtin::call_builtin_at_compile_time,
-		context::context,
-		scope::{ScopeData, ScopeId},
-		traits::TryAs as _,
-	},
+	api::{builtin::call_builtin_at_compile_time, context::context, scope::ScopeId, traits::TryAs as _},
 	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
 	debug_log,
 	debug_start,
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	lexer::{Span, Token, TokenType},
 	parse_list,
@@ -37,8 +33,6 @@ use crate::{
 		TokenQueueFunctionality,
 	},
 	transpiler::TranspileToC,
-	Diagnostic,
-	DiagnosticInfo,
 };
 
 #[derive(Debug, Clone)]
@@ -195,7 +189,7 @@ impl CompileTime for FunctionCall {
 		// Compile-time arguments
 		let builtin = context()
 			.scope_data
-			.get_variable("builtin")
+			.get_variable_from_id("builtin_function", ScopeId::stdlib())
 			.unwrap()
 			.try_as::<VirtualPointer>()
 			.unwrap_or(&VirtualPointer::ERROR);
@@ -255,16 +249,20 @@ impl CompileTime for FunctionCall {
 
 		// Evaluate function
 		let literal = function.try_as_literal();
-		if let Ok(function_declaration) = literal {
+		let function_declaration = literal;
+		if !function_declaration.is_error() {
 			if function_declaration.type_name() == &"Group".into() {
 				return Expression::Pointer(function_declaration.address.unwrap());
 			}
 
+			let is_error = function_declaration.type_name() == &"Error".into();
 			let function_declaration = FunctionDeclaration::from_literal(function_declaration).map(Cow::Owned).unwrap_or_else(|_| {
-				context().add_diagnostic(Diagnostic {
-					span,
-					error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::CallNonFunction)),
-				});
+				if !is_error {
+					context().add_diagnostic(Diagnostic {
+						span,
+						info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::CallNonFunction)),
+					});
+				}
 				Cow::Borrowed(FunctionDeclaration::error())
 			});
 
@@ -357,7 +355,7 @@ impl CompileTime for FunctionCall {
 				let return_value = body.clone().evaluate_at_compile_time();
 
 				// Return value is literal
-				if return_value.try_as_literal().is_ok() {
+				if !return_value.try_as_literal().is_error() {
 					return return_value;
 				}
 			}
@@ -370,14 +368,15 @@ impl CompileTime for FunctionCall {
 				// Get the address of system_side_effects
 				let system_side_effects_address = *context()
 					.scope_data
-					.get_variable_from_id("system_side_effects", ScopeData::get_stdlib_id())
+					.get_variable_from_id("system_side_effects", ScopeId::stdlib())
 					.unwrap()
 					.try_as::<VirtualPointer>()
 					.unwrap_or(&VirtualPointer::ERROR);
 
 				// Get builtin and side effect tags
 				for tag in &function_declaration.tags().values {
-					if let Ok(object) = tag.try_as_literal() {
+					let object = tag.try_as_literal();
+					if !object.is_error() {
 						if object.type_name() == &Name::from("BuiltinTag") {
 							builtin_name = Some(object.get_field_literal("internal_name").unwrap().try_as::<String>().unwrap().to_owned());
 							continue;
@@ -432,7 +431,7 @@ impl TranspileToC for FunctionCall {
 		let function = FunctionDeclaration::from_literal(self.function.clone().evaluate_at_compile_time().try_as::<VirtualPointer>()?.virtual_deref())?;
 
 		let return_type = if let Some(return_type) = function.return_type() {
-			format!("{}* return_address;", return_type.try_as_literal()?.to_c_type()?)
+			format!("{}* return_address;", return_type.try_as_literal().to_c_type()?)
 		} else {
 			String::new()
 		};
@@ -463,14 +462,14 @@ impl TranspileToC for FunctionCall {
 				let mut parameters = function
 					.parameters()
 					.iter()
-					.map(|parameter| Ok(format!("{}*", parameter.parameter_type().try_as_literal()?.to_c_type()?)))
+					.map(|parameter| Ok(format!("{}*", parameter.parameter_type().try_as_literal().to_c_type()?)))
 					.collect::<anyhow::Result<Vec<_>>>()?
 					.join(", ");
 				if let Some(function_return_type) = function.return_type().as_ref() {
 					if !parameters.is_empty() {
 						parameters += ", ";
 					}
-					write!(parameters, "{}*", function_return_type.try_as_literal()?.to_c_type()?).unwrap();
+					write!(parameters, "{}*", function_return_type.try_as_literal().to_c_type()?).unwrap();
 				}
 				parameters
 			},
@@ -534,7 +533,7 @@ impl RuntimeableExpression for FunctionCall {
 
 impl Typed for FunctionCall {
 	fn get_type(&self) -> anyhow::Result<VirtualPointer> {
-		let function = FunctionDeclaration::from_literal(self.function.try_as_literal()?)?;
+		let function = FunctionDeclaration::from_literal(self.function.try_as_literal())?;
 		if let Some(return_type) = function.return_type() {
 			return_type.try_as::<VirtualPointer>().cloned()
 		} else {

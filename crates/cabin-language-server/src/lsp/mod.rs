@@ -1,18 +1,20 @@
 use std::{collections::HashMap, ops::Not};
 
-use cabin::{lexer::TokenType, parser::expressions::Spanned as _};
-use text_document::{
-	diagnostics::{get_diagnostics, Diagnostic, PublishDiagnosticParams},
-	did_change::TextDocumentDidChangeEvent,
-	hover::HoverResult,
-	Position,
-	Range,
-	TextDocumentIdentifier,
-	TextDocumentItem,
-	VersionTextDocumentIdentifier,
-};
+use cabin::lexer::TokenType;
 
-use crate::Logger;
+use crate::{
+	lsp::text_document::{
+		diagnostics::{get_diagnostics, Diagnostic, PublishDiagnosticParams},
+		did_change::TextDocumentDidChangeEvent,
+		hover::HoverResult,
+		Position,
+		Range,
+		TextDocumentIdentifier,
+		TextDocumentItem,
+		VersionTextDocumentIdentifier,
+	},
+	Logger,
+};
 mod text_document;
 
 #[derive(serde::Deserialize)]
@@ -108,7 +110,7 @@ impl Request {
 					state.files.insert(text_document.uri.clone(), change.text.clone());
 				}
 				let diagnostics = get_diagnostics(state, logger, &text_document.uri)?;
-				diagnostics.is_empty().not().then_some(Response {
+				Some(Response {
 					id: self.id,
 					jsonrpc: "2.0",
 					data: ResponseData::Diagnostics {

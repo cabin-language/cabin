@@ -1,7 +1,6 @@
 use std::{
 	collections::HashMap,
 	fmt::{Debug, Write as _},
-	sync::LazyLock,
 };
 
 use colored::Colorize;
@@ -9,12 +8,7 @@ use try_as::traits::TryAsRef;
 
 use super::{either::Either, extend::Extend, field_access::FieldAccessType, function_declaration::FunctionDeclaration, oneof::OneOf, parameter::Parameter, Spanned};
 use crate::{
-	api::{
-		context::context,
-		scope::ScopeId,
-		traits::{TerminalOutput as _, TryAs as _},
-	},
-	bail_err,
+	api::{context::context, scope::ScopeId, traits::TryAs as _},
 	cli::theme::Styled,
 	comptime::{memory::VirtualPointer, CompileTime},
 	err,
@@ -83,19 +77,6 @@ pub struct LiteralObject {
 	pub tags: TagList,
 }
 
-static ERROR: LazyLock<LiteralObject> = LazyLock::new(|| LiteralObject {
-	type_name: "Error".into(),
-	fields: HashMap::new(),
-	internal_fields: HashMap::new(),
-	field_access_type: FieldAccessType::Normal,
-	outer_scope_id: context().scope_data.unique_id(),
-	inner_scope_id: None,
-	name: "error".into(),
-	address: Some(VirtualPointer::ERROR),
-	span: Span::unknown(),
-	tags: TagList::default(),
-});
-
 impl TryFrom<ObjectConstructor> for LiteralObject {
 	type Error = anyhow::Error;
 
@@ -108,26 +89,8 @@ impl TryFrom<ObjectConstructor> for LiteralObject {
 				continue;
 			}
 
-			let name = value.kind_name();
 			let Expression::ObjectConstructor(field_object) = value else {
-				bail_err! {
-					base = "A value that's not fully known at compile-time was used as a type.",
-					while = format!("checking the field \"{}\" of a value at compile-time", field.name.unmangled_name().bold().cyan()),
-					position = field.name.span(),
-					details = expression_formatter::format!(
-						r#"
-                        Although Cabin allows arbitrary expressions to be used as types, the expression needs to be able to 
-						be fully evaluated at compile-time. The expression that this error refers to must be a literal object, 
-						but instead it's a {name}. {if &name.to_lowercase() == "name" {
-							"
-							This means that you put a variable name where a type is required, but the value of that variable
-							is some kind of expression that can't be fully evaluated at compile-time.
-							"
-						} else {
-							""
-						}}"#
-					).as_terminal_output(),
-				};
+				anyhow::bail!("Value isn't an object: {value:?}");
 			};
 
 			let value_address = LiteralObject::try_from(field_object)?.store_in_memory();
@@ -150,17 +113,13 @@ impl TryFrom<ObjectConstructor> for LiteralObject {
 }
 
 impl LiteralObject {
-	pub fn error() -> &'static LiteralObject {
-		&ERROR
-	}
-
 	pub fn empty(span: Span) -> Self {
 		Self {
 			type_name: "Object".into(),
 			fields: HashMap::new(),
 			internal_fields: HashMap::new(),
 			field_access_type: FieldAccessType::Normal,
-			outer_scope_id: context().scope_data.file_id(),
+			outer_scope_id: context().scope_data.unique_id(),
 			inner_scope_id: None,
 			address: None,
 			span,
@@ -175,6 +134,10 @@ impl LiteralObject {
 
 	pub const fn field_access_type(&self) -> &FieldAccessType {
 		&self.field_access_type
+	}
+
+	pub fn is_error(&self) -> bool {
+		self.address.is_some_and(|address| address == VirtualPointer::ERROR)
 	}
 
 	pub const fn name(&self) -> &Name {

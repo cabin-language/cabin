@@ -1,10 +1,11 @@
 use std::{collections::HashMap, fmt::Write as _};
 
-use convert_case::{Case, Casing};
+use convert_case::{Case, Casing as _};
 
 use crate::{
 	api::{context::context, scope::ScopeId},
 	comptime::{memory::VirtualPointer, CompileTime},
+	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	lexer::{Span, TokenType},
 	parse_list,
 	parser::{
@@ -22,9 +23,6 @@ use crate::{
 		TryParse,
 	},
 	transpiler::TranspileToC,
-	Diagnostic,
-	DiagnosticInfo,
-	Warning,
 };
 
 /// An `either`. In Cabin, `eithers` represent choices between empty values. They are analogous to
@@ -70,7 +68,7 @@ impl TryParse for Either {
 			if name.unmangled_name() != name.unmangled_name().to_case(Case::Snake) {
 				context().add_diagnostic(Diagnostic {
 					span: name.span(),
-					error: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
+					info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
 						original_name: name.unmangled_name().to_owned(),
 					}),
 				});
@@ -102,7 +100,7 @@ impl CompileTime for Either {
 		if self.variants.is_empty() && !self.tags.suppresses_warning(CompilerWarning::EmptyEither) {
 			context().add_diagnostic(Diagnostic {
 				span: self.span(),
-				error: DiagnosticInfo::Warning(Warning::EmptyEither),
+				info: DiagnosticInfo::Warning(Warning::EmptyEither),
 			});
 		}
 

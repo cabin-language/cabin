@@ -3,4 +3,11 @@ name = "cabin-bin"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "cabin"
+path = "src/main.rs"
+
 [dependencies]
+cabin = { path = "../cabin" }
+clap = { version = "4.5.28", features = ["derive"] }
+enum_dispatch = "0.3.13"

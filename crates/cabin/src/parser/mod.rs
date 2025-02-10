@@ -7,6 +7,7 @@ use crate::{
 		traits::TryAs,
 	},
 	comptime::{memory::VirtualPointer, CompileTime},
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Span, Token, TokenType},
 	parser::{
 		expressions::{
@@ -18,8 +19,6 @@ use crate::{
 		statements::{declaration::Declaration, tag::TagList, Statement},
 	},
 	transpiler::TranspileToC,
-	Diagnostic,
-	DiagnosticInfo,
 	Error,
 };
 
@@ -50,8 +49,41 @@ pub enum ParseError {
 	InvalidFormatString(String),
 }
 
-pub fn parse(tokens: &mut TokenQueue) -> Module {
-	Module::parse(tokens)
+#[derive(Debug)]
+pub struct Program {
+	statements: Vec<Statement>,
+	inner_scope_id: ScopeId,
+}
+
+impl Parse for Program {
+	type Output = Self;
+
+	fn parse(tokens: &mut TokenQueue) -> Self::Output {
+		context().scope_data.enter_new_scope(ScopeType::File);
+		let inner_scope_id = context().scope_data.unique_id();
+		let mut statements = Vec::new();
+
+		while !tokens.is_all_whitespace() {
+			statements.push(Statement::parse(tokens));
+		}
+
+		context().scope_data.exit_scope().unwrap();
+
+		Program { statements, inner_scope_id }
+	}
+}
+
+impl CompileTime for Program {
+	type Output = Program;
+
+	fn evaluate_at_compile_time(self) -> Self::Output {
+		let _scope_reverter = context().scope_data.set_current_scope(self.inner_scope_id);
+		let evaluated = Self {
+			statements: self.statements.into_iter().map(|statement| statement.evaluate_at_compile_time()).collect(),
+			inner_scope_id: self.inner_scope_id,
+		};
+		evaluated
+	}
 }
 
 #[derive(Debug)]
@@ -78,7 +110,7 @@ impl Parse for Module {
 				Statement::Error(_span) => {},
 				statement => context().add_diagnostic(Diagnostic {
 					span: statement.span(),
-					error: DiagnosticInfo::Error(Error::Parse(ParseError::InvalidTopLevelStatement { statement })),
+					info: DiagnosticInfo::Error(Error::Parse(ParseError::InvalidTopLevelStatement { statement })),
 				}),
 			};
 		}
@@ -98,6 +130,38 @@ impl CompileTime for Module {
 			inner_scope_id: self.inner_scope_id,
 		};
 		evaluated
+	}
+}
+
+impl Module {
+	pub fn to_pointer(&self) -> VirtualPointer {
+		LiteralObject {
+			type_name: "Module".into(),
+			fields: self
+				.declarations
+				.iter()
+				.map(|declaration| {
+					(
+						declaration.name().to_owned(),
+						*declaration
+							.value()
+							.clone()
+							.evaluate_at_compile_time()
+							.try_as::<VirtualPointer>()
+							.unwrap_or(&VirtualPointer::ERROR),
+					)
+				})
+				.collect(),
+			internal_fields: HashMap::new(),
+			field_access_type: FieldAccessType::Normal,
+			outer_scope_id: context().scope_data.unique_id(),
+			inner_scope_id: None,
+			name: "module".into(),
+			address: None,
+			span: Span::unknown(),
+			tags: TagList::default(),
+		}
+		.store_in_memory()
 	}
 }
 
@@ -172,13 +236,13 @@ impl TokenQueueFunctionality for TokenQueue {
 		let mut index = 0;
 		let mut next = self.get(index).ok_or_else(|| Diagnostic {
 			span: Span::unknown(),
-			error: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
+			info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
 		})?;
 		while next.token_type.is_whitespace() {
 			index += 1;
 			next = self.get(index).ok_or_else(|| Diagnostic {
 				span: Span::unknown(),
-				error: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
+				info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
 			})?;
 		}
 		Ok(&next.value)
@@ -188,13 +252,13 @@ impl TokenQueueFunctionality for TokenQueue {
 		let mut index = 0;
 		let mut next = self.get(index).ok_or_else(|| Diagnostic {
 			span: Span::unknown(),
-			error: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
+			info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
 		})?;
 		while next.token_type.is_whitespace() {
 			index += 1;
 			next = self.get(index).ok_or_else(|| Diagnostic {
 				span: Span::unknown(),
-				error: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
+				info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
 			})?;
 		}
 		Ok(next.token_type)
@@ -206,26 +270,26 @@ impl TokenQueueFunctionality for TokenQueue {
 		// The one time I'd enjoy a do-while loop
 		let mut next = self.get(index).ok_or_else(|| Diagnostic {
 			span: Span::unknown(),
-			error: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
+			info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
 		})?;
 		index += 1;
 		while next.token_type.is_whitespace() {
 			next = self.get(index).ok_or_else(|| Diagnostic {
 				span: Span::unknown(),
-				error: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
+				info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
 			})?;
 			index += 1;
 		}
 
 		let mut next_next = self.get(index).ok_or_else(|| Diagnostic {
 			span: Span::unknown(),
-			error: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
+			info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
 		})?;
 		while next_next.token_type.is_whitespace() {
 			index += 1;
 			next_next = self.get(index).ok_or_else(|| Diagnostic {
 				span: Span::unknown(),
-				error: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
+				info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
 			})?;
 		}
 
@@ -249,7 +313,7 @@ impl TokenQueueFunctionality for TokenQueue {
 				if !maybe_whitespace.is_whitespace() {
 					return Err(Diagnostic {
 						span: token.span,
-						error: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedToken {
+						info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedToken {
 							expected: token_type,
 							actual: token.token_type,
 						})),
@@ -260,7 +324,7 @@ impl TokenQueueFunctionality for TokenQueue {
 
 		return Err(Diagnostic {
 			span: Span::unknown(),
-			error: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedEOF { expected: token_type })),
+			info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedEOF { expected: token_type })),
 		});
 	}
 
@@ -277,7 +341,7 @@ impl TokenQueueFunctionality for TokenQueue {
 				if !maybe_whitespace.is_whitespace() {
 					return Err(Diagnostic {
 						span: token.span,
-						error: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedToken {
+						info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedToken {
 							expected: token_type,
 							actual: token.token_type,
 						})),
@@ -288,7 +352,7 @@ impl TokenQueueFunctionality for TokenQueue {
 
 		return Err(Diagnostic {
 			span: Span::unknown(),
-			error: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedEOF { expected: token_type })),
+			info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedEOF { expected: token_type })),
 		});
 	}
 

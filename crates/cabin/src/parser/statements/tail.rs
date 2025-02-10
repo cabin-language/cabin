@@ -1,6 +1,7 @@
 use crate::{
 	api::{context::context, scope::ScopeType},
 	comptime::CompileTime,
+	diagnostics::Diagnostic,
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{name::Name, Expression, Spanned},
@@ -22,7 +23,7 @@ pub struct TailStatement {
 impl TryParse for TailStatement {
 	type Output = TailStatement;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
 		let label = Name::try_parse(tokens)?;
 
 		let _ = tokens.pop(TokenType::KeywordIs)?;

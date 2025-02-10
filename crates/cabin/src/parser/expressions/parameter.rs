@@ -3,6 +3,7 @@ use std::{collections::HashMap, fmt::Debug};
 use crate::{
 	api::{context::context, scope::ScopeId},
 	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Span, TokenType},
 	parser::{
 		expressions::{
@@ -20,8 +21,6 @@ use crate::{
 		TokenQueueFunctionality,
 		TryParse,
 	},
-	Diagnostic,
-	DiagnosticInfo,
 };
 
 #[derive(Clone)]
@@ -57,10 +56,10 @@ impl CompileTime for Parameter {
 		let type_span = self.parameter_type.span();
 		let evaluated = self.parameter_type.evaluate_as_type();
 
-		if !matches!(evaluated, Expression::Pointer(_)) {
+		if !matches!(evaluated, Expression::Pointer(_) | Expression::ErrorExpression(_)) {
 			context().add_diagnostic(Diagnostic {
 				span: type_span,
-				error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::ExpressionUsedAsType)),
+				info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::ExpressionUsedAsType)),
 			});
 		}
 
@@ -83,7 +82,7 @@ impl Spanned for Parameter {
 
 impl Typed for Parameter {
 	fn get_type(&self) -> anyhow::Result<VirtualPointer> {
-		Ok(self.parameter_type.try_as_literal()?.address.unwrap())
+		Ok(self.parameter_type.try_as_literal().address.unwrap())
 	}
 }
 

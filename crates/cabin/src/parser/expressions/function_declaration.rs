@@ -11,6 +11,7 @@ use crate::{
 	comptime::{memory::VirtualPointer, CompileTime},
 	debug_log,
 	debug_start,
+	diagnostics::Diagnostic,
 	if_then_else_default,
 	if_then_some,
 	lexer::{Span, TokenType},
@@ -83,7 +84,7 @@ impl Debug for FunctionDeclaration {
 impl TryParse for FunctionDeclaration {
 	type Output = VirtualPointer;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, crate::Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
 		let debug_section = debug_start!("{} a {}", "Parsing".bold().green(), "function declaration".cyan());
 		// "function" keyword
 		let start = tokens.pop(TokenType::KeywordAction)?.span;
@@ -139,12 +140,12 @@ impl TryParse for FunctionDeclaration {
 			for parameter in &compile_time_parameters {
 				context()
 					.scope_data
-					.declare_new_variable_from_id(parameter.name().clone(), Expression::ErrorExpression(Span::unknown()), block.inner_scope_id())?;
+					.declare_new_variable_from_id(parameter.name().clone(), Expression::ErrorExpression(Span::unknown()), block.inner_scope_id());
 			}
 			for parameter in &parameters {
 				context()
 					.scope_data
-					.declare_new_variable_from_id(parameter.name().clone(), Expression::ErrorExpression(Span::unknown()), block.inner_scope_id())?;
+					.declare_new_variable_from_id(parameter.name().clone(), Expression::ErrorExpression(Span::unknown()), block.inner_scope_id());
 			}
 			end = block.span();
 			(Expression::Block(block), inner_scope_id)
@@ -174,6 +175,8 @@ impl CompileTime for FunctionDeclaration {
 	type Output = FunctionDeclaration;
 
 	fn evaluate_at_compile_time(self) -> Self::Output {
+		let _scope_reverter = context().scope_data.set_current_scope(self.outer_scope_id);
+
 		// Compile-time parameters
 		let compile_time_parameters = {
 			let mut compile_time_parameters = Vec::new();
@@ -203,12 +206,7 @@ impl CompileTime for FunctionDeclaration {
 		// Return type
 		let return_type = self.return_type.map(|return_type| return_type.evaluate_as_type());
 
-		let tags = {
-			let tag_debug = debug_start!("Evaluating the tags on a {}", "function declaration".cyan());
-			let evaluated = self.tags.evaluate_at_compile_time();
-			tag_debug.finish();
-			evaluated
-		};
+		let tags = self.tags.evaluate_at_compile_time();
 
 		// Return
 		let function = FunctionDeclaration {
@@ -238,15 +236,14 @@ impl TranspileToC for FunctionDeclaration {
 		// Get builtin and side effect tags
 		let mut builtin_body = None;
 		for tag in &self.tags.values {
-			if let Ok(object) = tag.try_as_literal() {
-				if object.type_name() == &Name::from("BuiltinTag") {
-					let builtin_name = object.get_field_literal("internal_name").unwrap().try_as::<String>()?.to_owned();
-					let mut parameters = self.parameters.iter().map(|parameter| parameter.name().to_c().unwrap()).collect::<Vec<_>>();
-					parameters.push("return_address".to_owned());
-					builtin_body = Some(transpile_builtin_to_c(&builtin_name, &parameters).map_err(mapped_err! {
-						while = format!("transpiling the body of the built-in function {}()", builtin_name.bold().blue()),
-					})?);
-				}
+			let object = tag.try_as_literal();
+			if object.type_name() == &Name::from("BuiltinTag") {
+				let builtin_name = object.get_field_literal("internal_name").unwrap().try_as::<String>()?.to_owned();
+				let mut parameters = self.parameters.iter().map(|parameter| parameter.name().to_c().unwrap()).collect::<Vec<_>>();
+				parameters.push("return_address".to_owned());
+				builtin_body = Some(transpile_builtin_to_c(&builtin_name, &parameters).map_err(mapped_err! {
+					while = format!("transpiling the body of the built-in function {}()", builtin_name.bold().blue()),
+				})?);
 			}
 		}
 
@@ -255,7 +252,7 @@ impl TranspileToC for FunctionDeclaration {
 			format!(
 				"{}{}* return_address",
 				if self.parameters.is_empty() { "" } else { ", " },
-				return_type.try_as_literal()?.to_c_type()?
+				return_type.try_as_literal().to_c_type()?
 			)
 		} else {
 			String::new()
@@ -265,7 +262,7 @@ impl TranspileToC for FunctionDeclaration {
 			"({}{}) {{\n{}\n}}",
 			self.parameters
 				.iter()
-				.map(|parameter| Ok(format!("{}* {}", parameter.parameter_type().try_as_literal()?.to_c_type()?, parameter.name().to_c()?)))
+				.map(|parameter| Ok(format!("{}* {}", parameter.parameter_type().try_as_literal().to_c_type()?, parameter.name().to_c()?)))
 				.collect::<anyhow::Result<Vec<_>>>()?
 				.join(", "),
 			return_type_c,

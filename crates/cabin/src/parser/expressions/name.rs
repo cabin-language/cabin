@@ -6,11 +6,10 @@ use super::Spanned;
 use crate::{
 	api::context::context,
 	comptime::{CompileTime, CompileTimeError},
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Span, TokenType},
 	parser::{expressions::Expression, ToCabin, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::TranspileToC,
-	Diagnostic,
-	DiagnosticInfo,
 };
 
 #[derive(Clone, Eq)]
@@ -54,7 +53,7 @@ impl CompileTime for Name {
 		let value = context().scope_data.get_variable(self.clone()).unwrap_or_else(|| {
 			context().add_diagnostic(Diagnostic {
 				span: self.span(),
-				error: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::UnknownVariable(self.unmangled_name().to_owned()))),
+				info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::UnknownVariable(self.unmangled_name().to_owned()))),
 			});
 			&error
 		});

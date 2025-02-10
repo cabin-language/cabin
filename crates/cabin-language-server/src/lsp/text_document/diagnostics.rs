@@ -1,4 +1,4 @@
-use cabin::{parser::expressions::Spanned as _, DiagnosticInfo};
+use cabin::{diagnostics::DiagnosticInfo, Spanned as _};
 
 use super::Range;
 use crate::{lsp::State, Logger};
@@ -17,7 +17,7 @@ pub struct Diagnostic {
 	pub message: String,
 }
 
-fn diagnostic_code(diagnostic: &cabin::Diagnostic) -> u8 {
+fn diagnostic_code(diagnostic: &cabin::diagnostics::Diagnostic) -> u8 {
 	match diagnostic.info() {
 		DiagnosticInfo::Error(_) => 1,
 		DiagnosticInfo::Warning(_) => 2,
@@ -27,18 +27,25 @@ fn diagnostic_code(diagnostic: &cabin::Diagnostic) -> u8 {
 pub fn get_diagnostics(state: &State, logger: &mut Logger, uri: &str) -> anyhow::Result<Vec<Diagnostic>> {
 	let code = state.files.get(uri).unwrap();
 	logger.log("\n*Checking for diagnostics...*")?;
-	let diagnostics = cabin::check(code);
+	let diagnostics = if uri.ends_with("/main.cabin") {
+		cabin::check_program(code)
+	} else {
+		cabin::check_module(code)
+	};
 	logger.log("\n*Done checking. Reporting diagnostics.*")?;
 	Ok(diagnostics
 		.into_iter()
-		.map(|diagnostic| Diagnostic {
-			severity: diagnostic_code(&diagnostic),
-			message: format!("{diagnostic}"),
-			source: "Cabin Language Server".to_owned(),
-			range: Range {
-				start: diagnostic.span().start_line_column(code).into(),
-				end: diagnostic.span().end_line_column(code).into(),
-			},
+		.map(|diagnostic| {
+			let span = diagnostic.span();
+			Diagnostic {
+				severity: diagnostic_code(&diagnostic),
+				message: format!("{diagnostic}"),
+				source: "Cabin Language Server".to_owned(),
+				range: Range {
+					start: span.start_line_column(code).unwrap_or((0, 0)).into(),
+					end: diagnostic.span().end_line_column(code).unwrap_or((0, 0)).into(),
+				},
+			}
 		})
 		.collect::<Vec<_>>())
 }
