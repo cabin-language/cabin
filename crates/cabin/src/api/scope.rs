@@ -2,14 +2,10 @@ use std::{collections::HashMap, fmt::Debug};
 
 use colored::Colorize as _;
 
-use crate::{
-	api::context::context,
-	diagnostics::{Diagnostic, DiagnosticInfo},
-	parser::{
-		expressions::{name::Name, Expression, Spanned},
-		ParseError,
-	},
-	Error,
+use super::context::Context;
+use crate::parser::{
+	expressions::{name::Name, Expression},
+	ParseError,
 };
 
 /// Scopes never get deleted, so all `ScopeIds` are always guaranteed to point to a valid `Scope`.
@@ -279,6 +275,10 @@ impl ScopeData {
 		self.current().get_variable(name, &self.scopes)
 	}
 
+	pub fn has_variable(&self, name: impl Into<Name> + Clone) -> bool {
+		self.get_variable(name).is_some()
+	}
+
 	/// Returns the declaration information about a variable that exists in the scope with the given id. The variable may be declared in this scope, or any one
 	/// of its parents; As long as it exists in the current scope, the information will be retrieved. If no variable exists in the scope with the given id
 	/// with the given name, `None` is returned.
@@ -359,17 +359,16 @@ impl ScopeData {
 	///
 	/// # Errors
 	/// Returns an error if a variable already exists with the given name in the scope with the given id.
-	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Name>, value: Expression, id: ScopeId) {
+	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Name>, value: Expression, id: ScopeId) -> Result<(), crate::Error> {
 		let name = name.into();
 		if self.get_variable_from_id(name.clone(), id).is_some() {
-			context().add_diagnostic(Diagnostic {
-				span: name.span(),
-				info: DiagnosticInfo::Error(Error::Parse(ParseError::DuplicateVariableDeclaration {
-					name: name.unmangled_name().to_owned(),
-				})),
-			});
+			return Err(crate::Error::Parse(ParseError::DuplicateVariableDeclaration {
+				name: name.unmangled_name().to_owned(),
+			}));
 		}
+
 		let _ = self.scopes.get_mut(id.0).unwrap().variables.insert(name, value);
+		Ok(())
 	}
 
 	/// Declares a new variable in the current scope with the given value and tags. This should only be used to declare a new variable,
@@ -383,8 +382,8 @@ impl ScopeData {
 	///
 	/// # Errors
 	/// Returns an error if a variable already exists with the given name in the current scope.
-	pub fn declare_new_variable(&mut self, name: impl Into<Name>, value: Expression) {
-		self.declare_new_variable_from_id(name, value, ScopeId(self.current_scope));
+	pub fn declare_new_variable(&mut self, name: impl Into<Name>, value: Expression) -> Result<(), crate::Error> {
+		self.declare_new_variable_from_id(name, value, ScopeId(self.current_scope))
 	}
 
 	/// Returns an immutable reference to the global scope in this scope data's scope arena. This does have to traverse up the scope tree,
@@ -602,8 +601,8 @@ impl Levenshtein for str {
 
 pub struct ScopeReverter(ScopeId);
 
-impl Drop for ScopeReverter {
-	fn drop(&mut self) {
-		context().scope_data.current_scope = self.0 .0;
+impl ScopeReverter {
+	pub fn revert(&self, context: &mut Context) {
+		context.scope_data.current_scope = self.0 .0;
 	}
 }

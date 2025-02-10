@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use convert_case::{Case, Casing as _};
 
+use super::context::Context;
 use crate::{
 	comptime::CompileTimeError,
 	lexer::{Span, TokenizeError},
@@ -54,7 +55,7 @@ impl Diagnostic {
 }
 
 impl Spanned for Diagnostic {
-	fn span(&self) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }

@@ -72,7 +72,7 @@ name = "cabin"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "colored",
+ "colored 2.2.0",
  "convert_case",
  "paste",
  "phf",
@@ -83,7 +83,6 @@ dependencies = [
  "thiserror",
  "toml_edit",
  "try_as",
- "unindent",
 ]
 
 [[package]]
@@ -92,6 +91,7 @@ version = "0.1.0"
 dependencies = [
  "cabin",
  "clap",
+ "colored 3.0.0",
  "enum_dispatch",
 ]
 
@@ -148,6 +148,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
+ "windows-sys",
+]
+
+[[package]]
+name = "colored"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fde0e0ec90c9dfb3b4b1a0891a7dcd0e2bffde2f7efed5fe7c9bb00e5bfb915e"
+dependencies = [
  "windows-sys",
 ]
 
@@ -485,12 +494,6 @@ name = "unicode-segmentation"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
-
-[[package]]
-name = "unindent"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7de7d73e1754487cb58364ee906a499937a0dfabd86bcb980fa99ec8c8fa2ce"
 
 [[package]]
 name = "utf8parse"

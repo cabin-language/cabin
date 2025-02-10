@@ -1,14 +1,11 @@
 use std::{
 	borrow::Cow,
 	collections::{HashMap, VecDeque},
-	fmt::Write as _,
 };
 
 use crate::{
-	api::{builtin::call_builtin_at_compile_time, context::context, scope::ScopeId, traits::TryAs as _},
+	api::{builtin::call_builtin_at_compile_time, context::Context, scope::ScopeId, traits::TryAs as _},
 	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
-	debug_log,
-	debug_start,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	lexer::{Span, Token, TokenType},
@@ -32,7 +29,6 @@ use crate::{
 		Parse as _,
 		TokenQueueFunctionality,
 	},
-	transpiler::TranspileToC,
 };
 
 #[derive(Debug, Clone)]
@@ -41,7 +37,7 @@ enum Argument {
 	Keyword(Name, Expression),
 }
 
-fn composite_arguments(arguments: Vec<Argument>) -> Vec<Expression> {
+fn composite_arguments(arguments: Vec<Argument>, context: &mut Context) -> Vec<Expression> {
 	let mut output = Vec::new();
 	let mut keyword_arguments = Vec::new();
 	let mut has_keyword_arguments = false;
@@ -62,8 +58,8 @@ fn composite_arguments(arguments: Vec<Argument>) -> Vec<Expression> {
 		fields: keyword_arguments,
 		type_name: "Object".into(),
 		internal_fields: HashMap::new(),
-		outer_scope_id: context().scope_data.unique_id(),
-		inner_scope_id: context().scope_data.unique_id(),
+		outer_scope_id: context.scope_data.unique_id(),
+		inner_scope_id: context.scope_data.unique_id(),
 		field_access_type: FieldAccessType::Normal,
 		name: "options".into(),
 		span: Span::unknown(),
@@ -94,10 +90,10 @@ pub struct PostfixOperators;
 impl TryParse for PostfixOperators {
 	type Output = Expression;
 
-	fn try_parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		// Primary expression
-		let mut expression = FieldAccess::try_parse(tokens)?;
-		let start = expression.span();
+		let mut expression = FieldAccess::try_parse(tokens, context)?;
+		let start = expression.span(context);
 		let mut end = start;
 
 		// Postfix function call operators
@@ -123,19 +119,19 @@ impl TryParse for PostfixOperators {
 				end = parse_list!(tokens, ListType::AngleBracketed, {
 					// Keyword argument
 					if tokens.next_is(TokenType::Identifier) && tokens.next_next_is(TokenType::Equal) {
-						let name = Name::try_parse(tokens)?;
+						let name = Name::try_parse(tokens, context)?;
 						let _ = tokens.pop(TokenType::Equal)?;
-						let value = Expression::parse(tokens);
+						let value = Expression::parse(tokens, context);
 						compile_time_arguments.push(Argument::Keyword(name, value));
 						has_compile_time_keyword_arguments = true
 					}
 					// Regular argument
 					else {
-						compile_time_arguments.push(Argument::Positional(Expression::parse(tokens)));
+						compile_time_arguments.push(Argument::Positional(Expression::parse(tokens, context)));
 					}
 				})
 				.span;
-				(composite_arguments(compile_time_arguments), has_compile_time_keyword_arguments)
+				(composite_arguments(compile_time_arguments, context), has_compile_time_keyword_arguments)
 			});
 
 			// Arguments
@@ -145,19 +141,19 @@ impl TryParse for PostfixOperators {
 				end = parse_list!(tokens, ListType::Parenthesized, {
 					// Keyword argument
 					if tokens.next_is(TokenType::Identifier) && tokens.next_next_is(TokenType::Equal) {
-						let name = Name::try_parse(tokens)?;
+						let name = Name::try_parse(tokens, context)?;
 						let _ = tokens.pop(TokenType::Equal)?;
-						let value = Expression::parse(tokens);
+						let value = Expression::parse(tokens, context);
 						arguments.push(Argument::Keyword(name, value));
 						has_keyword_arguments = true;
 					}
 					// Regular argument
 					else {
-						arguments.push(Argument::Positional(Expression::parse(tokens)));
+						arguments.push(Argument::Positional(Expression::parse(tokens, context)));
 					}
 				})
 				.span;
-				(composite_arguments(arguments), has_keyword_arguments)
+				(composite_arguments(arguments, context), has_keyword_arguments)
 			});
 
 			// Reassign base expression
@@ -165,7 +161,7 @@ impl TryParse for PostfixOperators {
 				function: Box::new(expression),
 				compile_time_arguments,
 				arguments,
-				scope_id: context().scope_data.unique_id(),
+				scope_id: context.scope_data.unique_id(),
 				span: start.to(end),
 				tags: TagList::default(),
 				has_keyword_arguments,
@@ -180,20 +176,21 @@ impl TryParse for PostfixOperators {
 impl CompileTime for FunctionCall {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(mut self) -> Self::Output {
-		let span = self.span();
-		self.tags = self.tags.evaluate_at_compile_time();
+	fn evaluate_at_compile_time(mut self, context: &mut Context) -> Self::Output {
+		let span = self.span(context);
+		self.tags = self.tags.evaluate_at_compile_time(context);
 
-		let function = self.function.evaluate_at_compile_time();
+		let function = self.function.evaluate_at_compile_time(context);
 
 		// Compile-time arguments
-		let builtin = context()
+		let builtin = context
 			.scope_data
 			.get_variable_from_id("builtin_function", ScopeId::stdlib())
 			.unwrap()
 			.try_as::<VirtualPointer>()
-			.unwrap_or(&VirtualPointer::ERROR);
-		let compile_time_arguments = if function.try_as::<VirtualPointer>().is_ok_and(|pointer| pointer == builtin) {
+			.unwrap_or(&VirtualPointer::ERROR)
+			.to_owned();
+		let compile_time_arguments = if function.try_as::<VirtualPointer>().is_ok_and(|pointer| *pointer == builtin) {
 			let object: ObjectConstructor = VecDeque::from(self.compile_time_arguments).pop_front().unwrap().try_into().unwrap();
 
 			vec![Expression::Pointer(
@@ -203,18 +200,18 @@ impl CompileTime for FunctionCall {
 					field_access_type: FieldAccessType::Normal,
 					fields: HashMap::new(),
 					inner_scope_id: None,
-					outer_scope_id: context().scope_data.unique_id(),
+					outer_scope_id: context.scope_data.unique_id(),
 					span: Span::unknown(),
 					tags: TagList::default(),
 					type_name: "Text".into(),
 					name: "anonymous_string_literal".into(),
 				}
-				.store_in_memory(),
+				.store_in_memory(context),
 			)]
 		} else {
 			let mut evaluated_compile_time_arguments = Vec::new();
 			for compile_time_argument in self.compile_time_arguments {
-				let evaluated = compile_time_argument.evaluate_at_compile_time();
+				let evaluated = compile_time_argument.evaluate_at_compile_time(context);
 				evaluated_compile_time_arguments.push(evaluated);
 			}
 			evaluated_compile_time_arguments
@@ -222,19 +219,17 @@ impl CompileTime for FunctionCall {
 
 		// Arguments
 		let mut arguments = {
-			let arguments_debug = debug_start!("{} a {} arguments at compile-time", "Compile-Time Evaluating".bold().green(), "function call's".cyan());
 			let mut evaluated_arguments = Vec::new();
 			for argument in self.arguments {
-				let evaluated = argument.evaluate_at_compile_time();
+				let evaluated = argument.evaluate_at_compile_time(context);
 				evaluated_arguments.push(evaluated);
 			}
-			arguments_debug.finish();
 			evaluated_arguments
 		};
 
 		// If not all arguments are known at compile-time, we can't call the function at compile time. In this case, we just
 		// return a function call expression, and it'll get transpiled to C and called at runtime.
-		if arguments.iter().map(|argument| argument.is_fully_known_at_compile_time()).any(|value| !value) {
+		if arguments.iter().map(|argument| argument.is_fully_known_at_compile_time(context)).any(|value| !value) {
 			return Expression::FunctionCall(FunctionCall {
 				function: Box::new(function),
 				compile_time_arguments,
@@ -248,7 +243,7 @@ impl CompileTime for FunctionCall {
 		}
 
 		// Evaluate function
-		let literal = function.try_as_literal();
+		let literal = function.try_as_literal(context);
 		let function_declaration = literal;
 		if !function_declaration.is_error() {
 			if function_declaration.type_name() == &"Group".into() {
@@ -258,7 +253,7 @@ impl CompileTime for FunctionCall {
 			let is_error = function_declaration.type_name() == &"Error".into();
 			let function_declaration = FunctionDeclaration::from_literal(function_declaration).map(Cow::Owned).unwrap_or_else(|_| {
 				if !is_error {
-					context().add_diagnostic(Diagnostic {
+					context.add_diagnostic(Diagnostic {
 						span,
 						info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::CallNonFunction)),
 					});
@@ -270,8 +265,7 @@ impl CompileTime for FunctionCall {
 			if let Some(this_object) = function_declaration.this_object() {
 				if let Some(parameter) = function_declaration.parameters().first() {
 					if parameter.name().unmangled_name() == "this" {
-						debug_log!("{} the \"this object\" of a {}", "Compile-Time Evaluating".green().bold(), "function call".cyan());
-						arguments.insert(0, this_object.clone().evaluate_at_compile_time());
+						arguments.insert(0, this_object.clone().evaluate_at_compile_time(context));
 					}
 				}
 			}
@@ -285,7 +279,7 @@ impl CompileTime for FunctionCall {
 					.parameter_type()
 					.try_as::<VirtualPointer>()
 					.unwrap_or(&VirtualPointer::ERROR)
-					.virtual_deref()
+					.virtual_deref(context)
 					.name()
 					.clone();
 				let options = ObjectConstructor {
@@ -293,13 +287,13 @@ impl CompileTime for FunctionCall {
 					fields: Vec::new(),
 					internal_fields: HashMap::new(),
 					name: "options".into(),
-					outer_scope_id: context().scope_data.unique_id(),
-					inner_scope_id: context().scope_data.unique_id(),
+					outer_scope_id: context.scope_data.unique_id(),
+					inner_scope_id: context.scope_data.unique_id(),
 					field_access_type: FieldAccessType::Normal,
 					span: Span::unknown(),
 					tags: TagList::default(),
 				}
-				.evaluate_at_compile_time();
+				.evaluate_at_compile_time(context);
 				arguments.push(options);
 			}
 
@@ -342,20 +336,20 @@ impl CompileTime for FunctionCall {
 				if let Expression::Block(block) = body {
 					// Validate and add compile-time arguments
 					for (argument, parameter) in compile_time_arguments.iter().zip(function_declaration.compile_time_parameters().iter()) {
-						context().scope_data.reassign_variable_from_id(parameter.name(), argument.clone(), block.inner_scope_id());
+						context.scope_data.reassign_variable_from_id(parameter.name(), argument.clone(), block.inner_scope_id());
 					}
 
 					// Validate and add arguments
 					for (argument, parameter) in arguments.iter().zip(function_declaration.parameters().iter()) {
-						context().scope_data.reassign_variable_from_id(parameter.name(), argument.clone(), block.inner_scope_id());
+						context.scope_data.reassign_variable_from_id(parameter.name(), argument.clone(), block.inner_scope_id());
 					}
 				}
 
 				// Return value
-				let return_value = body.clone().evaluate_at_compile_time();
+				let return_value = body.clone().evaluate_at_compile_time(context);
 
 				// Return value is literal
-				if !return_value.try_as_literal().is_error() {
+				if !return_value.try_as_literal(context).is_error() {
 					return return_value;
 				}
 			}
@@ -366,7 +360,7 @@ impl CompileTime for FunctionCall {
 				let mut runtime = None;
 
 				// Get the address of system_side_effects
-				let system_side_effects_address = *context()
+				let system_side_effects_address = *context
 					.scope_data
 					.get_variable_from_id("system_side_effects", ScopeId::stdlib())
 					.unwrap()
@@ -375,10 +369,18 @@ impl CompileTime for FunctionCall {
 
 				// Get builtin and side effect tags
 				for tag in &function_declaration.tags().values {
-					let object = tag.try_as_literal();
+					let object = tag.try_as_literal(context);
 					if !object.is_error() {
 						if object.type_name() == &Name::from("BuiltinTag") {
-							builtin_name = Some(object.get_field_literal("internal_name").unwrap().try_as::<String>().unwrap().to_owned());
+							builtin_name = Some(
+								object
+									.get_field_literal("internal_name")
+									.unwrap()
+									.virtual_deref(context)
+									.try_as::<String>()
+									.unwrap()
+									.to_owned(),
+							);
 							continue;
 						}
 
@@ -387,9 +389,17 @@ impl CompileTime for FunctionCall {
 						}
 
 						if let Ok(pointer) = tag.try_as::<VirtualPointer>() {
-							let value = pointer.virtual_deref();
+							let value = pointer.virtual_deref(context);
 							if value.type_name() == &"RuntimeTag".into() {
-								runtime = Some(value.get_field_literal("reason").unwrap().get_internal_field::<String>("internal_value"));
+								runtime = Some(
+									value
+										.get_field_literal("reason")
+										.unwrap()
+										.virtual_deref(context)
+										.get_internal_field::<String>("internal_value")
+										.unwrap()
+										.to_owned(),
+								);
 							}
 						}
 					}
@@ -397,12 +407,12 @@ impl CompileTime for FunctionCall {
 
 				// Call builtin function
 				if let Some(internal_name) = builtin_name {
-					if !system_side_effects || context().has_side_effects() {
+					if !system_side_effects || context.has_side_effects() {
 						if let Some(_runtime_reason) = runtime {
 							// TODO: runtime tag
 						}
 
-						let return_value = call_builtin_at_compile_time(&internal_name, self.scope_id, arguments, self.span);
+						let return_value = call_builtin_at_compile_time(&internal_name, context, self.scope_id, arguments, self.span);
 						return return_value;
 					}
 
@@ -426,83 +436,15 @@ impl CompileTime for FunctionCall {
 	}
 }
 
-impl TranspileToC for FunctionCall {
-	fn to_c(&self) -> anyhow::Result<String> {
-		let function = FunctionDeclaration::from_literal(self.function.clone().evaluate_at_compile_time().try_as::<VirtualPointer>()?.virtual_deref())?;
-
-		let return_type = if let Some(return_type) = function.return_type() {
-			format!("{}* return_address;", return_type.try_as_literal().to_c_type()?)
-		} else {
-			String::new()
-		};
-
-		let ending_return_address = if let Some(_return_type) = function.return_type() {
-			"return_address;".to_owned()
-		} else {
-			String::new()
-		};
-
-		let maybe_return_address = if let Some(_return_type) = function.return_type() {
-			let maybe_comma = if function.parameters().is_empty() { "" } else { ", " };
-			format!("{maybe_comma}return_address")
-		} else {
-			String::new()
-		};
-
-		Ok(unindent::unindent(&format!(
-			"
-			({{
-				{return_type}	
-				{argument_declaration}
-				(((void (*)({parameter_types}))({function_to_call}->call))({this_object}{arguments}{maybe_return_address}));
-				{ending_return_address}
-			}})	
-			",
-			parameter_types = {
-				let mut parameters = function
-					.parameters()
-					.iter()
-					.map(|parameter| Ok(format!("{}*", parameter.parameter_type().try_as_literal().to_c_type()?)))
-					.collect::<anyhow::Result<Vec<_>>>()?
-					.join(", ");
-				if let Some(function_return_type) = function.return_type().as_ref() {
-					if !parameters.is_empty() {
-						parameters += ", ";
-					}
-					write!(parameters, "{}*", function_return_type.try_as_literal().to_c_type()?).unwrap();
-				}
-				parameters
-			},
-			function_to_call = self.function.to_c()?,
-			this_object = if let Some(object) = function.this_object() {
-				if function.parameters().first().is_some_and(|param| param.name() == &"this".into()) {
-					format!("{}, ", object.to_c()?)
-				} else {
-					String::new()
-				}
-			} else {
-				String::new()
-			},
-			argument_declaration = self
-				.arguments
-				.iter()
-				.map(|argument| Ok(format!("{}* arg0 = {};", argument.get_type()?.virtual_deref().to_c_type()?, argument.to_c()?)))
-				.collect::<anyhow::Result<Vec<_>>>()?
-				.join(", "),
-			arguments = (0..self.arguments.len()).map(|index| format!("arg{index}")).collect::<Vec<_>>().join(", "),
-		)))
-	}
-}
-
 impl RuntimeableExpression for FunctionCall {
-	fn evaluate_subexpressions_at_compile_time(self) -> Self {
-		let function = self.function.evaluate_at_compile_time();
+	fn evaluate_subexpressions_at_compile_time(self, context: &mut Context) -> Self {
+		let function = self.function.evaluate_at_compile_time(context);
 
 		// Compile-time arguments
 		let compile_time_arguments = {
 			let mut compile_time_arguments = Vec::new();
 			for argument in self.compile_time_arguments {
-				let evaluated = argument.evaluate_at_compile_time();
+				let evaluated = argument.evaluate_at_compile_time(context);
 				compile_time_arguments.push(evaluated);
 			}
 			compile_time_arguments
@@ -512,7 +454,7 @@ impl RuntimeableExpression for FunctionCall {
 		let arguments = {
 			let mut arguments = Vec::new();
 			for argument in self.arguments {
-				let evaluated = argument.evaluate_at_compile_time();
+				let evaluated = argument.evaluate_at_compile_time(context);
 				arguments.push(evaluated);
 			}
 			arguments
@@ -532,18 +474,18 @@ impl RuntimeableExpression for FunctionCall {
 }
 
 impl Typed for FunctionCall {
-	fn get_type(&self) -> anyhow::Result<VirtualPointer> {
-		let function = FunctionDeclaration::from_literal(self.function.try_as_literal())?;
+	fn get_type(&self, context: &mut Context) -> anyhow::Result<VirtualPointer> {
+		let function = FunctionDeclaration::from_literal(self.function.try_as_literal(context))?;
 		if let Some(return_type) = function.return_type() {
 			return_type.try_as::<VirtualPointer>().cloned()
 		} else {
-			context().scope_data.get_variable("Nothing").unwrap().try_as::<VirtualPointer>().cloned()
+			context.scope_data.get_variable("Nothing").unwrap().try_as::<VirtualPointer>().cloned()
 		}
 	}
 }
 
 impl Spanned for FunctionCall {
-	fn span(&self) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }
@@ -579,7 +521,7 @@ impl FunctionCall {
 	///
 	/// Only if the given token does not represent a valid binary operation. The given token must have a type of
 	/// `TokenType::Plus`, `TokenType::Minus`, etc.
-	pub fn from_binary_operation(left: Expression, right: Expression, operation: Token) -> Result<FunctionCall, Diagnostic> {
+	pub fn from_binary_operation(context: &mut Context, left: Expression, right: Expression, operation: Token) -> Result<FunctionCall, Diagnostic> {
 		let function_name = match operation.token_type {
 			TokenType::Asterisk => "times",
 			TokenType::DoubleEquals => "equals",
@@ -591,20 +533,20 @@ impl FunctionCall {
 			_ => panic!("Invalid binary expression token type"),
 		};
 
-		let start = left.span();
+		let start = left.span(context);
 		let middle = operation.span;
-		let end = right.span();
+		let end = right.span(context);
 
 		Ok(FunctionCall {
 			function: Box::new(Expression::FieldAccess(FieldAccess::new(
 				left,
 				Name::from(function_name),
-				context().scope_data.unique_id(),
+				context.scope_data.unique_id(),
 				start.to(middle),
 			))),
 			arguments: vec![right],
 			compile_time_arguments: Vec::new(),
-			scope_id: context().scope_data.unique_id(),
+			scope_id: context.scope_data.unique_id(),
 			span: start.to(end),
 			tags: TagList::default(),
 			has_keyword_arguments: false,
@@ -612,40 +554,12 @@ impl FunctionCall {
 		})
 	}
 
-	/// Calls the program's main function at compile-time. This is used during the build process to begin compile-time evaluation.
-	///
-	/// # Parameters
-	///
-	/// - `function` - The main function to call.
-	/// - `scope_id` - The scope ID of the main function
-	///
-	/// # Returns
-	///
-	/// The returned value from the main function.
-	///
-	/// # Errors
-	///
-	/// If an error occurred while evaluating the function call at compile-time, the error is returned.
-	pub fn call_main(function: Expression, scope_id: ScopeId) -> Expression {
-		FunctionCall {
-			function: Box::new(function),
-			compile_time_arguments: Vec::new(),
-			arguments: Vec::new(),
-			scope_id,
-			span: Span::unknown(),
-			tags: TagList::default(),
-			has_keyword_compile_time_arguments: false,
-			has_keyword_arguments: false,
-		}
-		.evaluate_at_compile_time()
-	}
-
-	pub fn basic(function: Expression) -> FunctionCall {
+	pub fn basic(function: Expression, context: &mut Context) -> FunctionCall {
 		FunctionCall {
 			function: Box::new(function),
 			arguments: Vec::new(),
 			compile_time_arguments: Vec::new(),
-			scope_id: context().scope_data.unique_id(),
+			scope_id: context.scope_data.unique_id(),
 			span: Span::unknown(),
 			has_keyword_arguments: false,
 			has_keyword_compile_time_arguments: false,

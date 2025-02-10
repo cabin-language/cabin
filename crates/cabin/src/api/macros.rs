@@ -1,3 +1,4 @@
+use super::context::Context;
 use crate::{
 	comptime::CompileTime,
 	lexer::Span,
@@ -34,15 +35,6 @@ macro_rules! err {
             .. Default::default()
         };
 
-        if let Some(position) = error.at {
-            $crate::api::context::context().set_error_position(position);
-        }
-
-        if let Some(details) = error.details {
-            $crate::api::context::context().set_error_details(&details);
-        }
-
-		$crate::api::context::context().set_compiler_error_position($crate::here!());
 
         anyhow::anyhow!("{}{}", error.base.unwrap(), if let Some(process) = error.process { format!("\n\t{}", process).dimmed() } else { String::new().bold() })
 	}}
@@ -91,13 +83,13 @@ macro_rules! function {
 }
 
 /// This should only be called after parse-time.
-pub fn string(value: &str, span: Span) -> Expression {
-	ObjectConstructor::string(value, span).evaluate_at_compile_time()
+pub fn string(value: &str, span: Span, context: &mut Context) -> Expression {
+	ObjectConstructor::string(value, span, context).evaluate_at_compile_time(context)
 }
 
 /// This should only be called after parse-time.
-pub fn number(number: f64, span: Span) -> Expression {
-	ObjectConstructor::number(number, span).evaluate_at_compile_time()
+pub fn number(number: f64, span: Span, context: &mut Context) -> Expression {
+	ObjectConstructor::number(number, span, context).evaluate_at_compile_time(context)
 }
 
 /// Returns the second value provided wrapped in `Some()` if the first value is true; Otherwise, returns `None`.
@@ -163,33 +155,6 @@ pub struct CabinError {
 	pub details: Option<String>,
 	pub at: Option<Span>,
 	pub process: Option<String>,
-}
-
-#[macro_export]
-macro_rules! debug_log {
-	(
-		$($tokens: tt)*
-	) => {{
-		use colored::Colorize as _;
-		if $crate::api::context::context().config().options().debug_info() == "some" {
-			println!("{}{}", "│\t".repeat($crate::api::context::context().debug_indent()).dimmed(), format!($($tokens)*));
-		}
-	}};
-}
-
-#[macro_export]
-macro_rules! debug_start {
-	(
-		$($tokens: tt)*
-	) => {{
-		let message = format!($($tokens)*);
-		use colored::Colorize as _;
-		if $crate::api::context::context().config().options().debug_info() == "some" {
-			println!("{}{}", "│\t".repeat($crate::api::context::context().debug_indent()).dimmed(), message);
-		}
-		let dropper = $crate::api::context::context().start_debug_sequence(&message);
-		dropper
-	}};
 }
 
 #[macro_export]

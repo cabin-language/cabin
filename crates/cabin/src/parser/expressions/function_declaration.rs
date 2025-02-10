@@ -2,20 +2,14 @@ use std::{collections::HashMap, fmt::Debug, sync::LazyLock};
 
 use crate::{
 	api::{
-		builtin::transpile_builtin_to_c,
-		context::context,
+		context::Context,
 		scope::{ScopeId, ScopeType},
-		traits::TryAs as _,
 	},
-	cli::theme::Styled,
 	comptime::{memory::VirtualPointer, CompileTime},
-	debug_log,
-	debug_start,
-	diagnostics::Diagnostic,
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	if_then_some,
 	lexer::{Span, TokenType},
-	mapped_err,
 	parse_list,
 	parser::{
 		expressions::{
@@ -35,10 +29,9 @@ use crate::{
 		TokenQueue,
 		TokenQueueFunctionality as _,
 	},
-	transpiler::TranspileToC,
 };
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct FunctionDeclaration {
 	tags: TagList,
 	compile_time_parameters: Vec<Parameter>,
@@ -52,55 +45,19 @@ pub struct FunctionDeclaration {
 	span: Span,
 }
 
-impl Debug for FunctionDeclaration {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(
-			f,
-			"{}{}{}{}{}",
-			if_then_else_default!(!self.tags().is_empty(), format!("{:?} ", self.tags())),
-			"action".style(context().theme.keyword()),
-			if_then_else_default!(!self.compile_time_parameters().is_empty(), {
-				format!(
-					"<{}>",
-					self.compile_time_parameters()
-						.iter()
-						.map(|parameter| format!("{parameter:?}"))
-						.collect::<Vec<_>>()
-						.join(", ")
-				)
-			}),
-			if_then_else_default!(!self.parameters().is_empty(), {
-				format!("({})", self.parameters().iter().map(|parameter| format!("{parameter:?}")).collect::<Vec<_>>().join(", "))
-			}),
-			if let Some(return_type) = self.return_type() {
-				format!(": {return_type:?}")
-			} else {
-				String::new()
-			}
-		)
-	}
-}
-
 impl TryParse for FunctionDeclaration {
 	type Output = VirtualPointer;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
-		let debug_section = debug_start!("{} a {}", "Parsing".bold().green(), "function declaration".cyan());
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		// "function" keyword
 		let start = tokens.pop(TokenType::KeywordAction)?.span;
 		let mut end = start;
 
 		// Compile-time parameters
-		debug_log!("Parsing the compile-time parameters of {}", "function declaration".cyan());
 		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
 			end = parse_list!(tokens, ListType::AngleBracketed, {
-				let parameter = Parameter::from_literal(Parameter::try_parse(tokens)?.virtual_deref()).unwrap();
-				debug_log!(
-					"Parsed compile-time parameter {} of type {:?} in a function declaration",
-					parameter.name().unmangled_name().red(),
-					parameter.parameter_type()
-				);
+				let parameter = Parameter::from_literal(Parameter::try_parse(tokens, context)?.virtual_deref(context)).unwrap();
 				compile_time_parameters.push(parameter);
 			})
 			.span;
@@ -108,16 +65,10 @@ impl TryParse for FunctionDeclaration {
 		});
 
 		// Parameters
-		debug_log!("Parsing the parameters of {}", "function declaration".cyan());
 		let parameters = if_then_else_default!(tokens.next_is(TokenType::LeftParenthesis), {
 			let mut parameters = Vec::new();
 			end = parse_list!(tokens, ListType::Parenthesized, {
-				let parameter = Parameter::from_literal(Parameter::try_parse(tokens)?.virtual_deref()).unwrap();
-				debug_log!(
-					"Parsed parameter {} of type {:?} in a function declaration",
-					parameter.name().unmangled_name().red(),
-					parameter.parameter_type()
-				);
+				let parameter = Parameter::from_literal(Parameter::try_parse(tokens, context)?.virtual_deref(context)).unwrap();
 				parameters.push(parameter);
 			})
 			.span;
@@ -127,61 +78,71 @@ impl TryParse for FunctionDeclaration {
 		// Return Type
 		let return_type = if_then_some!(tokens.next_is(TokenType::Colon), {
 			let _ = tokens.pop(TokenType::Colon)?;
-			let expression = Expression::parse(tokens);
-			end = expression.span();
+			let expression = Expression::parse(tokens, context);
+			end = expression.span(context);
 			expression
 		});
 
 		// Body
-		debug_log!("Parsing the body of a {}", "function declaration".cyan());
 		let (body, inner_scope_id) = if_then_some!(tokens.next_is(TokenType::LeftBrace), {
-			let block = Block::parse_with_scope_type(tokens, ScopeType::Function)?;
+			let block = Block::parse_with_scope_type(tokens, context, ScopeType::Function)?;
 			let inner_scope_id = block.inner_scope_id();
 			for parameter in &compile_time_parameters {
-				context()
+				if let Err(error) = context
 					.scope_data
-					.declare_new_variable_from_id(parameter.name().clone(), Expression::ErrorExpression(Span::unknown()), block.inner_scope_id());
+					.declare_new_variable_from_id(parameter.name().clone(), Expression::ErrorExpression(Span::unknown()), block.inner_scope_id())
+				{
+					context.add_diagnostic(Diagnostic {
+						span: parameter.name().span(context),
+						info: DiagnosticInfo::Error(error),
+					});
+				};
 			}
 			for parameter in &parameters {
-				context()
+				if let Err(error) = context
 					.scope_data
-					.declare_new_variable_from_id(parameter.name().clone(), Expression::ErrorExpression(Span::unknown()), block.inner_scope_id());
+					.declare_new_variable_from_id(parameter.name().clone(), Expression::ErrorExpression(Span::unknown()), block.inner_scope_id())
+				{
+					context.add_diagnostic(Diagnostic {
+						span: parameter.name().span(context),
+						info: DiagnosticInfo::Error(error),
+					});
+				}
 			}
-			end = block.span();
+			end = block.span(context);
 			(Expression::Block(block), inner_scope_id)
 		})
 		.unzip();
 
 		// Return
-		debug_section.finish();
 		Ok(Self {
 			tags: TagList::default(),
 			parameters,
 			compile_time_parameters,
 			return_type,
 			body,
-			outer_scope_id: context().scope_data.unique_id(),
+			outer_scope_id: context.scope_data.unique_id(),
 			inner_scope_id,
 			this_object: None,
 			name: Name::non_mangled("anonymous_function"),
 			span: start.to(end),
 		}
 		.to_literal()
-		.store_in_memory())
+		.store_in_memory(context))
 	}
 }
 
 impl CompileTime for FunctionDeclaration {
 	type Output = FunctionDeclaration;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
-		let _scope_reverter = context().scope_data.set_current_scope(self.outer_scope_id);
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+		let scope_reverter = context.scope_data.set_current_scope(self.outer_scope_id);
 
 		// Compile-time parameters
 		let compile_time_parameters = {
 			let mut compile_time_parameters = Vec::new();
 			for parameter in self.compile_time_parameters {
-				compile_time_parameters.push(parameter.evaluate_at_compile_time());
+				compile_time_parameters.push(parameter.evaluate_at_compile_time(context));
 			}
 			compile_time_parameters
 		};
@@ -190,29 +151,25 @@ impl CompileTime for FunctionDeclaration {
 		let parameters = {
 			let mut parameters = Vec::new();
 			for parameter in self.parameters {
-				let parameter_debug = debug_start!(
-					"{} a parameter called {} of type {:?} on a {}",
-					"Compile-Time Evaluating".bold().green(),
-					parameter.name().unmangled_name().red(),
-					parameter.parameter_type(),
-					"function declaration".cyan()
-				);
-				parameters.push(parameter.evaluate_at_compile_time());
-				parameter_debug.finish();
+				parameters.push(parameter.evaluate_at_compile_time(context));
 			}
 			parameters
 		};
 
 		// Return type
-		let return_type = self.return_type.map(|return_type| return_type.evaluate_as_type());
+		let return_type = self.return_type.map(|return_type| return_type.evaluate_as_type(context));
 
-		let tags = self.tags.evaluate_at_compile_time();
+		let tags = self.tags.evaluate_at_compile_time(context);
+
+		context.toggle_side_effects(false);
+		let body = self.body.map(|body| body.evaluate_at_compile_time(context));
+		context.untoggle_side_effects();
 
 		// Return
 		let function = FunctionDeclaration {
 			compile_time_parameters,
 			parameters,
-			body: self.body,
+			body,
 			return_type,
 			tags,
 			this_object: self.this_object,
@@ -223,61 +180,8 @@ impl CompileTime for FunctionDeclaration {
 		};
 
 		// Return as a pointer
+		scope_reverter.revert(context);
 		function
-	}
-}
-
-impl TranspileToC for FunctionDeclaration {
-	fn to_c(&self) -> anyhow::Result<String> {
-		if !self.compile_time_parameters.is_empty() {
-			return Ok(String::new());
-		}
-
-		// Get builtin and side effect tags
-		let mut builtin_body = None;
-		for tag in &self.tags.values {
-			let object = tag.try_as_literal();
-			if object.type_name() == &Name::from("BuiltinTag") {
-				let builtin_name = object.get_field_literal("internal_name").unwrap().try_as::<String>()?.to_owned();
-				let mut parameters = self.parameters.iter().map(|parameter| parameter.name().to_c().unwrap()).collect::<Vec<_>>();
-				parameters.push("return_address".to_owned());
-				builtin_body = Some(transpile_builtin_to_c(&builtin_name, &parameters).map_err(mapped_err! {
-					while = format!("transpiling the body of the built-in function {}()", builtin_name.bold().blue()),
-				})?);
-			}
-		}
-
-		// Generate the C code for the return address declaration
-		let return_type_c = if let Some(return_type) = self.return_type.as_ref() {
-			format!(
-				"{}{}* return_address",
-				if self.parameters.is_empty() { "" } else { ", " },
-				return_type.try_as_literal().to_c_type()?
-			)
-		} else {
-			String::new()
-		};
-
-		Ok(format!(
-			"({}{}) {{\n{}\n}}",
-			self.parameters
-				.iter()
-				.map(|parameter| Ok(format!("{}* {}", parameter.parameter_type().try_as_literal().to_c_type()?, parameter.name().to_c()?)))
-				.collect::<anyhow::Result<Vec<_>>>()?
-				.join(", "),
-			return_type_c,
-			if let Some(builtin_body) = builtin_body {
-				builtin_body
-			} else {
-				let body = self.body.as_ref().unwrap().to_c()?;
-				let body = body.strip_prefix("({").unwrap().strip_suffix("})").unwrap().to_owned();
-				body
-			}
-			.lines()
-			.map(|line| format!("\t{line}"))
-			.collect::<Vec<_>>()
-			.join("\n")
-		))
 	}
 }
 
@@ -287,7 +191,7 @@ static ERROR: LazyLock<FunctionDeclaration> = LazyLock::new(|| FunctionDeclarati
 	parameters: Vec::new(),
 	return_type: None,
 	body: None,
-	outer_scope_id: context().scope_data.unique_id(),
+	outer_scope_id: ScopeId::global(),
 	inner_scope_id: None,
 	this_object: None,
 	name: "Error".into(),
@@ -337,7 +241,7 @@ impl LiteralConvertible for FunctionDeclaration {
 }
 
 impl Spanned for FunctionDeclaration {
-	fn span(&self) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }

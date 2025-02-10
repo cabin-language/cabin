@@ -1,9 +1,9 @@
-use std::{collections::HashMap, fmt::Write as _};
+use std::collections::HashMap;
 
 use convert_case::{Case, Casing as _};
 
 use crate::{
-	api::{context::context, scope::ScopeId},
+	api::{context::Context, scope::ScopeId},
 	comptime::{memory::VirtualPointer, CompileTime},
 	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	lexer::{Span, TokenType},
@@ -11,7 +11,7 @@ use crate::{
 	parser::{
 		expressions::{
 			field_access::FieldAccessType,
-			literal::{CompilerWarning, LiteralConvertible, LiteralObject},
+			literal::{LiteralConvertible, LiteralObject},
 			name::Name,
 			object::InternalFieldValue,
 			Spanned,
@@ -22,7 +22,6 @@ use crate::{
 		TokenQueueFunctionality,
 		TryParse,
 	},
-	transpiler::TranspileToC,
 };
 
 /// An `either`. In Cabin, `eithers` represent choices between empty values. They are analogous to
@@ -59,47 +58,47 @@ pub struct Either {
 impl TryParse for Either {
 	type Output = VirtualPointer;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordEither)?.span;
 		let mut variants = Vec::new();
 		let end = parse_list!(tokens, ListType::Braced, {
-			let name = Name::try_parse(tokens)?;
-			let span = name.span();
+			let name = Name::try_parse(tokens, context)?;
+			let span = name.span(context);
 			if name.unmangled_name() != name.unmangled_name().to_case(Case::Snake) {
-				context().add_diagnostic(Diagnostic {
-					span: name.span(),
+				context.add_diagnostic(Diagnostic {
+					span: name.span(context),
 					info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
 						original_name: name.unmangled_name().to_owned(),
 					}),
 				});
 			}
-			variants.push((name, LiteralObject::empty(span).store_in_memory()));
+			variants.push((name, LiteralObject::empty(span, context).store_in_memory(context)));
 		})
 		.span;
 
 		Ok(Either {
 			variants,
-			scope_id: context().scope_data.unique_id(),
+			scope_id: context.scope_data.unique_id(),
 			name: "anonymous_either".into(),
 			span: start.to(end),
 			tags: TagList::default(),
 		}
 		.to_literal()
-		.store_in_memory())
+		.store_in_memory(context))
 	}
 }
 
 impl CompileTime for Either {
 	type Output = Either;
 
-	fn evaluate_at_compile_time(mut self) -> Self::Output {
+	fn evaluate_at_compile_time(mut self, context: &mut Context) -> Self::Output {
 		// Tags
-		self.tags = self.tags.evaluate_at_compile_time();
+		self.tags = self.tags.evaluate_at_compile_time(context);
 
 		// Warning for empty either
-		if self.variants.is_empty() && !self.tags.suppresses_warning(CompilerWarning::EmptyEither) {
-			context().add_diagnostic(Diagnostic {
-				span: self.span(),
+		if self.variants.is_empty() {
+			context.add_diagnostic(Diagnostic {
+				span: self.span(context),
 				info: DiagnosticInfo::Warning(Warning::EmptyEither),
 			});
 		}
@@ -135,21 +134,8 @@ impl LiteralConvertible for Either {
 	}
 }
 
-impl TranspileToC for Either {
-	fn to_c(&self) -> anyhow::Result<String> {
-		let mut builder = "{\n".to_owned();
-		for (variant_name, _variant_value) in &self.variants {
-			write!(builder, "\n\t{},", variant_name.to_c()?).unwrap();
-		}
-
-		builder += "\n}";
-
-		Ok(builder)
-	}
-}
-
 impl Spanned for Either {
-	fn span(&self) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span.to_owned()
 	}
 }
@@ -166,12 +152,5 @@ impl Either {
 
 	pub fn variants(&self) -> &[(Name, VirtualPointer)] {
 		&self.variants
-	}
-
-	pub fn set_name(&mut self, name: Name) {
-		self.name = name;
-		for variant in &mut self.variants {
-			variant.1.virtual_deref_mut().type_name = self.name.clone();
-		}
 	}
 }

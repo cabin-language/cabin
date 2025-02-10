@@ -1,8 +1,6 @@
-use std::fmt::Write as _;
-
 use super::Spanned;
 use crate::{
-	api::{context::context, scope::ScopeId},
+	api::{context::Context, scope::ScopeId},
 	comptime::CompileTime,
 	diagnostics::Diagnostic,
 	lexer::{Span, TokenType},
@@ -13,7 +11,6 @@ use crate::{
 		TokenQueueFunctionality,
 		TryParse,
 	},
-	transpiler::TranspileToC,
 };
 
 #[derive(Debug, Clone)]
@@ -28,15 +25,15 @@ pub struct IfExpression {
 impl TryParse for IfExpression {
 	type Output = IfExpression;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordIf)?.span;
-		let condition = Box::new(Expression::parse(tokens));
-		let body = Block::try_parse(tokens)?;
-		let mut end = body.span();
+		let condition = Box::new(Expression::parse(tokens, context));
+		let body = Block::try_parse(tokens, context)?;
+		let mut end = body.span(context);
 		let else_body = if tokens.next_is(TokenType::KeywordOtherwise) {
 			let _ = tokens.pop(TokenType::KeywordOtherwise).unwrap();
-			let else_body = Expression::Block(Block::try_parse(tokens)?);
-			end = else_body.span();
+			let else_body = Expression::Block(Block::try_parse(tokens, context)?);
+			end = else_body.span(context);
 			Some(Box::new(else_body))
 		} else {
 			None
@@ -54,20 +51,20 @@ impl TryParse for IfExpression {
 impl CompileTime for IfExpression {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		// Check condition
-		let condition = self.condition.evaluate_at_compile_time();
-		let condition_is_true = condition.is_true();
+		let condition = self.condition.evaluate_at_compile_time(context);
+		let condition_is_true = condition.is_true(context);
 
 		// Evaluate body
-		context().toggle_side_effects(condition_is_true);
-		let body = self.body.evaluate_at_compile_time();
-		context().untoggle_side_effects();
+		context.toggle_side_effects(condition_is_true);
+		let body = self.body.evaluate_at_compile_time(context);
+		context.untoggle_side_effects();
 
 		// Evaluate else body
-		context().toggle_side_effects(!condition_is_true);
-		let else_body = self.else_body.map(|else_body| Box::new(else_body.evaluate_at_compile_time()));
-		context().untoggle_side_effects();
+		context.toggle_side_effects(!condition_is_true);
+		let else_body = self.else_body.map(|else_body| Box::new(else_body.evaluate_at_compile_time(context)));
+		context.untoggle_side_effects();
 
 		// Fully evaluated: return the value (only if true)
 		if condition_is_true {
@@ -91,30 +88,8 @@ impl CompileTime for IfExpression {
 	}
 }
 
-impl TranspileToC for IfExpression {
-	fn to_c(&self) -> anyhow::Result<String> {
-		let mut builder = format!("({}) ? (", self.condition.to_c()?);
-		for line in self.body.to_c()?.lines() {
-			write!(builder, "\n\t{line}").unwrap();
-		}
-		builder += "\n) : (";
-
-		if let Some(else_body) = &self.else_body {
-			for line in else_body.to_c()?.lines() {
-				write!(builder, "\n\t{line}").unwrap();
-			}
-		} else {
-			write!(builder, "\nNULL").unwrap();
-		}
-
-		builder += "\n) ";
-
-		Ok(builder)
-	}
-}
-
 impl Spanned for IfExpression {
-	fn span(&self) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }

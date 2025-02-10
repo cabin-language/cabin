@@ -1,12 +1,11 @@
 use convert_case::{Case, Casing as _};
 
 use crate::{
-	api::{context::context, scope::ScopeId},
+	api::{context::Context, scope::ScopeId},
 	comptime::CompileTime,
 	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	if_then_some,
 	lexer::{Span, TokenType},
-	mapped_err,
 	parser::{
 		expressions::{name::Name, Expression, Spanned},
 		statements::{tag::TagList, Statement},
@@ -15,7 +14,6 @@ use crate::{
 		TokenQueueFunctionality,
 		TryParse,
 	},
-	transpiler::TranspileToC,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,8 +35,8 @@ impl Declaration {
 		&self.name
 	}
 
-	pub fn value(&self) -> &Expression {
-		context().scope_data.get_variable_from_id(self.name.clone(), self.scope_id).unwrap()
+	pub fn value<'a>(&self, context: &'a mut Context) -> &'a Expression {
+		context.scope_data.get_variable_from_id(self.name.clone(), self.scope_id).unwrap()
 	}
 
 	pub const fn declaration_type(&self) -> &DeclarationType {
@@ -49,37 +47,37 @@ impl Declaration {
 impl TryParse for Declaration {
 	type Output = Statement;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		// Tags
-		let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens)?);
+		let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
 
 		if tags.is_some() && !tokens.next_is(TokenType::KeywordLet) {
-			let mut expression = Expression::parse(tokens);
-			expression.set_tags(tags.unwrap());
+			let mut expression = Expression::parse(tokens, context);
+			expression.set_tags(tags.unwrap(), context);
 			let _ = tokens.pop(TokenType::Semicolon)?;
 			return Ok(Statement::Expression(expression));
 		}
 
 		// Name
 		let start = tokens.pop(TokenType::KeywordLet)?.span;
-		let name = Name::try_parse(tokens)?;
+		let name = Name::try_parse(tokens, context)?;
 
 		// Value
 		let _ = tokens.pop(TokenType::Equal)?;
 
-		let mut value = Expression::parse(tokens);
-		let end = value.span();
+		let mut value = Expression::parse(tokens, context);
+		let end = value.span(context);
 
 		if let Expression::Pointer(pointer) = &value {
-			let literal = pointer.virtual_deref();
+			let literal = pointer.virtual_deref(context);
 			if literal.type_name() == &"Group".into()
 				|| literal.type_name() == &"Either".into()
 				|| literal.type_name() == &"OneOf".into()
 				|| literal.type_name() == &"RepresentAs".into()
 			{
 				if !name.unmangled_name().is_case(Case::Pascal) {
-					context().add_diagnostic(Diagnostic {
-						span: name.span(),
+					context.add_diagnostic(Diagnostic {
+						span: name.span(context),
 						info: DiagnosticInfo::Warning(Warning::NonPascalCaseGroup {
 							original_name: name.unmangled_name().to_owned(),
 							type_name: literal.type_name().unmangled_name().to_owned(),
@@ -87,16 +85,16 @@ impl TryParse for Declaration {
 					});
 				}
 			} else if !name.unmangled_name().is_case(Case::Snake) {
-				context().add_diagnostic(Diagnostic {
-					span: name.span(),
+				context.add_diagnostic(Diagnostic {
+					span: name.span(context),
 					info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
 						original_name: name.unmangled_name().to_owned(),
 					}),
 				});
 			}
 		} else if !name.unmangled_name().is_case(Case::Snake) {
-			context().add_diagnostic(Diagnostic {
-				span: name.span(),
+			context.add_diagnostic(Diagnostic {
+				span: name.span(context),
 				info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
 					original_name: name.unmangled_name().to_owned(),
 				}),
@@ -105,22 +103,27 @@ impl TryParse for Declaration {
 
 		// Tags
 		if let Some(tags) = tags {
-			value.set_tags(tags);
+			value.set_tags(tags, context);
 		}
 
 		// Set name
-		value.try_set_name(name.clone());
-		value.try_set_scope_label(name.clone());
+		value.try_set_name(name.clone(), context);
+		value.try_set_scope_label(name.clone(), context);
 
 		// Add the name declaration to the scope
-		context().scope_data.declare_new_variable(name.clone(), value);
+		if let Err(error) = context.scope_data.declare_new_variable(name.clone(), value) {
+			context.add_diagnostic(Diagnostic {
+				span: name.span(context),
+				info: DiagnosticInfo::Error(error),
+			});
+		}
 
 		let _ = tokens.pop(TokenType::Semicolon)?;
 
 		// Return the declaration
 		Ok(Statement::Declaration(Declaration {
 			name,
-			scope_id: context().scope_data.unique_id(),
+			scope_id: context.scope_data.unique_id(),
 			declaration_type: DeclarationType::Normal,
 			span: start.to(end),
 		}))
@@ -130,27 +133,15 @@ impl TryParse for Declaration {
 impl CompileTime for Declaration {
 	type Output = Declaration;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
-		let evaluated = self.value().clone().evaluate_at_compile_time(); // TODO: use a mapping function instead of cloning
-		context().scope_data.reassign_variable_from_id(&self.name, evaluated, self.scope_id);
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+		let evaluated = self.value(context).clone().evaluate_at_compile_time(context); // TODO: use a mapping function instead of cloning
+		context.scope_data.reassign_variable_from_id(&self.name, evaluated, self.scope_id);
 		self
 	}
 }
 
-impl TranspileToC for Declaration {
-	fn to_c(&self) -> anyhow::Result<String> {
-		Ok(format!(
-			"void* {} = {};",
-			self.name.to_c()?,
-			self.value().to_c().map_err(mapped_err! {
-				while = format!("transpiling the value of the initial declaration for the variable \"{}\" to C", self.name.unmangled_name()),
-			})?
-		))
-	}
-}
-
 impl Spanned for Declaration {
-	fn span(&self) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }

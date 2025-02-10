@@ -1,16 +1,13 @@
 use std::{collections::HashMap, fmt::Debug};
 
-use colored::Colorize as _;
-
 use crate::{
-	api::{context::context, scope::ScopeId},
+	api::{context::Context, scope::ScopeId, traits::TryAs as _},
 	comptime::CompileTime,
 	lexer::Span,
 	parser::{
-		expressions::{field_access::FieldAccessType, literal::LiteralObject, Spanned, Typed},
+		expressions::{field_access::FieldAccessType, literal::LiteralObject, Expression, Spanned, Typed},
 		statements::tag::TagList,
 	},
-	transpiler::TranspileToC,
 };
 
 /// A pointer to a `LiteralObject` in `VirtualMemory`.
@@ -28,21 +25,8 @@ use crate::{
 /// and when to use which. Also see the documentation for `VirtualMemory` for more information about virtual memory.
 ///
 /// This internally just wraps a `usize`, so cloning and copying is incredibly cheap.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VirtualPointer(usize);
-
-impl Debug for VirtualPointer {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let value = self.virtual_deref();
-		if value.type_name() == &"Group".into() {
-			return write!(f, "{}{}", "&".dimmed(), value.name().unmangled_name().yellow());
-		}
-		if value.type_name() == &"Text".into() {
-			return write!(f, "{}\"{}\"", "&".dimmed(), value.get_internal_field::<String>("internal_value").unwrap().green());
-		}
-		write!(f, "{}{:?}", "&".dimmed(), self.virtual_deref())
-	}
-}
 
 impl VirtualPointer {
 	pub const ERROR: VirtualPointer = VirtualPointer(0);
@@ -58,21 +42,25 @@ impl VirtualPointer {
 	/// # Returns
 	///
 	/// A reference to the `LiteralObject` that this `VirtualPointer` points to.
-	pub fn virtual_deref(&self) -> &'static LiteralObject {
-		context().virtual_memory.get(self)
+	pub fn virtual_deref<'a>(&self, context: &'a Context) -> &'a LiteralObject {
+		context.virtual_memory.get(self)
 	}
 
-	pub fn virtual_deref_mut(&self) -> &'static mut LiteralObject {
-		context().virtual_memory.memory.get_mut(&self.0).unwrap()
+	pub fn virtual_deref_mut<'a>(&self, context: &'a mut Context) -> &'a mut LiteralObject {
+		context.virtual_memory.memory.get_mut(&self.0).unwrap()
+	}
+
+	pub fn is_list(&self, context: &Context) -> bool {
+		self.virtual_deref(context).try_as::<Vec<Expression>>().is_ok()
 	}
 }
 
 impl CompileTime for VirtualPointer {
 	type Output = VirtualPointer;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
-		let evaluated = self.virtual_deref().clone().evaluate_at_compile_time();
-		let _ = context().virtual_memory.memory.insert(self.0, evaluated);
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+		let evaluated = self.virtual_deref(context).clone().evaluate_at_compile_time(context);
+		let _ = context.virtual_memory.memory.insert(self.0, evaluated);
 		self
 	}
 }
@@ -90,21 +78,15 @@ impl std::fmt::Display for VirtualPointer {
 	}
 }
 
-impl TranspileToC for VirtualPointer {
-	fn to_c(&self) -> anyhow::Result<String> {
-		Ok(format!("{}_{}", self.virtual_deref().name.to_c()?, self))
-	}
-}
-
 impl Typed for VirtualPointer {
-	fn get_type(&self) -> anyhow::Result<VirtualPointer> {
-		self.virtual_deref().get_type()
+	fn get_type(&self, context: &mut Context) -> anyhow::Result<VirtualPointer> {
+		self.virtual_deref(context).clone().get_type(context)
 	}
 }
 
 impl Spanned for VirtualPointer {
-	fn span(&self) -> Span {
-		self.virtual_deref().span()
+	fn span(&self, context: &Context) -> Span {
+		self.virtual_deref(context).span(context)
 	}
 }
 

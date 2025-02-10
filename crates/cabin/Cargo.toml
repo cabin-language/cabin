@@ -28,7 +28,6 @@ strum_macros = "0.26.4"
 thiserror = "2.0.11"
 toml_edit = "0.22.22"
 try_as = "0.1.0"
-unindent = "0.2.3"
 
 [package.metadata.commands]
 run = "cargo run -q -- run"

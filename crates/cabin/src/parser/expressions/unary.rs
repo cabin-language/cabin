@@ -1,4 +1,5 @@
 use crate::{
+	api::context::Context,
 	comptime::CompileTime,
 	lexer::Span,
 	parser::expressions::{Expression, Spanned},
@@ -23,13 +24,13 @@ pub struct UnaryOperation {
 impl CompileTime for UnaryOperation {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
+	fn evaluate_at_compile_time(self, _context: &mut Context) -> Self::Output {
 		todo!()
 	}
 }
 
 impl Spanned for UnaryOperation {
-	fn span(&self) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }

@@ -1,29 +1,29 @@
-use std::{
-	collections::HashMap,
-	fmt::{Debug, Write as _},
-};
+use std::{collections::HashMap, fmt::Debug};
 
-use colored::Colorize;
 use try_as::traits::TryAsRef;
 
-use super::{either::Either, extend::Extend, field_access::FieldAccessType, function_declaration::FunctionDeclaration, oneof::OneOf, parameter::Parameter, Spanned};
 use crate::{
-	api::{context::context, scope::ScopeId, traits::TryAs as _},
-	cli::theme::Styled,
+	api::{context::Context, scope::ScopeId, traits::TryAs as _},
 	comptime::{memory::VirtualPointer, CompileTime},
 	err,
 	lexer::Span,
 	parser::{
 		expressions::{
+			either::Either,
+			extend::Extend,
+			field_access::FieldAccessType,
+			function_declaration::FunctionDeclaration,
 			group::GroupDeclaration,
 			name::Name,
 			object::{InternalFieldValue, ObjectConstructor},
+			oneof::OneOf,
+			parameter::Parameter,
 			Expression,
+			Spanned,
 			Typed,
 		},
 		statements::tag::TagList,
 	},
-	transpiler::TranspileToC,
 };
 
 /// A "literal object". Literal objects can be thought of as simple associative arrays, similar to a JSON object or similar.
@@ -41,7 +41,7 @@ use crate::{
 /// function declarations, and one-of declarations are stored as literal objects. That's because at their core, all information about them is
 /// known at compile-time. Any such object should be stored as a `LiteralObject`. Read the documentation on the `LiteralConvertible` trait for
 /// more information about how these types of syntaxes are stored as and retrieved from `LiteralObjects`.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LiteralObject {
 	/// The type name of this `LiteralObject`. This is the name that the object would be constructed with in an object constructor, such as `Text`,
 	/// `Number`, `Object`, etc.
@@ -77,49 +77,14 @@ pub struct LiteralObject {
 	pub tags: TagList,
 }
 
-impl TryFrom<ObjectConstructor> for LiteralObject {
-	type Error = anyhow::Error;
-
-	fn try_from(object: ObjectConstructor) -> Result<Self, Self::Error> {
-		let mut fields = HashMap::new();
-		for field in object.fields {
-			let value = field.value.unwrap();
-			if let Expression::Pointer(address) = value {
-				let _ = fields.insert(field.name, address);
-				continue;
-			}
-
-			let Expression::ObjectConstructor(field_object) = value else {
-				anyhow::bail!("Value isn't an object: {value:?}");
-			};
-
-			let value_address = LiteralObject::try_from(field_object)?.store_in_memory();
-			let _ = fields.insert(field.name, value_address);
-		}
-
-		Ok(LiteralObject {
-			type_name: object.type_name,
-			fields,
-			internal_fields: object.internal_fields,
-			field_access_type: object.field_access_type,
-			outer_scope_id: object.outer_scope_id,
-			inner_scope_id: Some(object.inner_scope_id),
-			name: object.name,
-			address: None,
-			span: object.span,
-			tags: object.tags.evaluate_at_compile_time(),
-		})
-	}
-}
-
 impl LiteralObject {
-	pub fn empty(span: Span) -> Self {
+	pub fn empty(span: Span, context: &Context) -> Self {
 		Self {
 			type_name: "Object".into(),
 			fields: HashMap::new(),
 			internal_fields: HashMap::new(),
 			field_access_type: FieldAccessType::Normal,
-			outer_scope_id: context().scope_data.unique_id(),
+			outer_scope_id: context.scope_data.unique_id(),
 			inner_scope_id: None,
 			address: None,
 			span,
@@ -148,19 +113,12 @@ impl LiteralObject {
 		self.fields.get(&name.into()).copied()
 	}
 
-	pub fn get_field_literal(&self, name: impl Into<Name>) -> Option<&'static LiteralObject> {
-		self.fields.get(&name.into()).map(|address| context().virtual_memory.get(address))
+	pub fn get_field_literal(&self, name: impl Into<Name>) -> Option<VirtualPointer> {
+		self.fields.get(&name.into()).cloned()
 	}
 
-	pub fn expect_field_literal(&self, name: impl Into<Name>) -> &'static LiteralObject {
+	pub fn expect_field_literal(&self, name: impl Into<Name>) -> VirtualPointer {
 		self.get_field_literal(name).unwrap()
-	}
-
-	pub fn expect_field_literal_as<T>(&self, name: impl Into<Name>) -> &T
-	where
-		LiteralObject: TryAsRef<T>,
-	{
-		self.get_field_literal(name).unwrap().try_as().unwrap()
 	}
 
 	pub fn get_internal_field<T>(&self, name: &str) -> anyhow::Result<&T>
@@ -183,8 +141,8 @@ impl LiteralObject {
 	///
 	/// # Returns
 	/// A pointer to the location of this literal object, which is now owned by the compiler's virtual memory.
-	pub fn store_in_memory(self) -> VirtualPointer {
-		context().virtual_memory.store(self)
+	pub fn store_in_memory(self, context: &mut Context) -> VirtualPointer {
+		context.virtual_memory.store(self)
 	}
 
 	pub const fn outer_scope_id(&self) -> ScopeId {
@@ -203,23 +161,14 @@ impl LiteralObject {
 		self.fields.is_empty()
 	}
 
-	pub fn to_c_type(&self) -> anyhow::Result<String> {
-		Ok(match self.type_name.unmangled_name() {
-			"Object" => format!("type_{}_{}", self.name.to_c()?, self.address.unwrap()),
-			_ => {
-				format!("group_{}_{}", self.name.mangled_name(), self.address.unwrap())
-			},
-		})
-	}
-
 	/// Returns whether a value who's type is this literal, can be assigned to a name who's type is pointed to by the given pointer.
-	pub fn is_this_type_assignable_to_type(&self, mut target_type: VirtualPointer) -> anyhow::Result<bool> {
-		if target_type.virtual_deref().type_name() == &"Parameter".into() {
-			let parameter = Parameter::from_literal(target_type.virtual_deref())?;
+	pub fn is_this_type_assignable_to_type(&self, mut target_type: VirtualPointer, context: &Context) -> anyhow::Result<bool> {
+		if target_type.virtual_deref(context).type_name() == &"Parameter".into() {
+			let parameter = Parameter::from_literal(target_type.virtual_deref(context))?;
 			target_type = *parameter.parameter_type().try_as::<VirtualPointer>()?;
 		}
 
-		let anything = *context().scope_data.get_variable("Anything").unwrap().try_as::<VirtualPointer>().unwrap();
+		let anything = *context.scope_data.get_variable("Anything").unwrap().try_as::<VirtualPointer>().unwrap();
 		if target_type == anything {
 			return Ok(true);
 		}
@@ -231,96 +180,35 @@ impl LiteralObject {
 		Ok(false)
 	}
 
-	pub fn is_warning(&self, warning: CompilerWarning) -> bool {
-		if self.type_name() != &"Warning".into() {
-			return false;
-		}
-
-		let either = Either::from_literal(context().scope_data.get_variable("Warning").unwrap().try_as::<VirtualPointer>().unwrap().virtual_deref()).unwrap();
-		for (variant_name, variant_value) in either.variants() {
-			if format!("{warning}") == variant_name.unmangled_name() {
-				return variant_value == &self.address.unwrap();
-			}
-		}
-
-		false
-	}
-}
-
-impl Debug for LiteralObject {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		if self.type_name() == &"Function".into() {
-			let function = FunctionDeclaration::from_literal(self).unwrap();
-			return write!(
-				f,
-				"{}({}) {{ {} }}",
-				"action".style(context().theme.keyword()),
-				function
-					.parameters()
-					.iter()
-					.map(|parameter| format!("{}: {:?}", parameter.name().unmangled_name().red(), parameter.parameter_type()))
-					.collect::<Vec<_>>()
-					.join(", "),
-				"...".dimmed()
-			);
-		}
-
-		if self.type_name() == &"Either".into() {
-			let function = Either::from_literal(self).unwrap();
-			return write!(
-				f,
-				"{:?} {} {{ {} }}",
-				self.tags,
-				"either".style(context().theme.keyword()),
-				function
-					.variant_names()
-					.iter()
-					.map(|variant_name| format!("{}", variant_name.unmangled_name().red()))
-					.collect::<Vec<_>>()
-					.join(", ")
-			);
-		}
-
-		let mut builder = format!("{} {{", self.type_name.unmangled_name().yellow());
-
-		for (field_name, field_pointer) in &self.fields {
-			let value = field_pointer.virtual_deref();
-			if value.type_name() == &"Text".into() {
-				write!(
-					builder,
-					"\n\t{} = {}{},",
-					field_name.unmangled_name().red(),
-					"&".dimmed(),
-					format!("\"{}\"", value.get_internal_field::<String>("internal_value").unwrap()).green()
-				)
-				.unwrap();
+	pub fn try_from_object(object: ObjectConstructor, context: &mut Context) -> Result<Self, anyhow::Error> {
+		let mut fields = HashMap::new();
+		for field in object.fields {
+			let value = field.value.unwrap();
+			if let Expression::Pointer(address) = value {
+				let _ = fields.insert(field.name, address);
 				continue;
 			}
-			write!(
-				builder,
-				"\n\t{} = {}{},",
-				match field_pointer.virtual_deref().type_name.unmangled_name() {
-					"Group" | "OneOf" => field_name.unmangled_name().yellow(),
-					_ => field_name.unmangled_name().red(),
-				},
-				"&".dimmed(),
-				format!("{:?}", field_pointer.virtual_deref())
-					.lines()
-					.map(|line| format!("\t{line}"))
-					.collect::<Vec<_>>()
-					.join("\n")
-					.trim()
-			)
-			.unwrap();
+
+			let Expression::ObjectConstructor(field_object) = value else {
+				anyhow::bail!("Value isn't an object: {value:?}");
+			};
+
+			let value_address = LiteralObject::try_from_object(field_object, context)?.store_in_memory(context);
+			let _ = fields.insert(field.name, value_address);
 		}
 
-		if !self.fields.is_empty() {
-			builder += "\n";
-		}
-
-		builder += "}";
-
-		write!(f, "{builder}")
+		Ok(LiteralObject {
+			type_name: object.type_name,
+			fields,
+			internal_fields: object.internal_fields,
+			field_access_type: object.field_access_type,
+			outer_scope_id: object.outer_scope_id,
+			inner_scope_id: Some(object.inner_scope_id),
+			name: object.name,
+			address: None,
+			span: object.span,
+			tags: object.tags.evaluate_at_compile_time(context),
+		})
 	}
 }
 
@@ -342,8 +230,8 @@ impl TryAsRef<Vec<Expression>> for LiteralObject {
 }
 
 impl Typed for LiteralObject {
-	fn get_type(&self) -> anyhow::Result<VirtualPointer> {
-		let result = context()
+	fn get_type(&self, context: &mut Context) -> anyhow::Result<VirtualPointer> {
+		let result = context
 			.scope_data
 			.get_variable(self.type_name.clone())
 			.ok_or_else(|| {
@@ -361,15 +249,15 @@ impl Typed for LiteralObject {
 impl CompileTime for LiteralObject {
 	type Output = LiteralObject;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		let address = self.address;
 		let mut literal = match self.type_name().unmangled_name() {
-			"Function" => FunctionDeclaration::from_literal(&self).unwrap().evaluate_at_compile_time().to_literal(),
-			"Group" => GroupDeclaration::from_literal(&self).unwrap().evaluate_at_compile_time().to_literal(),
-			"Either" => Either::from_literal(&self).unwrap().evaluate_at_compile_time().to_literal(),
-			"OneOf" => OneOf::from_literal(&self).unwrap().evaluate_at_compile_time().to_literal(),
-			"RepresentAs" => Extend::from_literal(&self).unwrap().evaluate_at_compile_time().to_literal(),
-			"Parameter" => Parameter::from_literal(&self).unwrap().evaluate_at_compile_time().to_literal(),
+			"Function" => FunctionDeclaration::from_literal(&self).unwrap().evaluate_at_compile_time(context).to_literal(),
+			"Group" => GroupDeclaration::from_literal(&self).unwrap().evaluate_at_compile_time(context).to_literal(),
+			"Either" => Either::from_literal(&self).unwrap().evaluate_at_compile_time(context).to_literal(),
+			"OneOf" => OneOf::from_literal(&self).unwrap().evaluate_at_compile_time(context).to_literal(),
+			"RepresentAs" => Extend::from_literal(&self).unwrap().evaluate_at_compile_time(context).to_literal(),
+			"Parameter" => Parameter::from_literal(&self).unwrap().evaluate_at_compile_time(context).to_literal(),
 			_ => self,
 		};
 		literal.address = address;
@@ -442,52 +330,8 @@ pub trait LiteralConvertible: Sized {
 	fn from_literal(literal: &LiteralObject) -> anyhow::Result<Self>;
 }
 
-impl TranspileToC for LiteralObject {
-	fn to_c(&self) -> anyhow::Result<String> {
-		Ok(match self.type_name.unmangled_name() {
-			"Number" => {
-				format!(
-					"&({}) {{ .internal_value = {} }}",
-					self.get_type()?.virtual_deref().to_c_type()?,
-					self.try_as::<f64>()?.to_owned()
-				)
-			},
-			"Text" => {
-				format!(
-					"&({}) {{ .internal_value = \"{}\" }}",
-					self.get_type()?.virtual_deref().to_c_type()?,
-					self.try_as::<String>()?.to_owned()
-				)
-			},
-			_ => {
-				// Type name
-				let type_name = match self.type_name.unmangled_name() {
-					"Object" => format!("type_{}_{}", self.name.to_c()?, self.address.unwrap()),
-					_ => self.get_type()?.virtual_deref().to_c_type()?,
-				};
-
-				// Create string builder
-				let mut builder = format!("&({type_name}) {{");
-
-				// Add fields
-				for (field_name, field_pointer) in &self.fields {
-					write!(builder, "\n\t.{} = {},", field_name.to_c()?, field_pointer.to_c()?).unwrap();
-				}
-
-				if self.type_name == "Function".into() {
-					write!(builder, "\n\t.call = &call_anonymous_function_{}", self.address.unwrap()).unwrap();
-				}
-
-				// Finish building the string
-				builder += "\n}";
-				builder
-			},
-		})
-	}
-}
-
 impl Spanned for LiteralObject {
-	fn span(&self) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }

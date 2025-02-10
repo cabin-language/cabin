@@ -1,8 +1,6 @@
-use std::fmt::Write as _;
-
 use crate::{
 	api::{
-		context::context,
+		context::Context,
 		scope::{ScopeId, ScopeType},
 	},
 	comptime::CompileTime,
@@ -16,7 +14,6 @@ use crate::{
 		TokenQueueFunctionality as _,
 		TryParse,
 	},
-	transpiler::TranspileToC,
 };
 
 #[derive(Debug, Clone)]
@@ -61,20 +58,20 @@ impl Block {
 	/// # Errors
 	///
 	/// If an unexpected token was encountered.
-	pub fn parse_with_scope_type(tokens: &mut TokenQueue, scope_type: ScopeType) -> Result<Block, Diagnostic> {
-		context().scope_data.enter_new_scope(scope_type);
-		let scope_id = context().scope_data.unique_id();
+	pub fn parse_with_scope_type(tokens: &mut TokenQueue, context: &mut Context, scope_type: ScopeType) -> Result<Block, Diagnostic> {
+		context.scope_data.enter_new_scope(scope_type);
+		let scope_id = context.scope_data.unique_id();
 
 		let start = tokens.pop(TokenType::LeftBrace)?.span;
 
 		let mut statements = Vec::new();
 		while !tokens.next_is(TokenType::RightBrace) {
-			statements.push(Statement::parse(tokens));
+			statements.push(Statement::parse(tokens, context));
 		}
 
 		let end = tokens.pop(TokenType::RightBrace)?.span;
 
-		context().scope_data.exit_scope().unwrap();
+		context.scope_data.exit_scope().unwrap();
 
 		Ok(Block {
 			statements,
@@ -87,8 +84,8 @@ impl Block {
 impl TryParse for Block {
 	type Output = Block;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
-		Block::parse_with_scope_type(tokens, ScopeType::Block)
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+		Block::parse_with_scope_type(tokens, context, ScopeType::Block)
 	}
 }
 
@@ -99,15 +96,16 @@ impl CompileTime for Block {
 	/// statement was present.
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		let mut statements = Vec::new();
-		let _scope_reverter = context().scope_data.set_current_scope(self.inner_scope_id);
+		let scope_reverter = context.scope_data.set_current_scope(self.inner_scope_id);
+
 		for statement in self.statements {
-			let evaluated_statement = statement.evaluate_at_compile_time();
+			let evaluated_statement = statement.evaluate_at_compile_time(context);
 
 			// Tail statement
 			if let Statement::Tail(tail_statement) = evaluated_statement {
-				if !tail_statement.value.try_as_literal().is_error() {
+				if context.has_side_effects() && !tail_statement.value.try_as_literal(context).is_error() {
 					return tail_statement.value;
 				}
 				statements.push(Statement::Tail(tail_statement));
@@ -118,6 +116,7 @@ impl CompileTime for Block {
 			}
 		}
 
+		scope_reverter.revert(context);
 		Expression::Block(Block {
 			statements,
 			inner_scope_id: self.inner_scope_id,
@@ -126,23 +125,8 @@ impl CompileTime for Block {
 	}
 }
 
-impl TranspileToC for Block {
-	fn to_c(&self) -> anyhow::Result<String> {
-		let mut builder = String::new();
-		builder += "({";
-		for statement in &self.statements {
-			for line in statement.to_c()?.lines() {
-				write!(builder, "\n{line}").unwrap();
-			}
-		}
-		builder += "\n})";
-
-		Ok(builder)
-	}
-}
-
 impl Spanned for Block {
-	fn span(&self) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span.to_owned()
 	}
 }

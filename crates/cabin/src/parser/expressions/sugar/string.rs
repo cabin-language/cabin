@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use try_as::traits as try_as_traits;
 
 use crate::{
-	api::{context::context, traits::TryAs as _},
+	api::{context::Context, traits::TryAs as _},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{tokenize_string, Span, Token, TokenType},
 	parser::{
@@ -51,11 +51,11 @@ pub enum StringPart {
 	Expression(Expression),
 }
 
-impl Into<Expression> for StringPart {
-	fn into(self) -> Expression {
+impl StringPart {
+	pub fn into_expression(self, context: &mut Context) -> Expression {
 		match self {
 			StringPart::Expression(expression) => expression,
-			StringPart::Literal(literal) => Expression::ObjectConstructor(ObjectConstructor::string(&literal, Span::unknown())),
+			StringPart::Literal(literal) => Expression::ObjectConstructor(ObjectConstructor::string(&literal, Span::unknown(), context)),
 		}
 	}
 }
@@ -67,7 +67,7 @@ pub struct CabinString;
 impl TryParse for CabinString {
 	type Output = Expression;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let token = tokens.pop(TokenType::String)?;
 		let with_quotes = token.value;
 		let mut without_quotes = with_quotes.get(1..with_quotes.len() - 1).unwrap().to_owned();
@@ -86,7 +86,7 @@ impl TryParse for CabinString {
 
 					// Parse an expression
 					let mut tokens = tokenize_string(&without_quotes);
-					let expression = Expression::parse(&mut tokens);
+					let expression = Expression::parse(&mut tokens, context);
 					parts.push(StringPart::Expression(expression));
 
 					// Recollect remaining tokens into string
@@ -115,22 +115,21 @@ impl TryParse for CabinString {
 			return Ok(Expression::ObjectConstructor(ObjectConstructor::string(
 				&parts.into_iter().map(|part| part.try_as::<String>().unwrap().to_owned()).collect::<String>(),
 				token.span,
+				context,
 			)));
 		}
 
 		// Composite into function call, i.e., "hello {name}!" becomes
 		// "hello ".plus(name.to_text()).plus("!")
 		let mut parts = VecDeque::from(parts);
-		let mut left = parts.pop_front().unwrap().into();
+		let mut left = parts.pop_front().unwrap().into_expression(context);
 		for part in parts {
-			let mut right: Expression = part.into();
-			right = Expression::FunctionCall(FunctionCall::basic(Expression::FieldAccess(FieldAccess::new(
-				right,
-				"to_text".into(),
-				context().scope_data.unique_id(),
-				Span::unknown(),
-			))));
-			left = Expression::FunctionCall(FunctionCall::from_binary_operation(left, right, Token {
+			let mut right: Expression = part.into_expression(context);
+			right = Expression::FunctionCall(FunctionCall::basic(
+				Expression::FieldAccess(FieldAccess::new(right, "to_text".into(), context.scope_data.unique_id(), Span::unknown())),
+				context,
+			));
+			left = Expression::FunctionCall(FunctionCall::from_binary_operation(context, left, right, Token {
 				token_type: TokenType::Plus,
 				value: "+".to_owned(),
 				span: Span::unknown(),

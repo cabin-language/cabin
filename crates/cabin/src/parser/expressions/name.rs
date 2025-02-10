@@ -4,12 +4,11 @@ use colored::Colorize as _;
 
 use super::Spanned;
 use crate::{
-	api::context::context,
+	api::context::Context,
 	comptime::{CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Span, TokenType},
 	parser::{expressions::Expression, ToCabin, TokenQueue, TokenQueueFunctionality as _, TryParse},
-	transpiler::TranspileToC,
 };
 
 #[derive(Clone, Eq)]
@@ -34,7 +33,7 @@ pub struct Name {
 impl TryParse for Name {
 	type Output = Self;
 
-	fn try_parse(tokens: &mut TokenQueue) -> anyhow::Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, _context: &mut Context) -> anyhow::Result<Self::Output, Diagnostic> {
 		let token = tokens.pop(TokenType::Identifier)?;
 
 		Ok(Name {
@@ -48,27 +47,22 @@ impl TryParse for Name {
 impl CompileTime for Name {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
-		let error = Expression::ErrorExpression(Span::unknown());
-		let value = context().scope_data.get_variable(self.clone()).unwrap_or_else(|| {
-			context().add_diagnostic(Diagnostic {
-				span: self.span(),
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+		if !context.scope_data.has_variable(self.clone()) {
+			context.add_diagnostic(Diagnostic {
+				span: self.span(context),
 				info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::UnknownVariable(self.unmangled_name().to_owned()))),
 			});
-			&error
-		});
+			return Expression::ErrorExpression(self.span(context));
+		}
+
+		let value = context.scope_data.get_variable(self.clone()).unwrap();
 
 		if matches!(value, Expression::ErrorExpression(_)) {
 			return value.clone();
 		}
 
 		value.try_clone_pointer().unwrap_or(Expression::Name(self))
-	}
-}
-
-impl TranspileToC for Name {
-	fn to_c(&self) -> anyhow::Result<String> {
-		Ok(self.mangled_name())
 	}
 }
 
@@ -95,7 +89,7 @@ impl AsRef<Name> for Name {
 }
 
 impl Spanned for Name {
-	fn span(&self) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }

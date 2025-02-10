@@ -1,4 +1,4 @@
 let Text = builtin.Text;
-
 let print = builtin.system.terminal.print;
+
 print("Hello world");

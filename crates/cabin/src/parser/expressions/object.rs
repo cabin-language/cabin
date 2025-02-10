@@ -1,11 +1,12 @@
-use std::{collections::HashMap, fmt::Write as _};
+use std::collections::HashMap;
 
 use try_as::traits as try_as_traits;
 
+use super::literal::LiteralObject;
 use crate::{
-	api::{context::context, scope::ScopeId},
+	api::{context::Context, scope::ScopeId},
 	comptime::{memory::VirtualPointer, CompileTime},
-	diagnostics::Diagnostic,
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	if_then_some,
 	lexer::{Span, TokenType},
@@ -19,7 +20,6 @@ use crate::{
 		TokenQueueFunctionality,
 		TryParse,
 	},
-	transpiler::TranspileToC,
 };
 
 #[derive(Debug, Clone)]
@@ -56,41 +56,41 @@ impl Fields for Vec<Field> {
 }
 
 impl ObjectConstructor {
-	pub fn untyped(fields: Vec<Field>, span: Span) -> ObjectConstructor {
+	pub fn untyped(fields: Vec<Field>, span: Span, context: &mut Context) -> ObjectConstructor {
 		ObjectConstructor {
 			type_name: "Object".into(),
 			name: "anonymous_object".into(),
 			field_access_type: FieldAccessType::Normal,
 			internal_fields: HashMap::new(),
-			inner_scope_id: context().scope_data.unique_id(),
-			outer_scope_id: context().scope_data.unique_id(),
+			inner_scope_id: context.scope_data.unique_id(),
+			outer_scope_id: context.scope_data.unique_id(),
 			fields,
 			tags: TagList::default(),
 			span,
 		}
 	}
 
-	pub fn typed<T: Into<Name>>(type_name: T, fields: Vec<Field>, span: Span) -> ObjectConstructor {
+	pub fn typed<T: Into<Name>>(type_name: T, fields: Vec<Field>, span: Span, context: &mut Context) -> ObjectConstructor {
 		ObjectConstructor {
 			type_name: type_name.into(),
 			name: "anonymous_object".into(),
 			field_access_type: FieldAccessType::Normal,
 			internal_fields: HashMap::new(),
-			inner_scope_id: context().scope_data.unique_id(),
-			outer_scope_id: context().scope_data.unique_id(),
+			inner_scope_id: context.scope_data.unique_id(),
+			outer_scope_id: context.scope_data.unique_id(),
 			fields,
 			tags: TagList::default(),
 			span,
 		}
 	}
 
-	pub fn string(string: &str, span: Span) -> ObjectConstructor {
+	pub fn string(string: &str, span: Span, context: &mut Context) -> ObjectConstructor {
 		ObjectConstructor {
 			type_name: Name::from("Text"),
 			fields: Vec::new(),
 			internal_fields: HashMap::from([("internal_value".to_owned(), InternalFieldValue::String(string.to_owned()))]),
-			outer_scope_id: context().scope_data.unique_id(),
-			inner_scope_id: context().scope_data.unique_id(),
+			outer_scope_id: context.scope_data.unique_id(),
+			inner_scope_id: context.scope_data.unique_id(),
 			field_access_type: FieldAccessType::Normal,
 			name: Name::non_mangled("anonymous_string_literal"),
 			span,
@@ -98,13 +98,13 @@ impl ObjectConstructor {
 		}
 	}
 
-	pub fn number(number: f64, span: Span) -> ObjectConstructor {
+	pub fn number(number: f64, span: Span, context: &mut Context) -> ObjectConstructor {
 		ObjectConstructor {
 			type_name: Name::from("Number"),
 			fields: Vec::new(),
 			internal_fields: HashMap::from([("internal_value".to_owned(), InternalFieldValue::Number(number))]),
-			outer_scope_id: context().scope_data.unique_id(),
-			inner_scope_id: context().scope_data.unique_id(),
+			outer_scope_id: context.scope_data.unique_id(),
+			inner_scope_id: context.scope_data.unique_id(),
 			field_access_type: FieldAccessType::Normal,
 			name: "anonymous_number".into(),
 			span,
@@ -140,17 +140,23 @@ impl ObjectConstructor {
 impl TryParse for ObjectConstructor {
 	type Output = ObjectConstructor;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordNew)?.span;
 
 		// Name
-		let name = Name::try_parse(tokens)?;
+		let name = Name::try_parse(tokens, context)?;
 
 		let _compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, ListType::AngleBracketed, {
-				let parameter = Parameter::try_parse(tokens)?;
-				context().scope_data.declare_new_variable(parameter.virtual_deref().name(), Expression::Pointer(parameter));
+				let parameter = Parameter::try_parse(tokens, context)?;
+				let name = parameter.virtual_deref(context).name().to_owned();
+				if let Err(error) = context.scope_data.declare_new_variable(name.clone(), Expression::Pointer(parameter)) {
+					context.add_diagnostic(Diagnostic {
+						span: name.span(context),
+						info: DiagnosticInfo::Error(error),
+					});
+				}
 				compile_time_parameters.push(parameter);
 			});
 			compile_time_parameters
@@ -160,18 +166,18 @@ impl TryParse for ObjectConstructor {
 		let mut fields = Vec::new();
 		let end = parse_list!(tokens, ListType::Braced, {
 			// Parse tags
-			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens)?);
+			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
 
 			// Name
-			let field_name = Name::try_parse(tokens)?;
+			let field_name = Name::try_parse(tokens, context)?;
 
 			// Value
 			let _ = tokens.pop(TokenType::Equal)?;
-			let mut value = Expression::parse(tokens);
+			let mut value = Expression::parse(tokens, context);
 
 			// Set tags
 			if let Some(tags) = tags {
-				value.set_tags(tags);
+				value.set_tags(tags, context);
 			}
 
 			// Add field
@@ -187,8 +193,8 @@ impl TryParse for ObjectConstructor {
 		Ok(ObjectConstructor {
 			type_name: name,
 			fields,
-			outer_scope_id: context().scope_data.unique_id(),
-			inner_scope_id: context().scope_data.unique_id(),
+			outer_scope_id: context.scope_data.unique_id(),
+			inner_scope_id: context.scope_data.unique_id(),
 			internal_fields: HashMap::new(),
 			field_access_type: FieldAccessType::Normal,
 			name: Name::non_mangled("anonymous_object"),
@@ -201,14 +207,14 @@ impl TryParse for ObjectConstructor {
 impl CompileTime for ObjectConstructor {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(mut self) -> Self::Output {
-		let _scope_reverter = context().scope_data.set_current_scope(self.inner_scope_id);
+	fn evaluate_at_compile_time(mut self, context: &mut Context) -> Self::Output {
+		let scope_reverter = context.scope_data.set_current_scope(self.inner_scope_id);
 
-		self.tags = self.tags.evaluate_at_compile_time();
+		self.tags = self.tags.evaluate_at_compile_time(context);
 
 		// Get object type
 		let object_type = if_then_some!(!matches!(self.type_name.unmangled_name(), "Group" | "Module" | "Object"), {
-			GroupDeclaration::from_literal(self.type_name.clone().evaluate_at_compile_time().try_as_literal()).unwrap()
+			GroupDeclaration::from_literal(self.type_name.clone().evaluate_at_compile_time(context).try_as_literal(context)).unwrap()
 		});
 
 		// Default fields
@@ -228,7 +234,7 @@ impl CompileTime for ObjectConstructor {
 		for field in self.fields.clone() {
 			let field_value = field.value.clone().unwrap();
 
-			let field_value = field_value.evaluate_at_compile_time();
+			let field_value = field_value.evaluate_at_compile_time(context);
 
 			let evaluated_field = Field {
 				name: field.name.clone(),
@@ -240,13 +246,14 @@ impl CompileTime for ObjectConstructor {
 		}
 
 		let result = if self.is_literal() {
-			let literal = self.try_into().unwrap();
-			let address = context().virtual_memory.store(literal);
+			let literal = LiteralObject::try_from_object(self, context).unwrap();
+			let address = context.virtual_memory.store(literal);
 			Expression::Pointer(address)
 		} else {
 			Expression::ObjectConstructor(self)
 		};
 
+		scope_reverter.revert(context);
 		result
 	}
 }
@@ -267,29 +274,8 @@ pub enum InternalFieldValue {
 	Name(Name),
 }
 
-impl TranspileToC for ObjectConstructor {
-	fn to_c(&self) -> anyhow::Result<String> {
-		// Type name
-		let name = if self.type_name == "Object".into() {
-			format!("type_{}_UNKNOWN", self.name.to_c()?) // TODO
-		} else {
-			self.type_name.clone().evaluate_at_compile_time().to_c()?
-		};
-
-		let mut builder = format!("({name}) {{");
-
-		// Fields
-		for field in &self.fields {
-			write!(builder, "\n\t.{} = {},", field.name.to_c()?, field.value.as_ref().unwrap().to_c()?).unwrap();
-		}
-
-		builder += "\n}";
-		Ok(builder)
-	}
-}
-
 impl Spanned for ObjectConstructor {
-	fn span(&self) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }

@@ -1,17 +1,11 @@
 use std::{fmt::Debug, ops::Deref};
 
 use crate::{
-	api::traits::TryAs as _,
-	comptime::{memory::VirtualPointer, CompileTime},
+	api::context::Context,
+	comptime::CompileTime,
 	diagnostics::Diagnostic,
 	parse_list,
-	parser::{
-		expressions::{literal::CompilerWarning, Expression},
-		ListType,
-		Parse as _,
-		TokenQueue,
-		TryParse,
-	},
+	parser::{expressions::Expression, ListType, Parse as _, TokenQueue, TryParse},
 };
 
 #[derive(Clone, Default)]
@@ -22,10 +16,10 @@ pub struct TagList {
 impl TryParse for TagList {
 	type Output = TagList;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let mut tags = Vec::new();
 		let _ = parse_list!(tokens, ListType::Tag, {
-			tags.push(Expression::parse(tokens));
+			tags.push(Expression::parse(tokens, context));
 		}); // TODO: Probably span this maybe?
 		Ok(TagList { values: tags })
 	}
@@ -34,10 +28,10 @@ impl TryParse for TagList {
 impl CompileTime for TagList {
 	type Output = TagList;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		let mut values = Vec::new();
 		for value in self.values {
-			let evaluated = value.evaluate_at_compile_time();
+			let evaluated = value.evaluate_at_compile_time(context);
 			values.push(evaluated);
 		}
 		TagList { values }
@@ -67,26 +61,5 @@ impl Debug for TagList {
 				.replace("\n", " ")
 				.replace("\t", "")
 		)
-	}
-}
-
-impl TagList {
-	pub fn suppresses_warning(&self, warning: CompilerWarning) -> bool {
-		if self.is_empty() {
-			return false;
-		}
-
-		self.iter().any(|tag| {
-			tag.try_as::<VirtualPointer>()
-				.map(|pointer| {
-					let literal = pointer.virtual_deref();
-					if literal.type_name() == &"WarningSuppressor".into() {
-						let value = literal.get_field_literal("warning").unwrap();
-						return value.is_warning(warning);
-					}
-					false
-				})
-				.unwrap_or(false)
-		})
 	}
 }

@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use super::field_access::FieldAccessType;
 use crate::{
 	api::{
-		context::context,
+		context::Context,
 		scope::{ScopeId, ScopeType},
 	},
 	comptime::{memory::VirtualPointer, CompileTime},
-	diagnostics::Diagnostic,
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	lexer::{Span, TokenType},
 	parse_list,
@@ -41,19 +41,24 @@ pub struct OneOf {
 impl TryParse for OneOf {
 	type Output = VirtualPointer;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordOneOf)?.span;
 
 		// Enter inner scope
-		context().scope_data.enter_new_scope(ScopeType::OneOf);
-		let inner_scope_id = context().scope_data.unique_id();
+		context.scope_data.enter_new_scope(ScopeType::OneOf);
+		let inner_scope_id = context.scope_data.unique_id();
 
 		// Compile-time parameters
 		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, ListType::AngleBracketed, {
-				let name = Name::try_parse(tokens)?;
-				context().scope_data.declare_new_variable(name.clone(), Expression::ErrorExpression(Span::unknown()));
+				let name = Name::try_parse(tokens, context)?;
+				if let Err(error) = context.scope_data.declare_new_variable(name.clone(), Expression::ErrorExpression(Span::unknown())) {
+					context.add_diagnostic(Diagnostic {
+						span: name.span(context),
+						info: DiagnosticInfo::Error(error),
+					});
+				}
 				compile_time_parameters.push(name);
 			});
 			compile_time_parameters
@@ -62,32 +67,32 @@ impl TryParse for OneOf {
 		// Choices
 		let mut choices = Vec::new();
 		let end = parse_list!(tokens, ListType::Braced, {
-			choices.push(Expression::parse(tokens));
+			choices.push(Expression::parse(tokens, context));
 		})
 		.span;
 
 		// Exit the scope
-		context().scope_data.exit_scope().unwrap();
+		context.scope_data.exit_scope().unwrap();
 
 		// Return
 		Ok(OneOf {
 			choices,
 			compile_time_parameters,
-			outer_scope_id: context().scope_data.unique_id(),
+			outer_scope_id: context.scope_data.unique_id(),
 			inner_scope_id,
 			span: start.to(end),
 			name: "anonymous_one_of".into(),
 		}
 		.to_literal()
-		.store_in_memory())
+		.store_in_memory(context))
 	}
 }
 
 impl CompileTime for OneOf {
 	type Output = OneOf;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
-		let _scope_reverter = context().scope_data.set_current_scope(self.inner_scope_id);
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+		let scope_reverter = context.scope_data.set_current_scope(self.inner_scope_id);
 
 		let mut choices = Vec::new();
 
@@ -99,10 +104,11 @@ impl CompileTime for OneOf {
 				}
 			}
 
-			let choice_value = choice.evaluate_at_compile_time();
+			let choice_value = choice.evaluate_at_compile_time(context);
 			choices.push(choice_value);
 		}
 
+		scope_reverter.revert(context);
 		OneOf {
 			choices,
 			outer_scope_id: self.outer_scope_id,
@@ -146,7 +152,7 @@ impl LiteralConvertible for OneOf {
 }
 
 impl Spanned for OneOf {
-	fn span(&self) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }

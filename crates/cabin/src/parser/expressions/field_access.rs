@@ -1,5 +1,5 @@
 use crate::{
-	api::{context::context, scope::ScopeId, traits::TryAs as _},
+	api::{context::Context, scope::ScopeId},
 	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Span, TokenType},
@@ -9,7 +9,6 @@ use crate::{
 		TokenQueueFunctionality as _,
 		TryParse,
 	},
-	transpiler::TranspileToC,
 };
 
 /// A type describing how fields are accessed on this type of objects via the dot operator.
@@ -33,17 +32,17 @@ pub struct FieldAccess {
 impl TryParse for FieldAccess {
 	type Output = Expression;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
-		let mut expression = PrimaryExpression::try_parse(tokens)?; // There should be no map_err here
-		let start = expression.span();
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+		let mut expression = PrimaryExpression::try_parse(tokens, context)?;
+		let start = expression.span(context);
 		while tokens.next_is(TokenType::Dot) {
 			let _ = tokens.pop(TokenType::Dot)?;
-			let right = Name::try_parse(tokens)?;
-			let end = right.span();
+			let right = Name::try_parse(tokens, context)?;
+			let end = right.span(context);
 			expression = Expression::FieldAccess(Self {
 				left: Box::new(expression),
 				right,
-				scope_id: context().scope_data.unique_id(),
+				scope_id: context.scope_data.unique_id(),
 				span: start.to(end),
 			});
 		}
@@ -55,31 +54,31 @@ impl TryParse for FieldAccess {
 impl CompileTime for FieldAccess {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
-		let span = self.span();
-		let left_evaluated = self.left.evaluate_at_compile_time();
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+		let span = self.span(context);
+		let left_evaluated = self.left.evaluate_at_compile_time(context);
 
 		// Resolvable at compile-time
-		let pointer = left_evaluated.try_as_literal().address.unwrap();
+		let pointer = left_evaluated.try_as_literal(context).address.unwrap();
 		if pointer != VirtualPointer::ERROR {
-			let literal = pointer.virtual_deref();
+			let literal = pointer.virtual_deref(context);
 			match literal.field_access_type() {
 				// Object fields
 				FieldAccessType::Normal => {
 					let field = literal.get_field(self.right.clone());
 					let field = field.unwrap_or_else(|| {
-						context().add_diagnostic(Diagnostic {
-							span: self.right.span(),
+						context.add_diagnostic(Diagnostic {
+							span: self.right.span(context),
 							info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::FieldNotFound(self.right.unmangled_name().to_owned()))),
 						});
 						VirtualPointer::ERROR
 					});
 
-					let field_value_literal = field.virtual_deref();
+					let field_value_literal = field.virtual_deref(context);
 					if field_value_literal.type_name() == &"Function".into() {
 						let mut function_declaration = FunctionDeclaration::from_literal(field_value_literal).unwrap();
 						function_declaration.set_this_object(left_evaluated);
-						context().virtual_memory.replace(field.to_owned(), function_declaration.to_literal());
+						context.virtual_memory.replace(field.to_owned(), function_declaration.to_literal());
 						Expression::Pointer(field.to_owned())
 					} else {
 						Expression::Pointer(field)
@@ -93,8 +92,8 @@ impl CompileTime for FieldAccess {
 						.iter()
 						.find_map(|(name, value)| (name == &self.right).then_some(Expression::Pointer(value.to_owned())))
 						.unwrap_or_else(|| {
-							context().add_diagnostic(Diagnostic {
-								span: self.right.span(),
+							context.add_diagnostic(Diagnostic {
+								span: self.right.span(context),
 								info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::FieldNotFound(self.right.unmangled_name().to_owned()))),
 							});
 							Expression::ErrorExpression(span)
@@ -114,19 +113,8 @@ impl CompileTime for FieldAccess {
 	}
 }
 
-impl TranspileToC for FieldAccess {
-	fn to_c(&self) -> anyhow::Result<String> {
-		let left = if let Ok(name) = self.left.as_ref().try_as::<Name>() {
-			format!("{}_{}", self.left.to_c()?, name.clone().evaluate_at_compile_time().try_as_literal().address.unwrap())
-		} else {
-			self.left.to_c()?
-		};
-		Ok(format!("{}->{}", left, self.right.mangled_name()))
-	}
-}
-
 impl Spanned for FieldAccess {
-	fn span(&self) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }

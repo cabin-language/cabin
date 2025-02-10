@@ -4,9 +4,8 @@ use std::fmt::Debug;
 use try_as::traits::{self as try_as_traits, TryAsMut};
 
 use crate::{
-	api::{context::context, scope::ScopeData, traits::TryAs as _},
+	api::{context::Context, scope::ScopeData, traits::TryAs as _},
 	bail_err,
-	cli::theme::Styled,
 	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::Span,
@@ -34,7 +33,6 @@ use crate::{
 		TokenQueueFunctionality as _,
 		TryParse,
 	},
-	transpiler::TranspileToC,
 };
 
 pub mod block;
@@ -62,7 +60,7 @@ pub mod run;
 pub mod sugar;
 pub mod unary;
 
-#[derive(Clone, try_as::macros::From, try_as::macros::TryInto, try_as::macros::TryAsRef, try_as::macros::TryAsMut)]
+#[derive(Debug, Clone, try_as::macros::From, try_as::macros::TryInto, try_as::macros::TryAsRef, try_as::macros::TryAsMut)]
 pub enum Expression {
 	Block(Block),
 	FieldAccess(FieldAccess),
@@ -82,13 +80,13 @@ pub enum Expression {
 impl Parse for Expression {
 	type Output = Self;
 
-	fn parse(tokens: &mut TokenQueue) -> Self::Output {
+	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
 		let start = tokens.front().unwrap().span;
-		let result = BinaryExpression::try_parse(tokens);
+		let result = BinaryExpression::try_parse(tokens, context);
 		match result {
 			Ok(expression) => expression,
 			Err(error) => {
-				context().add_diagnostic(error);
+				context.add_diagnostic(error);
 				if let Ok(token_type) = tokens.peek_type() {
 					let _ = tokens.pop(token_type).unwrap();
 				}
@@ -102,39 +100,39 @@ impl Parse for Expression {
 impl CompileTime for Expression {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		match self {
-			Self::Block(block) => block.evaluate_at_compile_time(),
-			Self::FieldAccess(field_access) => field_access.evaluate_at_compile_time(),
-			Self::FunctionCall(function_call) => function_call.evaluate_at_compile_time(),
-			Self::If(if_expression) => if_expression.evaluate_at_compile_time(),
-			Self::RepresentAs(represent_as) => Expression::RepresentAs(represent_as.evaluate_at_compile_time()),
-			Self::Name(name) => name.clone().evaluate_at_compile_time(),
-			Self::ObjectConstructor(constructor) => constructor.evaluate_at_compile_time(),
-			Self::Parameter(parameter) => Expression::Parameter(parameter.evaluate_at_compile_time()),
-			Self::Unary(unary) => unary.evaluate_at_compile_time(),
-			Self::ForEachLoop(for_loop) => for_loop.evaluate_at_compile_time(),
-			Self::Run(run_expression) => Expression::Run(run_expression.evaluate_at_compile_time()),
-			Self::Pointer(pointer) => Expression::Pointer(pointer.evaluate_at_compile_time()),
+			Self::Block(block) => block.evaluate_at_compile_time(context),
+			Self::FieldAccess(field_access) => field_access.evaluate_at_compile_time(context),
+			Self::FunctionCall(function_call) => function_call.evaluate_at_compile_time(context),
+			Self::If(if_expression) => if_expression.evaluate_at_compile_time(context),
+			Self::RepresentAs(represent_as) => Expression::RepresentAs(represent_as.evaluate_at_compile_time(context)),
+			Self::Name(name) => name.clone().evaluate_at_compile_time(context),
+			Self::ObjectConstructor(constructor) => constructor.evaluate_at_compile_time(context),
+			Self::Parameter(parameter) => Expression::Parameter(parameter.evaluate_at_compile_time(context)),
+			Self::Unary(unary) => unary.evaluate_at_compile_time(context),
+			Self::ForEachLoop(for_loop) => for_loop.evaluate_at_compile_time(context),
+			Self::Run(run_expression) => Expression::Run(run_expression.evaluate_at_compile_time(context)),
+			Self::Pointer(pointer) => Expression::Pointer(pointer.evaluate_at_compile_time(context)),
 			Self::ErrorExpression(_) => self,
 		}
 	}
 }
 
 impl Expression {
-	pub fn try_as_literal(&self) -> &'static LiteralObject {
+	pub fn try_as_literal<'ctx>(&self, context: &'ctx mut Context) -> &'ctx LiteralObject {
 		match self {
-			Self::Pointer(pointer) => pointer.virtual_deref(),
-			Self::Name(name) => name.clone().evaluate_at_compile_time().try_as_literal(),
-			_ => VirtualPointer::ERROR.virtual_deref(),
+			Self::Pointer(pointer) => pointer.virtual_deref(context),
+			Self::Name(name) => name.clone().evaluate_at_compile_time(context).try_as_literal(context),
+			_ => VirtualPointer::ERROR.virtual_deref(context),
 		}
 	}
 
-	pub fn is_fully_known_at_compile_time(&self) -> bool {
+	pub fn is_fully_known_at_compile_time(&self, context: &mut Context) -> bool {
 		match self {
 			Self::Pointer(_) => true,
 			Self::Parameter(_) => true,
-			Self::Name(name) => name.clone().evaluate_at_compile_time().is_fully_known_at_compile_time(),
+			Self::Name(name) => name.clone().evaluate_at_compile_time(context).is_fully_known_at_compile_time(context),
 			_ => false,
 		}
 	}
@@ -143,10 +141,10 @@ impl Expression {
 		matches!(self, Expression::ErrorExpression(_))
 	}
 
-	pub fn evaluate_as_type(self) -> Expression {
+	pub fn evaluate_as_type(self, context: &mut Context) -> Expression {
 		match self {
 			Self::Pointer(pointer) => Expression::Pointer(pointer),
-			_ => self.evaluate_at_compile_time(),
+			_ => self.evaluate_at_compile_time(context),
 		}
 	}
 
@@ -202,30 +200,30 @@ impl Expression {
 		};
 	}
 
-	pub fn is_true(&self) -> bool {
+	pub(crate) fn is_true(&self, context: &mut Context) -> bool {
 		let Ok(literal_address) = self.try_as::<VirtualPointer>() else {
 			return false;
 		};
 
-		let true_address = context().scope_data.get_variable_from_id("true", ScopeData::get_stdlib_id()).unwrap().try_as().unwrap();
+		let true_address = context.scope_data.get_variable_from_id("true", ScopeData::get_stdlib_id()).unwrap().try_as().unwrap();
 
 		literal_address == true_address
 	}
 
-	pub fn set_tags(&mut self, tags: TagList) {
+	pub(crate) fn set_tags(&mut self, tags: TagList, context: &mut Context) {
 		match self {
 			Self::ObjectConstructor(constructor) => constructor.tags = tags,
-			Self::Pointer(pointer) => pointer.virtual_deref_mut().tags = tags,
+			Self::Pointer(pointer) => pointer.virtual_deref_mut(context).tags = tags,
 			Self::FunctionCall(function_call) => function_call.tags = tags,
 			_ => {},
 		};
 	}
 
-	pub fn try_set_name(&mut self, name: Name) {
+	pub(crate) fn try_set_name(&mut self, name: Name, context: &mut Context) {
 		match self {
 			Self::ObjectConstructor(object) => object.name = name,
 			Self::Pointer(pointer) => {
-				let value = pointer.virtual_deref_mut();
+				let value = pointer.virtual_deref_mut(context);
 				let address = value.address;
 
 				if value.type_name() == &"Group".into() {
@@ -245,8 +243,7 @@ impl Expression {
 				}
 
 				if value.type_name() == &"Either".into() {
-					let mut either = Either::from_literal(value).unwrap();
-					either.set_name(name);
+					let either = Either::from_literal(value).unwrap();
 					*value = either.to_literal();
 					value.address = address;
 					return;
@@ -258,15 +255,15 @@ impl Expression {
 		}
 	}
 
-	pub fn try_set_scope_label(&mut self, name: Name) {
+	pub fn try_set_scope_label(&mut self, name: Name, context: &mut Context) {
 		let scope_id = match self {
 			Self::If(if_expression) => Some(if_expression.inner_scope_id()),
-			Self::Pointer(pointer) => pointer.virtual_deref().inner_scope_id,
+			Self::Pointer(pointer) => pointer.virtual_deref(context).inner_scope_id,
 			_ => None,
 		};
 
 		if let Some(scope_id) = scope_id {
-			context().scope_data.get_scope_mut_from_id(scope_id).set_label(name);
+			context.scope_data.get_scope_mut_from_id(scope_id).set_label(name);
 		}
 	}
 
@@ -281,37 +278,19 @@ impl Expression {
 	/// # Returns
 	///
 	/// whether this expression can be assigned to the given type.
-	pub fn is_assignable_to_type(&self, target_type: VirtualPointer) -> anyhow::Result<bool> {
-		let this_type = self.get_type()?.virtual_deref();
-		this_type.is_this_type_assignable_to_type(target_type)
-	}
-}
-
-impl TranspileToC for Expression {
-	fn to_c(&self) -> anyhow::Result<String> {
-		Ok(match self {
-			Self::If(if_expression) => if_expression.to_c()?,
-			Self::Block(block) => block.to_c()?,
-			Self::FieldAccess(field_access) => field_access.to_c()?,
-			Self::Name(name) => name.to_c()?,
-			Self::FunctionCall(function_call) => function_call.to_c()?,
-			Self::ForEachLoop(for_each_loop) => for_each_loop.to_c()?,
-			Self::Pointer(pointer) => pointer.to_c()?,
-			Self::ObjectConstructor(object_constructor) => object_constructor.to_c()?,
-			Self::Run(run_expression) => run_expression.to_c()?,
-			Self::ErrorExpression(_) => "void".to_owned(),
-			_ => todo!(),
-		})
+	pub fn is_assignable_to_type(&self, target_type: VirtualPointer, context: &mut Context) -> anyhow::Result<bool> {
+		let this_type = self.get_type(context)?.virtual_deref(context);
+		this_type.is_this_type_assignable_to_type(target_type, context)
 	}
 }
 
 impl Typed for Expression {
-	fn get_type(&self) -> anyhow::Result<VirtualPointer> {
+	fn get_type(&self, context: &mut Context) -> anyhow::Result<VirtualPointer> {
 		Ok(match self {
-			Expression::Pointer(pointer) => pointer.virtual_deref().get_type()?,
-			Expression::FunctionCall(function_call) => function_call.get_type()?,
-			Expression::Run(run_expression) => run_expression.get_type()?,
-			Expression::Parameter(parameter) => parameter.get_type()?,
+			Expression::Pointer(pointer) => pointer.virtual_deref(context).to_owned().get_type(context)?,
+			Expression::FunctionCall(function_call) => function_call.get_type(context)?,
+			Expression::Run(run_expression) => run_expression.get_type(context)?,
+			Expression::Parameter(parameter) => parameter.get_type(context)?,
 			Expression::ErrorExpression(_span) => bail_err! {
 				base = "Attempted to get the type of a non-existent value",
 				while = "getting the type of a generic expression",
@@ -325,27 +304,27 @@ impl Typed for Expression {
 }
 
 impl Spanned for Expression {
-	fn span(&self) -> Span {
+	fn span(&self, context: &Context) -> Span {
 		match self {
-			Expression::Name(name) => name.span(),
-			Expression::Run(run_expression) => run_expression.span(),
-			Expression::Block(block) => block.span(),
-			Expression::ObjectConstructor(object_constructor) => object_constructor.span(),
-			Expression::Pointer(virtual_pointer) => virtual_pointer.span(),
-			Expression::FunctionCall(function_call) => function_call.span(),
-			Expression::If(if_expression) => if_expression.span(),
-			Expression::FieldAccess(field_access) => field_access.span(),
-			Expression::ForEachLoop(for_each_loop) => for_each_loop.span(),
-			Expression::Parameter(parameter) => parameter.span(),
-			Expression::RepresentAs(represent_as) => represent_as.span(),
-			Expression::Unary(unary) => unary.span(),
+			Expression::Name(name) => name.span(context),
+			Expression::Run(run_expression) => run_expression.span(context),
+			Expression::Block(block) => block.span(context),
+			Expression::ObjectConstructor(object_constructor) => object_constructor.span(context),
+			Expression::Pointer(virtual_pointer) => virtual_pointer.span(context),
+			Expression::FunctionCall(function_call) => function_call.span(context),
+			Expression::If(if_expression) => if_expression.span(context),
+			Expression::FieldAccess(field_access) => field_access.span(context),
+			Expression::ForEachLoop(for_each_loop) => for_each_loop.span(context),
+			Expression::Parameter(parameter) => parameter.span(context),
+			Expression::RepresentAs(represent_as) => represent_as.span(context),
+			Expression::Unary(unary) => unary.span(context),
 			Expression::ErrorExpression(span) => *span,
 		}
 	}
 }
 
 pub trait Typed {
-	fn get_type(&self) -> anyhow::Result<VirtualPointer>;
+	fn get_type(&self, context: &mut Context) -> anyhow::Result<VirtualPointer>;
 }
 
 pub trait Spanned {
@@ -355,40 +334,20 @@ pub trait Spanned {
 	/// # Returns
 	///
 	/// The second of the program's source code that this expression spans.
-	fn span(&self) -> Span;
+	fn span(&self, context: &Context) -> Span;
 }
 
 impl RuntimeableExpression for Expression {
-	fn evaluate_subexpressions_at_compile_time(self) -> Self {
+	fn evaluate_subexpressions_at_compile_time(self, context: &mut Context) -> Self {
 		match self {
-			Self::FunctionCall(function_call) => Expression::FunctionCall(function_call.evaluate_subexpressions_at_compile_time()),
+			Self::FunctionCall(function_call) => Expression::FunctionCall(function_call.evaluate_subexpressions_at_compile_time(context)),
 			_ => {
-				context().add_diagnostic(Diagnostic {
-					span: self.span(),
+				context.add_diagnostic(Diagnostic {
+					span: self.span(context),
 					info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::RunNonFunctionCall)),
 				});
 				self
 			},
-		}
-	}
-}
-
-impl Debug for Expression {
-	fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			Self::Block(block) => block.fmt(formatter),
-			Self::FieldAccess(field_access) => field_access.fmt(formatter),
-			Self::FunctionCall(function_call) => function_call.fmt(formatter),
-			Self::ForEachLoop(for_loop) => for_loop.fmt(formatter),
-			Self::If(if_expression) => if_expression.fmt(formatter),
-			Self::Unary(unary) => unary.fmt(formatter),
-			Self::Name(name) => name.fmt(formatter),
-			Self::ObjectConstructor(object) => object.fmt(formatter),
-			Self::Parameter(parameter) => parameter.fmt(formatter),
-			Self::Pointer(pointer) => pointer.fmt(formatter),
-			Self::Run(run) => run.fmt(formatter),
-			Self::RepresentAs(represent_as) => represent_as.fmt(formatter),
-			Self::ErrorExpression(_span) => write!(formatter, "{}", "<void>".style(context().theme.keyword())),
 		}
 	}
 }

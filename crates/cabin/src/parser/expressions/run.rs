@@ -1,4 +1,5 @@
 use crate::{
+	api::context::Context,
 	comptime::{memory::VirtualPointer, CompileTime},
 	diagnostics::Diagnostic,
 	lexer::{Span, TokenType},
@@ -9,7 +10,6 @@ use crate::{
 		TokenQueueFunctionality as _,
 		TryParse,
 	},
-	transpiler::TranspileToC,
 };
 
 /// A `Run` expression in the language. Run-expressions forcibly run an expression at runtime instead of compile-time. Since
@@ -45,10 +45,10 @@ pub struct RunExpression {
 impl TryParse for RunExpression {
 	type Output = RunExpression;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let mut span = tokens.pop(TokenType::KeywordRuntime)?.span;
-		let expression = Box::new(Expression::parse(tokens));
-		span = span.to(expression.span());
+		let expression = Box::new(Expression::parse(tokens, context));
+		span = span.to(expression.span(context));
 		Ok(RunExpression { span, expression })
 	}
 }
@@ -56,28 +56,22 @@ impl TryParse for RunExpression {
 impl CompileTime for RunExpression {
 	type Output = RunExpression;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		RunExpression {
-			expression: Box::new(self.expression.evaluate_subexpressions_at_compile_time()),
+			expression: Box::new(self.expression.evaluate_subexpressions_at_compile_time(context)),
 			span: self.span,
 		}
 	}
 }
 
-impl TranspileToC for RunExpression {
-	fn to_c(&self) -> anyhow::Result<String> {
-		self.expression.to_c()
-	}
-}
-
 impl Typed for RunExpression {
-	fn get_type(&self) -> anyhow::Result<VirtualPointer> {
-		self.expression.get_type()
+	fn get_type(&self, context: &mut Context) -> anyhow::Result<VirtualPointer> {
+		self.expression.get_type(context)
 	}
 }
 
 impl Spanned for RunExpression {
-	fn span(&self) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span.to_owned()
 	}
 }
@@ -86,5 +80,5 @@ impl Spanned for RunExpression {
 /// the expression needs to implement how the `run` keyword should act on it via
 /// `evaluate_subexpressions_at_compile_time()`.
 pub trait RuntimeableExpression: Sized {
-	fn evaluate_subexpressions_at_compile_time(self) -> Self;
+	fn evaluate_subexpressions_at_compile_time(self, context: &mut Context) -> Self;
 }

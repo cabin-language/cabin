@@ -1,21 +1,20 @@
 use std::collections::VecDeque;
 
-use api::{context::context, diagnostics::Diagnostics};
+use api::{context::Context, diagnostics::Diagnostics};
 use comptime::CompileTime;
 use lexer::Token;
 use parser::{expressions::Expression, Module, Parse as _, Program};
 
-pub mod api;
+pub(crate) mod api;
 pub mod cli;
 pub mod compiler;
 pub mod comptime;
 pub mod lexer;
 pub mod parser;
-pub mod transpiler;
 
 // Re-exports
 
-pub use api::{diagnostics, diagnostics::Error};
+pub use api::{diagnostics::Error, *};
 
 pub use crate::{lexer::Span, parser::expressions::Spanned};
 
@@ -25,32 +24,42 @@ pub use crate::{lexer::Span, parser::expressions::Spanned};
 ///
 /// The errors that occurred. If no errors occurred, then `errors.is_empty() == true`.
 pub fn check_module(code: &str) -> Diagnostics {
-	context().reset();
-	let mut tokens = lexer::tokenize_without_prelude(code);
-	let module = Module::parse(&mut tokens);
-	let _ = module.evaluate_at_compile_time();
-	context().diagnostics().to_owned()
+	let mut context = Context::default();
+	let mut tokens = lexer::tokenize(code, &mut context);
+	let module = Module::parse(&mut tokens, &mut context);
+	let _ = module.evaluate_at_compile_time(&mut context);
+	context.diagnostics().to_owned()
 }
 
-pub fn parse_module(code: &str) -> (Module, Diagnostics) {
-	context().reset();
-	let mut tokens = lexer::tokenize_without_prelude(code);
-	(Module::parse(&mut tokens), context().diagnostics().to_owned())
+pub fn parse_module(code: &str, context: &mut Context) -> (Module, Diagnostics) {
+	let mut tokens = lexer::tokenize(code, context);
+	(Module::parse(&mut tokens, context), context.diagnostics().to_owned())
 }
 
 pub fn check_program(code: &str) -> Diagnostics {
-	let stdlib = parse_module(STDLIB).0.to_pointer();
-	context().scope_data.declare_new_variable("builtin", Expression::Pointer(stdlib));
+	let mut context = Context::default();
+	let stdlib = parse_module(STDLIB, &mut context).0.to_pointer(&mut context);
+	context.scope_data.declare_new_variable("builtin", Expression::Pointer(stdlib)).unwrap();
 
-	let mut tokens = lexer::tokenize_without_prelude(code);
-	let program = Program::parse(&mut tokens);
-	let _ = program.evaluate_at_compile_time();
-	context().diagnostics().to_owned()
+	let mut tokens = lexer::tokenize(code, &mut context);
+	let program = Program::parse(&mut tokens, &mut context);
+	let _ = program.evaluate_at_compile_time(&mut context);
+	context.diagnostics().to_owned()
 }
 
 pub fn tokenize(code: &str) -> (VecDeque<Token>, Diagnostics) {
-	context().reset();
-	(lexer::tokenize_without_prelude(code), context().diagnostics().to_owned())
+	let mut context = Context::default();
+	(lexer::tokenize(code, &mut context), context.diagnostics().to_owned())
+}
+
+pub fn try_tokenize(code: &str) -> Result<VecDeque<Token>, Error> {
+	let mut context = Context::default();
+	let tokens = lexer::tokenize(code, &mut context);
+	if let Some(error) = context.diagnostics().errors().first().map(|error| error.0) {
+		Err(error.to_owned())
+	} else {
+		Ok(tokens)
+	}
 }
 
 /// The Cabin standard library. This is a Cabin file that's automatically imported into every Cabin

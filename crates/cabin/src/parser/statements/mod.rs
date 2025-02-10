@@ -1,5 +1,5 @@
 use crate::{
-	api::context::context,
+	api::context::Context,
 	comptime::CompileTime,
 	diagnostics::Diagnostic,
 	lexer::{Span, TokenType},
@@ -11,7 +11,6 @@ use crate::{
 		TokenQueueFunctionality as _,
 		TryParse,
 	},
-	transpiler::TranspileToC,
 };
 
 pub mod declaration;
@@ -27,11 +26,11 @@ pub enum Statement {
 }
 
 impl Spanned for Statement {
-	fn span(&self) -> Span {
+	fn span(&self, context: &Context) -> Span {
 		match self {
-			Self::Declaration(declaration) => declaration.span(),
-			Self::Tail(tail) => tail.span(),
-			Self::Expression(expression) => expression.span(),
+			Self::Declaration(declaration) => declaration.span(context),
+			Self::Tail(tail) => tail.span(context),
+			Self::Expression(expression) => expression.span(context),
 			Self::Error(span) => *span,
 		}
 	}
@@ -40,23 +39,23 @@ impl Spanned for Statement {
 impl Parse for Statement {
 	type Output = Statement;
 
-	fn parse(tokens: &mut TokenQueue) -> Self::Output {
-		fn try_parse(tokens: &mut TokenQueue) -> Result<Statement, Diagnostic> {
+	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
+		fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Statement, Diagnostic> {
 			let statement = match tokens.peek_type()? {
-				TokenType::KeywordLet | TokenType::TagOpening => Declaration::try_parse(tokens)?,
+				TokenType::KeywordLet | TokenType::TagOpening => Declaration::try_parse(tokens, context)?,
 				TokenType::Identifier => {
 					if tokens.peek_type2()? == TokenType::KeywordIs {
-						let tail = Statement::Tail(TailStatement::try_parse(tokens)?);
+						let tail = Statement::Tail(TailStatement::try_parse(tokens, context)?);
 						let _ = tokens.pop(TokenType::Semicolon)?;
 						tail
 					} else {
-						let expression = Statement::Expression(Expression::parse(tokens));
+						let expression = Statement::Expression(Expression::parse(tokens, context));
 						let _ = tokens.pop(TokenType::Semicolon)?;
 						expression
 					}
 				},
 				_ => {
-					let expression = Statement::Expression(Expression::parse(tokens));
+					let expression = Statement::Expression(Expression::parse(tokens, context));
 					let _ = tokens.pop(TokenType::Semicolon)?;
 					expression
 				},
@@ -65,10 +64,10 @@ impl Parse for Statement {
 		}
 
 		let start = tokens.front().unwrap().span;
-		match try_parse(tokens) {
+		match try_parse(tokens, context) {
 			Ok(statement) => statement,
 			Err(error) => {
-				context().add_diagnostic(error);
+				context.add_diagnostic(error);
 				while let Ok(token_type) = tokens.peek_type() {
 					if token_type == TokenType::Semicolon {
 						let _ = tokens.pop(TokenType::Semicolon).unwrap();
@@ -87,23 +86,12 @@ impl Parse for Statement {
 impl CompileTime for Statement {
 	type Output = Statement;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		match self {
-			Statement::Declaration(declaration) => Statement::Declaration(declaration.evaluate_at_compile_time()),
-			Statement::Expression(expression) => Statement::Expression(expression.evaluate_at_compile_time()),
-			Statement::Tail(tail) => Statement::Tail(tail.evaluate_at_compile_time()),
+			Statement::Declaration(declaration) => Statement::Declaration(declaration.evaluate_at_compile_time(context)),
+			Statement::Expression(expression) => Statement::Expression(expression.evaluate_at_compile_time(context)),
+			Statement::Tail(tail) => Statement::Tail(tail.evaluate_at_compile_time(context)),
 			Statement::Error(span) => Statement::Error(span),
 		}
-	}
-}
-
-impl TranspileToC for Statement {
-	fn to_c(&self) -> anyhow::Result<String> {
-		Ok(match self {
-			Statement::Declaration(declaration) => declaration.to_c()?,
-			Statement::Tail(tail_statement) => tail_statement.to_c()?,
-			Statement::Expression(expression) => expression.to_c()? + ";",
-			_ => todo!(),
-		})
 	}
 }

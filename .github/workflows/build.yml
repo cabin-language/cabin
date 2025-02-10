@@ -12,4 +12,4 @@ jobs:
           toolchain: stable
       - name: Run test project
         run: cargo run -q --release -- run
-        working-directory: crates/cabin/tests/build
+        working-directory: crates/cabin-bin/tests/build

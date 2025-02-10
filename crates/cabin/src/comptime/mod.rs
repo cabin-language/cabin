@@ -1,3 +1,5 @@
+use crate::api::context::Context;
+
 pub mod memory;
 
 /// A trait for AST nodes to implement that allows them to be evaluated at compile-time. After
@@ -13,7 +15,7 @@ pub trait CompileTime {
 	///
 	/// An error can occur during compile-time evaluation for any number of reasons, such as the user writing a
 	/// variable name that doesn't exist. The specific error returned by this is implementation-specific.
-	fn evaluate_at_compile_time(self) -> Self::Output;
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output;
 }
 
 #[derive(thiserror::Error, Debug, Clone)]

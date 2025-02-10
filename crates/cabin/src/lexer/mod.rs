@@ -5,11 +5,9 @@ use regex_macro::{regex, Regex};
 use strum::IntoEnumIterator as _;
 
 use crate::{
-	api::context::context,
-	cli::theme::{Style, Styled},
+	api::context::Context,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	Error,
-	PRELUDE,
 };
 
 /// A type of token in Cabin source code. The first step in Cabin compilation is tokenization, which is the process of splitting a raw String of source code into
@@ -440,51 +438,6 @@ pub struct Token {
 	pub span: Span,
 }
 
-impl Token {
-	fn style(&self, next: Option<&Token>) -> &Style {
-		match self.token_type {
-			// Comments
-			TokenType::Comment => context().theme.comment(),
-
-			// Numbers
-			TokenType::Number => context().theme.number(),
-
-			// String
-			TokenType::String => context().theme.string(),
-
-			// Keywords
-			TokenType::KeywordAction
-			| TokenType::KeywordNew
-			| TokenType::KeywordOtherwise
-			| TokenType::KeywordGroup
-			| TokenType::KeywordIf
-			| TokenType::KeywordRuntime
-			| TokenType::KeywordIs
-			| TokenType::KeywordOneOf
-			| TokenType::KeywordLet
-			| TokenType::KeywordForEach
-			| TokenType::KeywordIn
-			| TokenType::KeywordWhile
-			| TokenType::KeywordEither => context().theme.keyword(),
-
-			// Identifiers
-			TokenType::Identifier => {
-				if let Some(next) = next {
-					if next.token_type == TokenType::LeftAngleBracket || next.token_type == TokenType::LeftParenthesis {
-						return context().theme.function();
-					}
-				}
-				if self.value.starts_with(|character: char| character.is_uppercase()) {
-					context().theme.type_name()
-				} else {
-					context().theme.variable_name()
-				}
-			},
-			_ => context().theme.normal(),
-		}
-	}
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub struct Span {
 	/// The zero-indexed start byte index of the span.
@@ -580,7 +533,7 @@ impl Span {
 ///
 /// # Errors
 /// If the given code string is not syntactically valid Cabin code. It needn't be semantically valid, but it must be comprised of the proper tokens.
-pub fn tokenize_program(code: &str, is_prelude: bool) -> VecDeque<Token> {
+pub fn tokenize(code: &str, context: &mut Context) -> VecDeque<Token> {
 	let mut code = code.to_owned();
 
 	let mut tokens = Vec::new();
@@ -593,7 +546,7 @@ pub fn tokenize_program(code: &str, is_prelude: bool) -> VecDeque<Token> {
 		let Some((token_type, value)) = TokenType::find_match(&code) else { unreachable!() };
 
 		if token_type == TokenType::Unrecognized {
-			context().add_diagnostic(Diagnostic {
+			context.add_diagnostic(Diagnostic {
 				span: Span { start: position, length: 1 },
 				info: DiagnosticInfo::Error(Error::Tokenize(TokenizeError::UnrecognizedToken(value.clone()))),
 			});
@@ -611,15 +564,6 @@ pub fn tokenize_program(code: &str, is_prelude: bool) -> VecDeque<Token> {
 		position += length;
 
 		code = code.get(length..).unwrap().to_owned();
-	}
-
-	if !is_prelude {
-		for (index, token) in tokens.iter().enumerate() {
-			let style = token.style(tokens.get(index + 1));
-			for character in token.value.chars() {
-				context().colored_program.push(character.to_string().style(style));
-			}
-		}
 	}
 
 	VecDeque::from(tokens)
@@ -674,76 +618,4 @@ pub fn tokenize_string(string: &str) -> VecDeque<Token> {
 pub enum TokenizeError {
 	#[error("Unrecognized token: {0}")]
 	UnrecognizedToken(String),
-}
-
-/// Tokenizes a string of Cabin source code into a vector of tokens. This is the first step in compiling Cabin source code. The returned vector of tokens
-/// should be passed into the Cabin parser, which will convert it into an abstract syntax tree.
-///
-/// The Cabin prelude is automatically prepended to the returned token stream. To tokenize without the prelude, use `tokenize_without_prelude()`
-/// (I'm very creative with names, I know).
-///
-/// # Parameters
-///
-/// - `code` - The Cabin source code. If the given code is not valid Cabin code, this function makes no guarantees to return an error, nor does it make
-/// a guarantee to return an `Ok`. This includes semantic and syntactic errors. This function will only return an error if an unrecognized token is found;
-/// Meaning a piece of code is encountered that doesn't match any known token types. This could be a non-ASCII character or just generally any unused character
-/// in the language like `@`.
-///
-/// # Returns
-///
-/// A vector of tokens in the order they appeared in the given source code after tokenization, or an `Err` if an unrecognized token was found.
-///
-/// # Errors
-///
-/// If the given code string is not syntactically valid Cabin code. It needn't be semantically valid, but it must be comprised of the proper tokens.
-pub fn tokenize(code: &str) -> Result<VecDeque<Token>, Diagnostic> {
-	let mut tokens = tokenize_program(code, false);
-	let mut prelude_tokens = tokenize_program(PRELUDE, true);
-	prelude_tokens.append(&mut tokens);
-	Ok(prelude_tokens)
-}
-
-/// Tokenizes a string of Cabin source code into a vector of tokens. This is the first step in compiling Cabin source code. The returned vector of tokens
-/// should be passed into the Cabin parser, which will convert it into an abstract syntax tree.
-///
-/// The Cabin prelude is not prepended to the returned token stream. To tokenize with the prelude, use `tokenize()`.
-///
-/// # Parameters
-///
-/// - `code` - The Cabin source code. If the given code is not valid Cabin code, this function makes no guarantees to return an error, nor does it make
-/// a guarantee to return an `Ok`. This includes semantic and syntactic errors. This function will only return an error if an unrecognized token is found;
-/// Meaning a piece of code is encountered that doesn't match any known token types. This could be a non-ASCII character or just generally any unused character
-/// in the language like `@`.
-///
-/// # Returns
-///
-/// A vector of tokens in the order they appeared in the given source code after tokenization, or an `Err` if an unrecognized token was found.
-///
-/// # Errors
-///
-/// If the given code string is not syntactically valid Cabin code. It needn't be semantically valid, but it must be comprised of the proper tokens.
-pub fn tokenize_without_prelude(code: &str) -> VecDeque<Token> {
-	tokenize_program(code, false)
-}
-
-/// Tokenizes the main entry point for a Cabin program. This is identical to `tokenize`, but it wraps the code in a function declaration.
-///
-/// # Parameters
-///
-/// - `code` - The source code to tokenize
-///
-/// # Returns
-///
-/// The token stream that was generated from the source code.
-///
-/// # Errors
-///
-/// If an unrecognized token was encountered.
-pub fn tokenize_main(code: &str) -> anyhow::Result<VecDeque<Token>> {
-	let mut tokens = tokenize(code)?;
-	let mut pre_tokens = tokenize_program("let main_function = action {", true);
-	let mut post_tokens = tokenize_program("};", true);
-	pre_tokens.append(&mut tokens);
-	pre_tokens.append(&mut post_tokens);
-	Ok(pre_tokens)
 }

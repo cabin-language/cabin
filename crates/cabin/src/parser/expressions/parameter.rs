@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Debug};
 
 use crate::{
-	api::{context::context, scope::ScopeId},
+	api::{context::Context, scope::ScopeId},
 	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Span, TokenType},
@@ -34,30 +34,30 @@ pub struct Parameter {
 impl TryParse for Parameter {
 	type Output = VirtualPointer;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
-		let name = Name::try_parse(tokens)?;
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+		let name = Name::try_parse(tokens, context)?;
 		let _ = tokens.pop(TokenType::Colon)?;
-		let parameter_type = Expression::parse(tokens);
+		let parameter_type = Expression::parse(tokens, context);
 		Ok(Parameter {
-			span: name.span().to(parameter_type.span()),
+			span: name.span(context).to(parameter_type.span(context)),
 			name,
 			parameter_type: Box::new(parameter_type),
-			scope_id: context().scope_data.unique_id(),
+			scope_id: context.scope_data.unique_id(),
 		}
 		.to_literal()
-		.store_in_memory())
+		.store_in_memory(context))
 	}
 }
 
 impl CompileTime for Parameter {
 	type Output = Parameter;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
-		let type_span = self.parameter_type.span();
-		let evaluated = self.parameter_type.evaluate_as_type();
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+		let type_span = self.parameter_type.span(context);
+		let evaluated = self.parameter_type.evaluate_as_type(context);
 
 		if !matches!(evaluated, Expression::Pointer(_) | Expression::ErrorExpression(_)) {
-			context().add_diagnostic(Diagnostic {
+			context.add_diagnostic(Diagnostic {
 				span: type_span,
 				info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::ExpressionUsedAsType)),
 			});
@@ -75,14 +75,14 @@ impl CompileTime for Parameter {
 }
 
 impl Spanned for Parameter {
-	fn span(&self) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span.to_owned()
 	}
 }
 
 impl Typed for Parameter {
-	fn get_type(&self) -> anyhow::Result<VirtualPointer> {
-		Ok(self.parameter_type.try_as_literal().address.unwrap())
+	fn get_type(&self, context: &mut Context) -> anyhow::Result<VirtualPointer> {
+		Ok(self.parameter_type.try_as_literal(context).address.unwrap())
 	}
 }
 
@@ -117,7 +117,7 @@ impl LiteralConvertible for Parameter {
 			name: literal.name().to_owned(),
 			parameter_type: Box::new(literal.get_internal_field::<Expression>("type")?.to_owned()),
 			scope_id: literal.outer_scope_id(),
-			span: literal.span(),
+			span: literal.span,
 		})
 	}
 }

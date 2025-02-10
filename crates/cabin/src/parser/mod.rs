@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::{
 	api::{
-		context::context,
+		context::Context,
 		scope::{ScopeId, ScopeType},
 		traits::TryAs,
 	},
@@ -18,7 +18,6 @@ use crate::{
 		},
 		statements::{declaration::Declaration, tag::TagList, Statement},
 	},
-	transpiler::TranspileToC,
 	Error,
 };
 
@@ -58,16 +57,16 @@ pub struct Program {
 impl Parse for Program {
 	type Output = Self;
 
-	fn parse(tokens: &mut TokenQueue) -> Self::Output {
-		context().scope_data.enter_new_scope(ScopeType::File);
-		let inner_scope_id = context().scope_data.unique_id();
+	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
+		context.scope_data.enter_new_scope(ScopeType::File);
+		let inner_scope_id = context.scope_data.unique_id();
 		let mut statements = Vec::new();
 
 		while !tokens.is_all_whitespace() {
-			statements.push(Statement::parse(tokens));
+			statements.push(Statement::parse(tokens, context));
 		}
 
-		context().scope_data.exit_scope().unwrap();
+		context.scope_data.exit_scope().unwrap();
 
 		Program { statements, inner_scope_id }
 	}
@@ -76,12 +75,13 @@ impl Parse for Program {
 impl CompileTime for Program {
 	type Output = Program;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
-		let _scope_reverter = context().scope_data.set_current_scope(self.inner_scope_id);
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+		let scope_reverter = context.scope_data.set_current_scope(self.inner_scope_id);
 		let evaluated = Self {
-			statements: self.statements.into_iter().map(|statement| statement.evaluate_at_compile_time()).collect(),
+			statements: self.statements.into_iter().map(|statement| statement.evaluate_at_compile_time(context)).collect(),
 			inner_scope_id: self.inner_scope_id,
 		};
+		scope_reverter.revert(context);
 		evaluated
 	}
 }
@@ -95,27 +95,27 @@ pub struct Module {
 impl Parse for Module {
 	type Output = Self;
 
-	fn parse(tokens: &mut TokenQueue) -> Self::Output {
-		context().scope_data.enter_new_scope(ScopeType::File);
-		let inner_scope_id = context().scope_data.unique_id();
+	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
+		context.scope_data.enter_new_scope(ScopeType::File);
+		let inner_scope_id = context.scope_data.unique_id();
 		let mut declarations = Vec::new();
 
 		while !tokens.is_all_whitespace() {
-			let statement = Statement::parse(tokens);
+			let statement = Statement::parse(tokens, context);
 
 			match statement {
 				Statement::Declaration(declaration) => {
 					declarations.push(declaration);
 				},
 				Statement::Error(_span) => {},
-				statement => context().add_diagnostic(Diagnostic {
-					span: statement.span(),
+				statement => context.add_diagnostic(Diagnostic {
+					span: statement.span(context),
 					info: DiagnosticInfo::Error(Error::Parse(ParseError::InvalidTopLevelStatement { statement })),
 				}),
 			};
 		}
 
-		context().scope_data.exit_scope().unwrap();
+		context.scope_data.exit_scope().unwrap();
 		Module { declarations, inner_scope_id }
 	}
 }
@@ -123,18 +123,19 @@ impl Parse for Module {
 impl CompileTime for Module {
 	type Output = Module;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
-		let _scope_reverter = context().scope_data.set_current_scope(self.inner_scope_id);
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+		let scope_reverter = context.scope_data.set_current_scope(self.inner_scope_id);
 		let evaluated = Self {
-			declarations: self.declarations.into_iter().map(|statement| statement.evaluate_at_compile_time()).collect(),
+			declarations: self.declarations.into_iter().map(|statement| statement.evaluate_at_compile_time(context)).collect(),
 			inner_scope_id: self.inner_scope_id,
 		};
+		scope_reverter.revert(context);
 		evaluated
 	}
 }
 
 impl Module {
-	pub fn to_pointer(&self) -> VirtualPointer {
+	pub fn to_pointer(&self, context: &mut Context) -> VirtualPointer {
 		LiteralObject {
 			type_name: "Module".into(),
 			fields: self
@@ -144,9 +145,9 @@ impl Module {
 					(
 						declaration.name().to_owned(),
 						*declaration
-							.value()
+							.value(context)
 							.clone()
-							.evaluate_at_compile_time()
+							.evaluate_at_compile_time(context)
 							.try_as::<VirtualPointer>()
 							.unwrap_or(&VirtualPointer::ERROR),
 					)
@@ -154,20 +155,14 @@ impl Module {
 				.collect(),
 			internal_fields: HashMap::new(),
 			field_access_type: FieldAccessType::Normal,
-			outer_scope_id: context().scope_data.unique_id(),
+			outer_scope_id: context.scope_data.unique_id(),
 			inner_scope_id: None,
 			name: "module".into(),
 			address: None,
 			span: Span::unknown(),
 			tags: TagList::default(),
 		}
-		.store_in_memory()
-	}
-}
-
-impl TranspileToC for Module {
-	fn to_c(&self) -> anyhow::Result<String> {
-		todo!()
+		.store_in_memory(context)
 	}
 }
 
@@ -362,7 +357,7 @@ impl TokenQueueFunctionality for TokenQueue {
 }
 
 impl Module {
-	pub fn into_literal(self) -> anyhow::Result<LiteralObject> {
+	pub fn into_literal(self, context: &mut Context) -> anyhow::Result<LiteralObject> {
 		Ok(LiteralObject {
 			type_name: "Object".into(),
 			fields: self
@@ -370,7 +365,7 @@ impl Module {
 				.into_iter()
 				.map(|declaration| {
 					let name = declaration.name().to_owned();
-					let value = declaration.value();
+					let value = declaration.value(context);
 					(name, value.try_as::<VirtualPointer>().unwrap().to_owned())
 				})
 				.collect(),
@@ -385,7 +380,7 @@ impl Module {
 		})
 	}
 
-	pub fn into_object(self) -> anyhow::Result<ObjectConstructor> {
+	pub fn into_object(self, context: &mut Context) -> anyhow::Result<ObjectConstructor> {
 		Ok(ObjectConstructor {
 			type_name: "Module".into(),
 			fields: self
@@ -393,7 +388,7 @@ impl Module {
 				.into_iter()
 				.map(|declaration| {
 					let name = declaration.name().to_owned();
-					let value = Some(declaration.value().clone());
+					let value = Some(declaration.value(context).clone());
 					Field { name, value, field_type: None }
 				})
 				.collect(),
@@ -440,13 +435,13 @@ impl ListType {
 pub trait TryParse {
 	type Output;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic>;
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic>;
 }
 
 pub trait Parse {
 	type Output;
 
-	fn parse(tokens: &mut TokenQueue) -> Self::Output;
+	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output;
 }
 
 pub type TokenQueue = VecDeque<Token>;

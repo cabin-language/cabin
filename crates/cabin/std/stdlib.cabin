@@ -116,3 +116,25 @@ let system = new Object {
 		input = action(): Text,
 	},
 };
+
+let Equalable = group {
+	equals: action(this: This, other: This): Boolean
+};
+
+let Ordering = either {
+	less,
+	greater,
+	equal
+};
+
+let Compareable = group {
+
+	# Compares this value with the given value, returning the ordering of *this* value.
+	compared_to: action(this: This, other: This): Ordering
+};
+
+let CompareablesAreEqualable = extend Compareable tobe Equalable {
+	equals = action(this: This, other: This): Boolean {
+		return is this.compared_to(other) == Ordering.equal;
+	}
+};

@@ -2,12 +2,11 @@ use std::collections::HashMap;
 
 use crate::{
 	api::{
-		context::context,
+		context::Context,
 		scope::{ScopeId, ScopeType},
-		traits::TryAs,
 	},
 	comptime::{memory::VirtualPointer, CompileTime},
-	diagnostics::Diagnostic,
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	if_then_some,
 	lexer::{Span, TokenType},
@@ -21,7 +20,6 @@ use crate::{
 			parameter::Parameter,
 			Expression,
 			Spanned,
-			Typed,
 		},
 		statements::tag::TagList,
 		ListType,
@@ -70,48 +68,51 @@ pub struct Extend {
 impl TryParse for Extend {
 	type Output = VirtualPointer;
 
-	fn try_parse(tokens: &mut TokenQueue) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordExtend)?.span;
-		let outer_scope_id = context().scope_data.unique_id();
+		let outer_scope_id = context.scope_data.unique_id();
 
-		context().scope_data.enter_new_scope(ScopeType::RepresentAs);
-		let inner_scope_id = context().scope_data.unique_id();
+		context.scope_data.enter_new_scope(ScopeType::RepresentAs);
+		let inner_scope_id = context.scope_data.unique_id();
 
 		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut parameters = Vec::new();
 			let _ = parse_list!(tokens, ListType::AngleBracketed, {
-				let parameter = Parameter::try_parse(tokens)?;
-				context().scope_data.declare_new_variable(
-					Parameter::from_literal(parameter.virtual_deref()).unwrap().name().to_owned(),
-					Expression::Pointer(parameter),
-				);
+				let parameter = Parameter::try_parse(tokens, context)?;
+				let name = Parameter::from_literal(parameter.virtual_deref(context)).unwrap().name().to_owned();
+				if let Err(error) = context.scope_data.declare_new_variable(name.clone(), Expression::Pointer(parameter)) {
+					context.add_diagnostic(Diagnostic {
+						span: name.span(context),
+						info: DiagnosticInfo::Error(error),
+					});
+				};
 				parameters.push(parameter);
 			});
 			parameters
 		});
 
-		let type_to_extend = Box::new(Expression::parse(tokens));
+		let type_to_extend = Box::new(Expression::parse(tokens, context));
 
 		let type_to_be = if_then_some!(tokens.next_is(TokenType::KeywordToBe), {
 			let _ = tokens.pop(TokenType::KeywordToBe)?;
-			Box::new(Expression::parse(tokens))
+			Box::new(Expression::parse(tokens, context))
 		});
 
 		let mut fields = Vec::new();
 		let end = parse_list!(tokens, ListType::Braced, {
 			// Parse tags
-			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens)?);
+			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
 
 			// Name
-			let name = Name::try_parse(tokens)?;
+			let name = Name::try_parse(tokens, context)?;
 
 			// Value
 			let _ = tokens.pop(TokenType::Equal)?;
-			let mut value = Expression::parse(tokens);
+			let mut value = Expression::parse(tokens, context);
 
 			// Set tags
 			if let Some(tags) = tags {
-				value.set_tags(tags);
+				value.set_tags(tags, context);
 			}
 
 			// Add field
@@ -123,7 +124,7 @@ impl TryParse for Extend {
 		})
 		.span;
 
-		context().scope_data.exit_scope().unwrap();
+		context.scope_data.exit_scope().unwrap();
 
 		Ok(Extend {
 			type_to_extend,
@@ -136,22 +137,22 @@ impl TryParse for Extend {
 			outer_scope_id,
 		}
 		.to_literal()
-		.store_in_memory())
+		.store_in_memory(context))
 	}
 }
 
 impl CompileTime for Extend {
 	type Output = Extend;
 
-	fn evaluate_at_compile_time(self) -> Self::Output {
-		let _scope_reverter = context().scope_data.set_current_scope(self.inner_scope_id);
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+		let scope_reverter = context.scope_data.set_current_scope(self.inner_scope_id);
 
-		let type_to_extend = Box::new(self.type_to_extend.evaluate_at_compile_time());
-		let type_to_be = self.type_to_be.map(|to_be| Box::new(to_be.evaluate_at_compile_time()));
+		let type_to_extend = Box::new(self.type_to_extend.evaluate_at_compile_time(context));
+		let type_to_be = self.type_to_be.map(|to_be| Box::new(to_be.evaluate_at_compile_time(context)));
 
 		let mut fields = Vec::new();
 		for field in self.fields {
-			let field_value = field.value.unwrap().evaluate_at_compile_time();
+			let field_value = field.value.unwrap().evaluate_at_compile_time(context);
 
 			fields.add_or_overwrite_field(Field {
 				name: field.name,
@@ -164,9 +165,10 @@ impl CompileTime for Extend {
 		let compile_time_parameters = self
 			.compile_time_parameters
 			.into_iter()
-			.map(|parameter| parameter.evaluate_at_compile_time())
+			.map(|parameter| parameter.evaluate_at_compile_time(context))
 			.collect::<Vec<_>>();
 
+		scope_reverter.revert(context);
 		Extend {
 			type_to_extend,
 			type_to_be,
@@ -191,37 +193,6 @@ impl Extend {
 
 	pub fn fields(&self) -> &[Field] {
 		&self.fields
-	}
-
-	pub fn can_represent(&self, object: &Expression) -> anyhow::Result<bool> {
-		let _scope_reverter = context().scope_data.set_current_scope(self.inner_scope_id);
-
-		if let Expression::Pointer(pointer) = self.type_to_extend.as_ref() {
-			let literal = pointer.virtual_deref();
-			if literal.type_name() == &"Parameter".into() {
-				let parameter = Parameter::from_literal(literal).unwrap();
-				let anything: VirtualPointer = *context().scope_data.get_variable("Anything").unwrap().try_as::<VirtualPointer>()?;
-				let parameter_type = parameter.get_type()?;
-				if parameter_type == anything || object.is_assignable_to_type(parameter_type)? {
-					return Ok(true);
-				}
-			}
-		}
-
-		Ok(false)
-	}
-
-	pub fn representables(&self) -> anyhow::Result<String> {
-		let _scope_reverter = context().scope_data.set_current_scope(self.inner_scope_id);
-
-		if let Expression::Name(name) = self.type_to_extend.as_ref() {
-			if let Expression::Parameter(parameter) = context().scope_data.get_variable(name).unwrap() {
-				let parameter_type = parameter.get_type()?;
-				return Ok(parameter_type.virtual_deref().name().unmangled_name().to_owned());
-			}
-		}
-
-		Ok("unknown".to_owned())
 	}
 
 	pub fn set_name(&mut self, name: Name) {
@@ -271,7 +242,7 @@ impl LiteralConvertible for Extend {
 }
 
 impl Spanned for Extend {
-	fn span(&self) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }

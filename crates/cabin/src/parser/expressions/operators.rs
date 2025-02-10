@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use super::{extend::Extend, sugar::string::CabinString};
 use crate::{
+	api::context::Context,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 	parser::{
@@ -47,11 +48,11 @@ impl BinaryOperation {
 	/// - `tokens` - The token stream to parse
 	/// - `current_scope` - The current scope
 	/// - `debug_info` - The debug information
-	fn parse_precedent(&self, tokens: &mut VecDeque<Token>) -> Result<Expression, Diagnostic> {
+	fn parse_precedent(&self, tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Expression, Diagnostic> {
 		if let Some(precedent) = self.precedent {
-			parse_binary_expression(precedent, tokens)
+			parse_binary_expression(precedent, tokens, context)
 		} else {
-			PostfixOperators::try_parse(tokens)
+			PostfixOperators::try_parse(tokens, context)
 		}
 	}
 }
@@ -60,13 +61,13 @@ impl BinaryOperation {
 #[derive(Clone, Debug)]
 pub struct BinaryExpression;
 
-fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<Token>) -> Result<Expression, Diagnostic> {
-	let mut expression = operation.parse_precedent(tokens)?;
+fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Expression, Diagnostic> {
+	let mut expression = operation.parse_precedent(tokens, context)?;
 
 	while tokens.next_is_one_of(operation.token_types) {
 		let operator_token = tokens.pop(tokens.peek_type()?)?;
-		let right = operation.parse_precedent(tokens)?;
-		expression = Expression::FunctionCall(FunctionCall::from_binary_operation(expression, right, operator_token)?);
+		let right = operation.parse_precedent(tokens, context)?;
+		expression = Expression::FunctionCall(FunctionCall::from_binary_operation(context, expression, right, operator_token)?);
 	}
 
 	Ok(expression)
@@ -75,8 +76,8 @@ fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<To
 impl TryParse for BinaryExpression {
 	type Output = Expression;
 
-	fn try_parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, Diagnostic> {
-		parse_binary_expression(&COMBINATOR, tokens)
+	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+		parse_binary_expression(&COMBINATOR, tokens, context)
 	}
 }
 
@@ -85,55 +86,55 @@ pub struct PrimaryExpression;
 impl TryParse for PrimaryExpression {
 	type Output = Expression;
 
-	fn try_parse(tokens: &mut VecDeque<Token>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		Ok(match tokens.peek_type()? {
 			TokenType::LeftParenthesis => {
 				let _ = tokens.pop(TokenType::LeftParenthesis).unwrap_or_else(|_| unreachable!());
-				let expression = Expression::parse(tokens);
+				let expression = Expression::parse(tokens, context);
 				let _ = tokens.pop(TokenType::RightParenthesis)?;
 				expression
 				// TODO: this needs to be its own expression type for transpilation
 			},
 
 			// Parse function declaration expression
-			TokenType::KeywordAction => Expression::Pointer(FunctionDeclaration::try_parse(tokens)?),
+			TokenType::KeywordAction => Expression::Pointer(FunctionDeclaration::try_parse(tokens, context)?),
 
 			// Parse block expression
-			TokenType::LeftBrace => Expression::Block(Block::try_parse(tokens)?),
+			TokenType::LeftBrace => Expression::Block(Block::try_parse(tokens, context)?),
 
 			// Parse variable name expression
-			TokenType::Identifier => Expression::Name(Name::try_parse(tokens)?),
+			TokenType::Identifier => Expression::Name(Name::try_parse(tokens, context)?),
 
 			// Parse object constructor
-			TokenType::KeywordNew => Expression::ObjectConstructor(ObjectConstructor::try_parse(tokens)?),
+			TokenType::KeywordNew => Expression::ObjectConstructor(ObjectConstructor::try_parse(tokens, context)?),
 
 			// Parse group declaration expression
-			TokenType::KeywordGroup => Expression::Pointer(GroupDeclaration::try_parse(tokens)?),
+			TokenType::KeywordGroup => Expression::Pointer(GroupDeclaration::try_parse(tokens, context)?),
 
 			// Parse one-of declaration expression
-			TokenType::KeywordOneOf => Expression::Pointer(OneOf::try_parse(tokens)?),
+			TokenType::KeywordOneOf => Expression::Pointer(OneOf::try_parse(tokens, context)?),
 
-			TokenType::KeywordEither => Expression::Pointer(Either::try_parse(tokens)?),
-			TokenType::KeywordIf => Expression::If(IfExpression::try_parse(tokens)?),
-			TokenType::KeywordForEach => Expression::ForEachLoop(ForEachLoop::try_parse(tokens)?),
-			TokenType::KeywordExtend => Expression::Pointer(Extend::try_parse(tokens)?),
+			TokenType::KeywordEither => Expression::Pointer(Either::try_parse(tokens, context)?),
+			TokenType::KeywordIf => Expression::If(IfExpression::try_parse(tokens, context)?),
+			TokenType::KeywordForEach => Expression::ForEachLoop(ForEachLoop::try_parse(tokens, context)?),
+			TokenType::KeywordExtend => Expression::Pointer(Extend::try_parse(tokens, context)?),
 
 			// Parse run expression
-			TokenType::KeywordRuntime => Expression::Run(RunExpression::try_parse(tokens)?),
+			TokenType::KeywordRuntime => Expression::Run(RunExpression::try_parse(tokens, context)?),
 
 			// Syntactic sugar: These below handle cases where syntactic sugar exists for initializing objects of certain types, such as
 			// strings, numbers, lists, etc.:
 
 			// Parse list literal into a list object
-			TokenType::LeftBracket => List::try_parse(tokens)?,
+			TokenType::LeftBracket => List::try_parse(tokens, context)?,
 
 			// Parse string literal into a string object
-			TokenType::String => CabinString::try_parse(tokens)?,
+			TokenType::String => CabinString::try_parse(tokens, context)?,
 
 			// Parse number literal into a number object
 			TokenType::Number => {
 				let number_token = tokens.pop(TokenType::Number).unwrap();
-				Expression::ObjectConstructor(ObjectConstructor::number(number_token.value.parse().unwrap(), number_token.span))
+				Expression::ObjectConstructor(ObjectConstructor::number(number_token.value.parse().unwrap(), number_token.span, context))
 			},
 
 			// bad :<
