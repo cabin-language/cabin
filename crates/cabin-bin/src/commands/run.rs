@@ -13,9 +13,9 @@ impl CabinCommand for RunCommand {
 			std::process::exit(1);
 		});
 
-		let errors = cabin::check_program(&program);
+		let context = cabin::check_program(&program);
 
-		for (error, _span) in errors.errors() {
+		for (error, _span) in context.diagnostics().errors() {
 			println!("{} {error}", "Error:".bold().red());
 		}
 	}

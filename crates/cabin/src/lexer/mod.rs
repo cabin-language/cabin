@@ -322,7 +322,7 @@ impl TokenType {
 			Self::KeywordAnd => regex!(r"^and\b"),
 			Self::KeywordOr => regex!(r"^or\b"),
 			Self::KeywordEither => regex!(r"^either\b"),
-			Self::KeywordExtend => regex!(r"^extend\b"),
+			Self::KeywordExtend => regex!(r"^extensionof\b"),
 			Self::KeywordForEach => regex!(r"^foreach\b"),
 			Self::KeywordGroup => regex!(r"^group\b"),
 			Self::KeywordIf => regex!(r"^if\b"),

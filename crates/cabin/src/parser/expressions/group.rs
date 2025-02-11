@@ -28,6 +28,7 @@ use crate::{
 		statements::tag::TagList,
 		ListType,
 		Parse as _,
+		ParseError,
 		TokenQueueFunctionality,
 	},
 };
@@ -67,7 +68,7 @@ impl TryParse for GroupDeclaration {
 		});
 
 		// Fields
-		let mut fields = Vec::new();
+		let mut fields: Vec<Field> = Vec::new();
 		let end = parse_list!(tokens, ListType::Braced, {
 			//  Group field tags
 			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
@@ -80,6 +81,13 @@ impl TryParse for GroupDeclaration {
 					info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
 						original_name: name.unmangled_name().to_owned(),
 					}),
+				});
+			}
+
+			if fields.iter().any(|field| field.name == name) {
+				context.add_diagnostic(Diagnostic {
+					span: name.span(context),
+					info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::DuplicateField(name.unmangled_name().to_owned()))),
 				});
 			}
 

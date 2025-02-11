@@ -23,12 +23,12 @@ pub use crate::{lexer::Span, parser::expressions::Spanned};
 /// # Returns
 ///
 /// The errors that occurred. If no errors occurred, then `errors.is_empty() == true`.
-pub fn check_module(code: &str) -> Diagnostics {
+pub fn check_module(code: &str) -> Context {
 	let mut context = Context::default();
 	let mut tokens = lexer::tokenize(code, &mut context);
 	let module = Module::parse(&mut tokens, &mut context);
 	let _ = module.evaluate_at_compile_time(&mut context);
-	context.diagnostics().to_owned()
+	context
 }
 
 pub fn parse_module(code: &str, context: &mut Context) -> (Module, Diagnostics) {
@@ -36,7 +36,7 @@ pub fn parse_module(code: &str, context: &mut Context) -> (Module, Diagnostics) 
 	(Module::parse(&mut tokens, context), context.diagnostics().to_owned())
 }
 
-pub fn check_program(code: &str) -> Diagnostics {
+pub fn check_program(code: &str) -> Context {
 	let mut context = Context::default();
 	let stdlib = parse_module(STDLIB, &mut context).0.to_pointer(&mut context);
 	context.scope_data.declare_new_variable("builtin", Expression::Pointer(stdlib)).unwrap();
@@ -44,7 +44,8 @@ pub fn check_program(code: &str) -> Diagnostics {
 	let mut tokens = lexer::tokenize(code, &mut context);
 	let program = Program::parse(&mut tokens, &mut context);
 	let _ = program.evaluate_at_compile_time(&mut context);
-	context.diagnostics().to_owned()
+
+	context
 }
 
 pub fn tokenize(code: &str) -> (VecDeque<Token>, Diagnostics) {

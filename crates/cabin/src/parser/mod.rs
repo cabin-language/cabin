@@ -46,6 +46,9 @@ pub enum ParseError {
 
 	#[error("Invalid formatted string: {0}")]
 	InvalidFormatString(String),
+
+	#[error("Duplicate field \"{0}\"")]
+	DuplicateField(String),
 }
 
 #[derive(Debug)]

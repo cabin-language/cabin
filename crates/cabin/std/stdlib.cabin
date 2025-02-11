@@ -12,13 +12,7 @@ let Optional = choice<Data> {
 let Text = group {};
 
 let Anything = group {
-	to_text: action(this: Anything): Text
-};
-
-let AnythingImplementation = extend<T: Anything> T tobe Anything {
-
-	#[builtin_function<"Anything.to_string">]
-	to_text = action(this: Anything): Text
+	to_text: action(this: Anything): Text,
 };
 
 let Object = group {};
@@ -85,10 +79,7 @@ let AddableTo = group<Operand: Anything, Result: Anything> {
 
 let Addable = group {};
 
-#[default]
-let AddNumbers = extend Number tobe Addable { 
-
-	#[builtin_function<"Number.plus">]
+let AddNumbers = extensionof Number tobe Addable { 
 	plus = action(this: Number, other: Number): Number,
 };
 
@@ -133,7 +124,7 @@ let Compareable = group {
 	compared_to: action(this: This, other: This): Ordering
 };
 
-let CompareablesAreEqualable = extend Compareable tobe Equalable {
+let CompareablesAreEqualable = extensionof Compareable tobe Equalable {
 	equals = action(this: This, other: This): Boolean {
 		return is this.compared_to(other) == Ordering.equal;
 	}

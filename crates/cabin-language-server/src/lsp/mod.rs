@@ -1,6 +1,7 @@
 use std::{collections::HashMap, ops::Not};
 
 use cabin::lexer::TokenType;
+use indoc::indoc;
 
 use crate::{
 	lsp::text_document::{
@@ -130,181 +131,186 @@ impl Request {
 				let token = tokens.iter().find(|token| token.span.contains(span.start()));
 				let hover_text = token
 					.map(|token| match token.token_type {
-						TokenType::KeywordLet => unindent::unindent(
+						TokenType::KeywordLet => indoc!(
 							r#"
-							`let`
+                            let
+                            ===
 
-							---
+                            `let` is used to declare a new variable:
 
-							`let` is used to declare a new variable:
+                            ```cabin
+                            let message = "Hello world!";
+                            ```
 
-							```cabin
-							let message = "Hello world!";
-							```
+                            `let` declarations *must* provide a value, i.e., the following isn't valid:
 
-							`let` declarations *must* provide a value, i.e., the following isn't valid:
+                            ```cabin
+                            let message;
+                            ```
 
-							```cabin
-							let message;
-							```
+                            # Mutability
 
-							`let` declarations may optionally specify a type on the value, indicating that it
-							can be reassigned:
+                            `let` declarations may optionally specify a type on the value, indicating that it
+                            can be reassigned:
 
-							```cabin
-							let message: Text = "Hello world!";
-							message = "Goodbye world!";
-							```
-							"#,
+                            ```cabin
+                            let message: Text = "Hello world!";
+                            message = "Goodbye world!";
+                            ```
+
+                            Without specifying a type, the variable cannot be reassigned:
+
+                            ```cabin
+                            let message = "Hello world!";
+                            message = "Goodbye world!"; # not allowed!
+                            ```
+
+                            "#,
 						),
-						TokenType::KeywordGroup => unindent::unindent(
+						TokenType::KeywordGroup => indoc!(
 							r#"
-							`group`
+                            group
+                            =====
 
-							---
+                            `group` is used to declare a group type, similar to a `struct` in other languages:
 
-							`group` is used to declare a group type, similar to a `struct` in other languages:
+                            ```cabin
+                            let Person = group {
+                                name: Text,
+                                age: Number
+                            };
 
-							```cabin
-							let Person = group {
-								name: Text,
-								age: Number
-							};
+                            let john = new Person {
+                                name = "John",
+                                age = 30
+                            };
+                            ```
 
-							let john = new Person {
-								name = "John",
-								age = 30
-							};
-							```
+                            # Nominality
 
-							Groups are nominally typed, meaning even if two groups share the same structure,
-							you cannot use them interchangeably, i.e., the following isn't valid:
+                            Groups are nominally typed, meaning even if two groups share the same structure,
+                            you cannot use them interchangeably, i.e., the following isn't valid:
 
-							```cabin
-							let Point = group { x: Number, y: Number };
-							let Position = group { x: Number, y: Number };
+                            ```cabin
+                            let Point = group { x: Number, y: Number };
+                            let Position = group { x: Number, y: Number };
 
-							let x: Point = new Position { x = 10, y = 10 };
-							```
-							"#,
+                            let x: Point = new Position { x = 10, y = 10 };
+                            ```
+                            "#,
 						),
-						TokenType::KeywordExtend => unindent::unindent(
+						TokenType::KeywordExtend => indoc!(
 							r#"
-							`extend`
+                            # extend
+                            ========
 
-							---
+                            # Extensions
 
-							# Extensions
+                            `extend` is used to "extend" one type "to be" another. `extend` is how
+                            Cabin implements open polymorphism.
 
-							`extend` is used to "extend" one type "to be" another. `extend` is how
-							Cabin implements open polymorphism.
+                            ```cabin
+                            let Shape = group {
+                                area: action(this: This): Number
+                            };
 
-							```cabin
-							let Shape = group {
-								area: action(this: This): Number
-							};
+                            let Square = group {
+                                side_length: Number
+                            };
 
-							let Square = group {
-								side_length: Number
-							};
+                            let SquareArea = extend Square tobe Shape {
+                                area = action(this: This): Number {
+                                    return is this.side_length ^ 2;
+                                }
+                            };
 
-							let SquareArea = extend Square tobe Shape {
-								area = action(this: This): Number {
-									return is this.side_length ^ 2;
-								}
-							};
+                            let get_area = action(shape: Shape): Number {
+                                return is shape.area();
+                            };
 
-							let get_area = action(shape: Shape): Number {
-								return is shape.area();
-							};
+                            get_area(new Square {});
+                            ```
 
-							get_area(new Square {});
-							```
+                            The `area` action is only available if it's implementation, `SquareArea`,
+                            is in scope.
 
-							The `area` action is only available if it's implementation, `SquareArea`,
-							is in scope.
+                            # Extending Non-Action Fields
 
-							---
+                            Conveniently, non-action fields can be substituted for an action that
+                            takes only an immutable `this` parameter:
 
-							# Extending Non-Action Fields
+                            ```cabin
+                            let Shape = group {
+                                area: Number
+                            };
 
-							Conveniently, non-action fields can be substituted for an action that
-							takes only an immutable `this` parameter:
+                            let Square = group {
+                                side_length: Number
+                            };
 
-							```cabin
-							let Shape = group {
-								area: Number
-							};
+                            let SquareArea = extend Square tobe Shape {
 
-							let Square = group {
-								side_length: Number
-							};
+                                # This is allowed!
+                                area = action(this: This): Number {
+                                    return is this.side_length ^ 2;
+                                }
+                            };
 
-							let SquareArea = extend Square tobe Shape {
+                            let area = new Square { side_length = 10 }.area;
+                            ```
 
-								# This is allowed!
-								area = action(this: This): Number {
-									return is this.side_length ^ 2;
-								}
-							};
+                            As with all actions in Cabin, it's automatically called without needing parentheses.
 
-							let area = new Square { side_length = 10 }.area;
-							```
+                            # Untyped Extensions
 
-							As with all actions in Cabin, it's automatically called without needing parentheses.
+                            `extend` can also be used to extend a type without projecting it onto another:
 
-							---
+                            ```cabin
+                            let TextLength = extend Text {
+                                get_length = action(this: This) {
+                                    return is this.length;
+                                }
+                            };
 
-							`extend` can also be used to extend a type without projecting it onto another:
+                            let length = "Hello".get_length;
+                            ```
 
-							```cabin
-							let TextLength = extend Text {
-								get_length = action(this: This) {
-									return is this.length;
-								}
-							};
+                            Once again, these fields can only be accessed if their implementations are in scope.
 
-							let length = "Hello".get_length;
-							```
+                            # Default Extensions
 
-							Once again, these fields can only be accessed if their implementations are in scope.
+                            Finally, extensions can be made "default", which means they are automatically brought
+                            into scope whenever the target type is used:
 
-							---
+                            ```cabin
+                            let Vector = group {
+                                x: Number,
+                                y: Number
+                            };
 
-							# Default Extensions
+                            # This is automatically available when using `Vector`
+                            default extend Vector tobe Addable {
+                                plus = action(this: Vector, other: Vector): Vector {
+                                    return is new Vector { x = this.x + other.x, y = this.y + other.y };
+                                }
+                            };
+                            ```
 
-							Finally, extensions can be made "default", which means they are automatically brought
-							into scope whenever the target type is used:
+                            Note that you can only declare a `default` extension for a type in the same scope
+                            that the type is declared, i.e, you can't declare a `default` extension for `Text`,
+                            because it's declared in a different scope.
 
-							```cabin
-							let Vector = group {
-								x: Number,
-								y: Number
-							};
-
-							# This is automatically available when using `Vector`
-							default extend Vector tobe Addable {
-								plus = action(this: Vector, other: Vector): Vector {
-									return is new Vector { x = this.x + other.x, y = this.y + other.y };
-								}
-							};
-							```
-
-							Note that you can only declare a `default` extension for a type in the same scope
-							that the type is declared, i.e, you can't declare a `default` extension for `Text`,
-							because it's declared in a different scope.
-
-							Default extensions cannot be bound to a name.
-							"#,
+                            Default extensions cannot be bound to a name.
+                            "#,
 						),
-						_ => format!("{}", token.token_type),
+						_ => "",
 					})
-					.unwrap_or(String::new());
+					.unwrap_or("");
 				Some(Response {
 					id: self.id,
 					jsonrpc: "2.0",
 					data: ResponseData::Hover {
-						result: HoverResult { contents: hover_text },
+						result: HoverResult { contents: hover_text.to_owned() },
 					},
 				})
 			},
