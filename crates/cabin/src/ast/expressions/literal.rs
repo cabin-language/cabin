@@ -2,6 +2,7 @@ use std::{collections::HashMap, fmt::Debug};
 
 use try_as::traits::TryAsRef;
 
+use super::choice::OneOf;
 use crate::{
 	api::{context::Context, scope::ScopeId, traits::TryAs as _},
 	ast::{
@@ -13,17 +14,15 @@ use crate::{
 			group::GroupDeclaration,
 			name::Name,
 			object::{InternalFieldValue, ObjectConstructor},
-			oneof::OneOf,
 			parameter::Parameter,
 			Expression,
-			Spanned,
-			Typed,
 		},
 		misc::tag::TagList,
 	},
 	comptime::{memory::VirtualPointer, CompileTime},
-	lexer::Span,
 	transpiler::{TranspileError, TranspileToC},
+	Span,
+	Spanned,
 };
 
 /// A "literal object". Literal objects can be thought of as simple associative arrays, similar to a JSON object or similar.
@@ -78,7 +77,7 @@ pub struct LiteralObject {
 }
 
 impl LiteralObject {
-	pub fn empty(span: Span, context: &Context) -> Self {
+	pub(crate) fn empty(span: Span, context: &Context) -> Self {
 		Self {
 			type_name: "Object".into(),
 			fields: HashMap::new(),
@@ -93,31 +92,31 @@ impl LiteralObject {
 		}
 	}
 
-	pub const fn type_name(&self) -> &Name {
+	pub(crate) const fn type_name(&self) -> &Name {
 		&self.type_name
 	}
 
-	pub const fn field_access_type(&self) -> &FieldAccessType {
+	pub(crate) const fn field_access_type(&self) -> &FieldAccessType {
 		&self.field_access_type
 	}
 
-	pub fn is_error(&self) -> bool {
+	pub(crate) fn is_error(&self) -> bool {
 		self.address.is_some_and(|address| address == VirtualPointer::ERROR)
 	}
 
-	pub const fn name(&self) -> &Name {
+	pub(crate) const fn name(&self) -> &Name {
 		&self.name
 	}
 
-	pub fn get_field(&self, name: impl Into<Name>) -> Option<VirtualPointer> {
+	pub(crate) fn get_field(&self, name: impl Into<Name>) -> Option<VirtualPointer> {
 		self.fields.get(&name.into()).copied()
 	}
 
-	pub fn get_field_literal(&self, name: impl Into<Name>) -> Option<VirtualPointer> {
+	pub(crate) fn get_field_literal(&self, name: impl Into<Name>) -> Option<VirtualPointer> {
 		self.fields.get(&name.into()).cloned()
 	}
 
-	pub fn expect_field_literal(&self, name: impl Into<Name>) -> VirtualPointer {
+	pub(crate) fn expect_field_literal(&self, name: impl Into<Name>) -> VirtualPointer {
 		self.get_field_literal(name).unwrap()
 	}
 
@@ -141,46 +140,27 @@ impl LiteralObject {
 	///
 	/// # Returns
 	/// A pointer to the location of this literal object, which is now owned by the compiler's virtual memory.
-	pub fn store_in_memory(self, context: &mut Context) -> VirtualPointer {
+	pub(crate) fn store_in_memory(self, context: &mut Context) -> VirtualPointer {
 		context.virtual_memory.store(self)
 	}
 
-	pub const fn outer_scope_id(&self) -> ScopeId {
+	pub(crate) const fn outer_scope_id(&self) -> ScopeId {
 		self.outer_scope_id
 	}
 
-	pub fn dependencies(&self) -> Vec<VirtualPointer> {
+	pub(crate) fn dependencies(&self) -> Vec<VirtualPointer> {
 		self.fields.values().map(|pointer| pointer.to_owned()).collect()
 	}
 
-	pub fn fields(&self) -> impl Iterator<Item = (&Name, &VirtualPointer)> {
+	pub(crate) fn fields(&self) -> impl Iterator<Item = (&Name, &VirtualPointer)> {
 		self.fields.iter()
 	}
 
-	pub fn has_any_fields(&self) -> bool {
+	pub(crate) fn has_any_fields(&self) -> bool {
 		self.fields.is_empty()
 	}
 
-	/// Returns whether a value who's type is this literal, can be assigned to a name who's type is pointed to by the given pointer.
-	pub fn is_this_type_assignable_to_type(&self, mut target_type: VirtualPointer, context: &Context) -> anyhow::Result<bool> {
-		if target_type.virtual_deref(context).type_name() == &"Parameter".into() {
-			let parameter = Parameter::from_literal(target_type.virtual_deref(context))?;
-			target_type = *parameter.parameter_type().try_as::<VirtualPointer>()?;
-		}
-
-		let anything = *context.scope_tree.get_variable("Anything").unwrap().try_as::<VirtualPointer>().unwrap();
-		if target_type == anything {
-			return Ok(true);
-		}
-
-		if self.address.unwrap() == target_type {
-			return Ok(true);
-		}
-
-		Ok(false)
-	}
-
-	pub fn try_from_object(object: ObjectConstructor, context: &mut Context) -> Result<Self, anyhow::Error> {
+	pub(crate) fn try_from_object(object: ObjectConstructor, context: &mut Context) -> Result<Self, anyhow::Error> {
 		let mut fields = HashMap::new();
 		for field in object.fields {
 			let value = field.value.unwrap();
@@ -223,22 +203,10 @@ impl TryAsRef<f64> for LiteralObject {
 		self.get_internal_field("internal_value").ok()
 	}
 }
+
 impl TryAsRef<Vec<Expression>> for LiteralObject {
 	fn try_as_ref(&self) -> Option<&Vec<Expression>> {
 		self.get_internal_field("elements").ok()
-	}
-}
-
-impl Typed for LiteralObject {
-	fn get_type(&self, context: &mut Context) -> anyhow::Result<VirtualPointer> {
-		let result = context
-			.scope_tree
-			.get_variable(self.type_name.clone())
-			.ok_or_else(|| anyhow::anyhow!("No variable found with the name {}", self.type_name().unmangled_name()))?
-			.try_as::<VirtualPointer>()?
-			.to_owned();
-
-		Ok(result)
 	}
 }
 
@@ -402,11 +370,4 @@ impl Spanned for LiteralObject {
 	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
-}
-
-#[derive(strum_macros::Display, Clone, Copy)]
-pub enum CompilerWarning {
-	SingleVariantEither,
-	EmptyEither,
-	RuntimeFunctionCall,
 }

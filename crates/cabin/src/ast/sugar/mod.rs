@@ -1,2 +1,2 @@
-pub mod list;
-pub mod string;
+pub(crate) mod list;
+pub(crate) mod string;

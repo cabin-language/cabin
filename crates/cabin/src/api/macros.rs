@@ -1,8 +1,8 @@
-use super::context::Context;
 use crate::{
 	ast::expressions::{object::ObjectConstructor, Expression},
 	comptime::CompileTime,
-	lexer::Span,
+	Context,
+	Span,
 };
 
 /// Returns the fully qualified path to the current function, similar to how `file!()` from `std` works, but for function names.
@@ -27,11 +27,6 @@ macro_rules! function {
 /// This should only be called after parse-time.
 pub fn string(value: &str, span: Span, context: &mut Context) -> Expression {
 	ObjectConstructor::string(value, span, context).evaluate_at_compile_time(context)
-}
-
-/// This should only be called after parse-time.
-pub fn number(number: f64, span: Span, context: &mut Context) -> Expression {
-	ObjectConstructor::number(number, span, context).evaluate_at_compile_time(context)
 }
 
 /// Returns the second value provided wrapped in `Some()` if the first value is true; Otherwise, returns `None`.
@@ -89,11 +84,4 @@ macro_rules! parse_list {
 
 		$tokens.pop($list_type.closing())?
 	}};
-}
-
-#[macro_export]
-macro_rules! here {
-	() => {
-		$crate::api::context::SourceFilePosition::new(std::line!(), std::column!(), std::file!(), $crate::function!())
-	};
 }

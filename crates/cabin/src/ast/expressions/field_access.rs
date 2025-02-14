@@ -1,11 +1,13 @@
 use crate::{
 	api::{context::Context, scope::ScopeId},
-	ast::expressions::{function_declaration::FunctionDeclaration, literal::LiteralConvertible as _, name::Name, operators::PrimaryExpression, Expression, Spanned},
+	ast::expressions::{function_declaration::FunctionDeclaration, literal::LiteralConvertible as _, name::Name, operators::PrimaryExpression, Expression},
 	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	lexer::{Span, TokenType},
+	lexer::TokenType,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
+	Span,
+	Spanned,
 };
 
 /// A type describing how fields are accessed on this type of objects via the dot operator.
@@ -128,7 +130,7 @@ impl Spanned for FieldAccess {
 }
 
 impl FieldAccess {
-	pub fn new(left: Expression, right: Name, scope_id: ScopeId, span: Span) -> FieldAccess {
+	pub(crate) fn new(left: Expression, right: Name, scope_id: ScopeId, span: Span) -> FieldAccess {
 		FieldAccess {
 			left: Box::new(left),
 			right,

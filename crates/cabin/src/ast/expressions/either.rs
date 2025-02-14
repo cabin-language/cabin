@@ -10,15 +10,16 @@ use crate::{
 			literal::{LiteralConvertible, LiteralObject},
 			name::Name,
 			object::InternalFieldValue,
-			Spanned,
 		},
 		misc::tag::TagList,
 	},
 	comptime::{memory::VirtualPointer, CompileTime},
 	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
-	lexer::{Span, TokenType},
+	lexer::TokenType,
 	parse_list,
 	parser::{ListType, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	Span,
+	Spanned,
 };
 
 /// An `either`. In Cabin, `eithers` represent choices between empty values. They are analogous to
@@ -134,20 +135,5 @@ impl LiteralConvertible for Either {
 impl Spanned for Either {
 	fn span(&self, _context: &Context) -> Span {
 		self.span.to_owned()
-	}
-}
-
-impl Either {
-	/// Returns the names of the variants in this `either`.
-	///
-	/// # Returns
-	///
-	/// The names of the variants in this `either`.
-	pub fn variant_names(&self) -> Vec<&Name> {
-		self.variants.iter().map(|variant| &variant.0).collect()
-	}
-
-	pub fn variants(&self) -> &[(Name, VirtualPointer)] {
-		&self.variants
 	}
 }

@@ -15,17 +15,17 @@ use crate::{
 			run::RuntimeableExpression,
 			unary::{UnaryOperation, UnaryOperator},
 			Expression,
-			Spanned,
-			Typed,
 		},
 		misc::tag::TagList,
 	},
 	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
-	lexer::{Span, Token, TokenType},
+	lexer::{Token, TokenType},
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueueFunctionality as _, TryParse},
+	Span,
+	Spanned,
 };
 
 #[derive(Debug, Clone)]
@@ -82,7 +82,7 @@ pub struct FunctionCall {
 	has_keyword_compile_time_arguments: bool,
 }
 
-pub struct PostfixOperators;
+pub(crate) struct PostfixOperators;
 
 impl TryParse for PostfixOperators {
 	type Output = Expression;
@@ -470,17 +470,6 @@ impl RuntimeableExpression for FunctionCall {
 	}
 }
 
-impl Typed for FunctionCall {
-	fn get_type(&self, context: &mut Context) -> anyhow::Result<VirtualPointer> {
-		let function = FunctionDeclaration::from_literal(self.function.try_as_literal(context))?;
-		if let Some(return_type) = function.return_type() {
-			return_type.try_as::<VirtualPointer>().cloned()
-		} else {
-			context.scope_tree.get_variable("Nothing").unwrap().try_as::<VirtualPointer>().cloned()
-		}
-	}
-}
-
 impl Spanned for FunctionCall {
 	fn span(&self, _context: &Context) -> Span {
 		self.span
@@ -518,7 +507,7 @@ impl FunctionCall {
 	///
 	/// Only if the given token does not represent a valid binary operation. The given token must have a type of
 	/// `TokenType::Plus`, `TokenType::Minus`, etc.
-	pub fn from_binary_operation(context: &mut Context, left: Expression, right: Expression, operation: Token) -> Result<FunctionCall, Diagnostic> {
+	pub(crate) fn from_binary_operation(context: &mut Context, left: Expression, right: Expression, operation: Token) -> Result<FunctionCall, Diagnostic> {
 		let function_name = match operation.token_type {
 			TokenType::Asterisk => "times",
 			TokenType::DoubleEquals => "equals",
@@ -551,7 +540,7 @@ impl FunctionCall {
 		})
 	}
 
-	pub fn basic(function: Expression, context: &mut Context) -> FunctionCall {
+	pub(crate) fn basic(function: Expression, context: &mut Context) -> FunctionCall {
 		FunctionCall {
 			function: Box::new(function),
 			arguments: Vec::new(),

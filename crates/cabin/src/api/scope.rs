@@ -1,7 +1,5 @@
 use std::{collections::HashMap, fmt::Debug};
 
-use colored::Colorize as _;
-
 use crate::{
 	api::context::Context,
 	ast::expressions::{name::Name, Expression},
@@ -500,7 +498,7 @@ impl ScopeData {
 			if let Some(parent) = current.parent {
 				current = self.scopes.get(parent).unwrap();
 			} else {
-				anyhow::bail!("No scope found with the label \"{}\"", label.unmangled_name().bold().cyan())
+				anyhow::bail!("No scope found with the label \"{}\"", label.unmangled_name())
 			}
 		}
 

@@ -1,13 +1,9 @@
 use std::collections::HashMap;
 
-use super::tag::TagList;
 use crate::{
 	ast::{
-		expressions::{
-			field_access::FieldAccessType,
-			literal::LiteralObject,
-			object::{Field, ObjectConstructor},
-		},
+		expressions::{field_access::FieldAccessType, literal::LiteralObject},
+		misc::tag::TagList,
 		statements::{declaration::Declaration, Statement},
 	},
 	comptime::{memory::VirtualPointer, CompileTime},
@@ -69,7 +65,7 @@ impl CompileTime for Module {
 }
 
 impl Module {
-	pub fn to_pointer(&self, context: &mut Context) -> VirtualPointer {
+	pub(crate) fn to_pointer(&self, context: &mut Context) -> VirtualPointer {
 		LiteralObject {
 			type_name: "Object".into(),
 			fields: self
@@ -97,52 +93,5 @@ impl Module {
 			tags: TagList::default(),
 		}
 		.store_in_memory(context)
-	}
-}
-
-impl Module {
-	pub(crate) fn into_literal(self, context: &mut Context) -> anyhow::Result<LiteralObject> {
-		Ok(LiteralObject {
-			type_name: "Object".into(),
-			fields: self
-				.declarations
-				.into_iter()
-				.map(|declaration| {
-					let name = declaration.name().to_owned();
-					let value = declaration.value(context);
-					(name, value.try_as::<VirtualPointer>().unwrap().to_owned())
-				})
-				.collect(),
-			internal_fields: HashMap::new(),
-			field_access_type: FieldAccessType::Normal,
-			inner_scope_id: Some(self.inner_scope_id),
-			outer_scope_id: self.inner_scope_id,
-			name: "anonymous_module".into(),
-			address: None,
-			span: Span::unknown(),
-			tags: TagList::default(),
-		})
-	}
-
-	pub(crate) fn into_object(self, context: &mut Context) -> anyhow::Result<ObjectConstructor> {
-		Ok(ObjectConstructor {
-			type_name: "Module".into(),
-			fields: self
-				.declarations
-				.into_iter()
-				.map(|declaration| {
-					let name = declaration.name().to_owned();
-					let value = Some(declaration.value(context).clone());
-					Field { name, value, field_type: None }
-				})
-				.collect(),
-			internal_fields: HashMap::new(),
-			field_access_type: FieldAccessType::Normal,
-			inner_scope_id: self.inner_scope_id,
-			outer_scope_id: self.inner_scope_id,
-			name: "anonymous_module".into(),
-			span: Span::unknown(),
-			tags: TagList::default(),
-		})
 	}
 }

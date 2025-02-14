@@ -1,11 +1,13 @@
 use crate::{
 	api::context::Context,
-	ast::expressions::{name::Name, Expression, Spanned},
+	ast::expressions::{name::Name, Expression},
 	comptime::CompileTime,
 	diagnostics::Diagnostic,
-	lexer::{Span, TokenType},
+	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::TranspileToC,
+	Span,
+	Spanned,
 };
 
 #[derive(Debug, Clone)]

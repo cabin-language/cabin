@@ -1,16 +1,15 @@
 use std::{fmt::Debug, hash::Hash};
 
-use colored::Colorize as _;
-
-use super::Spanned;
 use crate::{
 	api::context::Context,
 	ast::expressions::Expression,
 	comptime::{CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	lexer::{Span, TokenType},
+	lexer::TokenType,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
+	Span,
+	Spanned,
 };
 
 #[derive(Clone, Eq)]
@@ -116,12 +115,12 @@ impl From<&Name> for Name {
 
 impl Debug for Name {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}", self.unmangled_name().red())
+		write!(f, "{}", self.unmangled_name())
 	}
 }
 
 impl Name {
-	pub fn non_mangled<T: AsRef<str>>(name: T) -> Name {
+	pub(crate) fn non_mangled<T: AsRef<str>>(name: T) -> Name {
 		Name {
 			name: name.as_ref().to_owned(),
 			span: Span::unknown(),
@@ -129,11 +128,11 @@ impl Name {
 		}
 	}
 
-	pub fn unmangled_name(&self) -> &str {
+	pub(crate) fn unmangled_name(&self) -> &str {
 		&self.name
 	}
 
-	pub fn mangled_name(&self) -> String {
+	pub(crate) fn mangled_name(&self) -> String {
 		if self.should_mangle {
 			format!("u_{}", self.name)
 		} else {

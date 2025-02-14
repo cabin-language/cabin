@@ -1,11 +1,11 @@
 use std::{collections::VecDeque, fmt::Write as _, io::Write};
 
-use super::context::Context;
 use crate::{
 	api::{macros::string, scope::ScopeId, traits::TryAs as _},
 	ast::expressions::{name::Name, object::ObjectConstructor, Expression},
 	comptime::{memory::VirtualPointer, CompileTime},
-	lexer::Span,
+	Context,
+	Span,
 };
 
 pub struct BuiltinFunction {

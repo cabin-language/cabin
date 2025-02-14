@@ -8,6 +8,7 @@ use crate::{
 	api::context::Context,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	Error,
+	Span,
 };
 
 /// A type of token in Cabin source code. The first step in Cabin compilation is tokenization, which is the process of splitting a raw String of source code into
@@ -303,7 +304,7 @@ pub enum TokenType {
 }
 
 impl TokenType {
-	pub fn is_whitespace(&self) -> bool {
+	pub(crate) fn is_whitespace(&self) -> bool {
 		matches!(self, TokenType::Whitespace | TokenType::Comment)
 	}
 
@@ -398,7 +399,7 @@ impl TokenType {
 	/// # Returns
 	/// The matched text of the token type in the given code, or `None` if no match was found.
 
-	pub fn get_match(&self, code: &str) -> Option<String> {
+	pub(crate) fn get_match(&self, code: &str) -> Option<String> {
 		self.pattern().find(code).map(|m| m.as_str().to_owned())
 	}
 
@@ -438,87 +439,6 @@ pub struct Token {
 	pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub struct Span {
-	/// The zero-indexed start byte index of the span.
-	pub start: usize,
-	/// The length of the span.
-	pub length: usize,
-}
-
-impl Span {
-	pub const fn new(start: usize, length: usize) -> Span {
-		Span { start, length }
-	}
-
-	pub const fn unknown() -> Span {
-		Span { start: 0, length: 1 }
-	}
-
-	pub const fn cover(first: Span, second: Span) -> Span {
-		Span {
-			start: first.start,
-			length: (second.start + second.length).abs_diff(first.start),
-		}
-	}
-
-	pub const fn to(self, other: Span) -> Span {
-		Span::cover(self, other)
-	}
-
-	pub fn contains(&self, position: usize) -> bool {
-		(self.start..self.start + self.length).contains(&position)
-	}
-
-	pub const fn start(&self) -> usize {
-		self.start
-	}
-
-	pub const fn end(&self) -> usize {
-		self.start + self.length
-	}
-
-	pub const fn length(&self) -> usize {
-		self.length
-	}
-
-	pub fn start_line_column(&self, text: &str) -> Option<(usize, usize)> {
-		let mut line = 0;
-		let mut column = 0;
-		for (position, character) in text.chars().enumerate() {
-			if position == self.start() {
-				return Some((line, column));
-			}
-
-			column += 1;
-			if character == '\n' {
-				line += 1;
-				column = 0;
-			}
-		}
-
-		None
-	}
-
-	pub fn end_line_column(&self, text: &str) -> Option<(usize, usize)> {
-		let mut line = 0;
-		let mut column = 0;
-		for (position, character) in text.chars().enumerate() {
-			if position == self.end() {
-				return Some((line, column));
-			}
-
-			column += 1;
-			if character == '\n' {
-				line += 1;
-				column = 0;
-			}
-		}
-
-		None
-	}
-}
-
 /// Tokenizes a string of Cabin source code into a vector of tokens. This is the first step in compiling Cabin source code. The returned vector of tokens
 /// should be passed into the Cabin parser, which will convert it into an abstract syntax tree.
 ///
@@ -533,7 +453,7 @@ impl Span {
 ///
 /// # Errors
 /// If the given code string is not syntactically valid Cabin code. It needn't be semantically valid, but it must be comprised of the proper tokens.
-pub fn tokenize(code: &str, context: &mut Context) -> VecDeque<Token> {
+pub(crate) fn tokenize(code: &str, context: &mut Context) -> VecDeque<Token> {
 	let mut code = code.to_owned();
 
 	let mut tokens = Vec::new();
@@ -587,7 +507,7 @@ pub fn tokenize(code: &str, context: &mut Context) -> VecDeque<Token> {
 /// # Returns
 ///
 /// A token stream of tokenized tokens, possibly including `Unknown` tokens.
-pub fn tokenize_string(string: &str) -> VecDeque<Token> {
+pub(crate) fn tokenize_string(string: &str) -> VecDeque<Token> {
 	let mut code = string.to_owned();
 
 	let mut tokens = Vec::new();

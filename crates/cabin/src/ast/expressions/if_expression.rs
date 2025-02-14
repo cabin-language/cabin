@@ -1,12 +1,13 @@
-use super::Spanned;
 use crate::{
 	api::{context::Context, scope::ScopeId},
 	ast::expressions::{block::Block, Expression},
 	comptime::CompileTime,
 	diagnostics::Diagnostic,
-	lexer::{Span, TokenType},
+	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
+	Span,
+	Spanned,
 };
 
 #[derive(Debug, Clone)]
@@ -97,7 +98,7 @@ impl Spanned for IfExpression {
 }
 
 impl IfExpression {
-	pub const fn inner_scope_id(&self) -> ScopeId {
+	pub(crate) const fn inner_scope_id(&self) -> ScopeId {
 		self.inner_scope_id
 	}
 }

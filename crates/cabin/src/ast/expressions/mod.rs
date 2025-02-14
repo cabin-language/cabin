@@ -27,12 +27,14 @@ use crate::{
 	},
 	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	lexer::Span,
 	parser::{Parse, TokenQueue, TokenQueueFunctionality as _, TryParse as _},
 	transpiler::{TranspileError, TranspileToC},
+	Span,
+	Spanned,
 };
 
 pub mod block;
+pub mod choice;
 pub mod either;
 pub mod extend;
 pub mod field_access;
@@ -44,7 +46,6 @@ pub mod if_expression;
 pub mod literal;
 pub mod name;
 pub mod object;
-pub mod oneof;
 pub mod operators;
 pub mod parameter;
 pub mod run;
@@ -142,7 +143,7 @@ impl TranspileToC for Expression {
 }
 
 impl Expression {
-	pub fn try_as_literal<'ctx>(&self, context: &'ctx mut Context) -> &'ctx LiteralObject {
+	pub(crate) fn try_as_literal<'ctx>(&self, context: &'ctx mut Context) -> &'ctx LiteralObject {
 		match self {
 			Self::Pointer(pointer) => pointer.virtual_deref(context),
 			Self::Name(name) => name.clone().evaluate_at_compile_time(context).try_as_literal(context),
@@ -150,7 +151,7 @@ impl Expression {
 		}
 	}
 
-	pub fn is_fully_known_at_compile_time(&self, context: &mut Context) -> bool {
+	pub(crate) fn is_fully_known_at_compile_time(&self, context: &mut Context) -> bool {
 		match self {
 			Self::Pointer(_) => true,
 			Self::Parameter(_) => true,
@@ -159,11 +160,11 @@ impl Expression {
 		}
 	}
 
-	pub fn is_error(&self) -> bool {
+	pub(crate) fn is_error(&self) -> bool {
 		matches!(self, Expression::ErrorExpression(_))
 	}
 
-	pub fn evaluate_as_type(self, context: &mut Context) -> Expression {
+	pub(crate) fn evaluate_as_type(self, context: &mut Context) -> Expression {
 		match self {
 			Self::Pointer(pointer) => Expression::Pointer(pointer),
 			_ => self.evaluate_at_compile_time(context),
@@ -171,7 +172,7 @@ impl Expression {
 	}
 
 	/// Returns whether this expression is a virtual pointer.
-	pub const fn is_pointer(&self) -> bool {
+	pub(crate) const fn is_pointer(&self) -> bool {
 		matches!(self, Self::Pointer(_))
 	}
 
@@ -183,7 +184,7 @@ impl Expression {
 	///
 	/// # Returns
 	/// The name of the kind of expression of this as a string.
-	pub const fn kind_name(&self) -> &'static str {
+	pub(crate) const fn kind_name(&self) -> &'static str {
 		match self {
 			Self::Block(_) => "block",
 			Self::FieldAccess(_) => "field access",
@@ -212,7 +213,7 @@ impl Expression {
 	/// # Performance
 	///
 	/// This clone is very cheap; Only the underlying pointer address (a `usize`) is cloned.
-	pub fn try_clone_pointer(&self) -> anyhow::Result<Expression> {
+	pub(crate) fn try_clone_pointer(&self) -> anyhow::Result<Expression> {
 		if let Self::Pointer(address) = self {
 			return Ok(Expression::Pointer(*address));
 		}
@@ -289,38 +290,6 @@ impl Expression {
 			context.scope_tree.get_scope_mut_from_id(scope_id).set_label(name);
 		}
 	}
-
-	/// Returns whether this expression can be assigned to the type pointed to by `target_type`, which is generally
-	/// a call to `Typed::get_type()`.
-	///
-	/// # Parameters
-	///
-	/// - `target_type` - A pointer to the group declaration that represents the type we are trying to assign to.
-	/// - `context` - Global data about the compiler state.
-	///
-	/// # Returns
-	///
-	/// whether this expression can be assigned to the given type.
-	pub fn is_assignable_to_type(&self, target_type: VirtualPointer, context: &mut Context) -> anyhow::Result<bool> {
-		let this_type = self.get_type(context)?.virtual_deref(context);
-		this_type.is_this_type_assignable_to_type(target_type, context)
-	}
-}
-
-impl Typed for Expression {
-	fn get_type(&self, context: &mut Context) -> anyhow::Result<VirtualPointer> {
-		Ok(match self {
-			Expression::Pointer(pointer) => pointer.virtual_deref(context).to_owned().get_type(context)?,
-			Expression::FunctionCall(function_call) => function_call.get_type(context)?,
-			Expression::Run(run_expression) => run_expression.get_type(context)?,
-			Expression::Parameter(parameter) => parameter.get_type(context)?,
-			Expression::ErrorExpression(_span) => VirtualPointer::ERROR,
-			value => {
-				dbg!(value);
-				todo!()
-			},
-		})
-	}
 }
 
 impl Spanned for Expression {
@@ -341,20 +310,6 @@ impl Spanned for Expression {
 			Expression::ErrorExpression(span) => *span,
 		}
 	}
-}
-
-pub trait Typed {
-	fn get_type(&self, context: &mut Context) -> anyhow::Result<VirtualPointer>;
-}
-
-pub trait Spanned {
-	/// Returns the section of the source code that this expression spans. This is used by the compiler to print information about
-	/// errors that occur, such as while line and column the error occurred on.
-	///
-	/// # Returns
-	///
-	/// The second of the program's source code that this expression spans.
-	fn span(&self, context: &Context) -> Span;
 }
 
 impl RuntimeableExpression for Expression {

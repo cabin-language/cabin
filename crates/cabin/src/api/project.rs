@@ -1,7 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use super::{config::Config, diagnostics::Diagnostics};
-use crate::{ast::misc::program::Program, comptime::CompileTime, transpiler::TranspileToC, Context};
+use crate::{
+	api::{config::Config, diagnostics::Diagnostics},
+	ast::misc::program::Program,
+	comptime::CompileTime,
+	transpiler::TranspileToC,
+	Context,
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum ProjectError {

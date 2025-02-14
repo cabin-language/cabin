@@ -1,11 +1,12 @@
-use super::Spanned;
 use crate::{
 	api::{context::Context, scope::ScopeId, traits::TryAs as _},
 	ast::expressions::{block::Block, name::Name, Expression},
 	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	lexer::{Span, TokenType},
+	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	Span,
+	Spanned,
 };
 
 #[derive(Debug, Clone)]

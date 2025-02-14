@@ -14,7 +14,7 @@ use crate::{
 	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 };
 
-pub struct List;
+pub(crate) struct List;
 
 impl TryParse for List {
 	type Output = Expression;

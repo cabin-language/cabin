@@ -10,14 +10,14 @@ use crate::{
 			object::InternalFieldValue,
 			Expression,
 			Spanned,
-			Typed,
 		},
 		misc::tag::TagList,
 	},
 	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	lexer::{Span, TokenType},
+	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	Span,
 };
 
 #[derive(Clone)]
@@ -77,18 +77,12 @@ impl Spanned for Parameter {
 	}
 }
 
-impl Typed for Parameter {
-	fn get_type(&self, context: &mut Context) -> anyhow::Result<VirtualPointer> {
-		Ok(self.parameter_type.try_as_literal(context).address.unwrap())
-	}
-}
-
 impl Parameter {
-	pub const fn name(&self) -> &Name {
+	pub(crate) const fn name(&self) -> &Name {
 		&self.name
 	}
 
-	pub const fn parameter_type(&self) -> &Expression {
+	pub(crate) const fn parameter_type(&self) -> &Expression {
 		&self.parameter_type
 	}
 }

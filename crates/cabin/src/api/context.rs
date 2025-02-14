@@ -1,8 +1,10 @@
 use std::{collections::HashMap, path::Path};
 
-use super::diagnostics::DiagnosticInfo;
 use crate::{
-	api::{diagnostics::Diagnostic, scope::ScopeData},
+	api::{
+		diagnostics::{Diagnostic, DiagnosticInfo},
+		scope::ScopeData,
+	},
 	ast::expressions::{name::Name, Expression},
 	comptime::memory::{VirtualMemory, VirtualPointer},
 	Diagnostics,

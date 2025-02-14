@@ -3,15 +3,14 @@ use crate::{
 		context::Context,
 		scope::{ScopeId, ScopeType},
 	},
-	ast::{
-		expressions::{Expression, Spanned},
-		statements::Statement,
-	},
+	ast::{expressions::Expression, statements::Statement},
 	comptime::CompileTime,
 	diagnostics::Diagnostic,
-	lexer::{Span, TokenType},
+	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
+	Span,
+	Spanned,
 };
 
 #[derive(Debug, Clone)]
@@ -27,21 +26,6 @@ pub struct Block {
 }
 
 impl Block {
-	/// Creates a new `Block`.
-	///
-	/// # Parameters
-	///
-	/// - `statements` - The statements inside the block
-	/// - `inner_scope_id` - The ID of the scope inside this block
-	/// - `span` - The span of the block
-	///
-	/// # Returns
-	///
-	/// The created block
-	pub const fn new(statements: Vec<Statement>, inner_scope_id: ScopeId, span: Span) -> Block {
-		Block { statements, inner_scope_id, span }
-	}
-
 	/// Parses a block expression and sets the scope type of the inner scope.
 	///
 	/// # Parameters
@@ -141,7 +125,7 @@ impl Spanned for Block {
 }
 
 impl Block {
-	pub fn inner_scope_id(&self) -> ScopeId {
+	pub(crate) fn inner_scope_id(&self) -> ScopeId {
 		self.inner_scope_id
 	}
 }

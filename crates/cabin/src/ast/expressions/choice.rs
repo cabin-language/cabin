@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use super::field_access::FieldAccessType;
 use crate::{
 	api::{
 		context::Context,
@@ -8,6 +7,7 @@ use crate::{
 	},
 	ast::{
 		expressions::{
+			field_access::FieldAccessType,
 			literal::{LiteralConvertible, LiteralObject},
 			name::Name,
 			object::InternalFieldValue,
@@ -19,9 +19,10 @@ use crate::{
 	comptime::{memory::VirtualPointer, CompileTime},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
-	lexer::{Span, TokenType},
+	lexer::TokenType,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	Span,
 };
 
 #[derive(Debug, Clone)]

@@ -1,14 +1,16 @@
 use crate::{
 	api::context::Context,
 	ast::{
-		expressions::{Expression, Spanned},
+		expressions::Expression,
 		statements::{declaration::Declaration, tail::TailStatement},
 	},
 	comptime::CompileTime,
 	diagnostics::Diagnostic,
-	lexer::{Span, TokenType},
+	lexer::TokenType,
 	parser::{Parse, TokenQueue, TokenQueueFunctionality as _, TryParse as _},
 	transpiler::{TranspileError, TranspileToC},
+	Span,
+	Spanned,
 };
 
 pub mod declaration;

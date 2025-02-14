@@ -3,12 +3,13 @@ use std::{collections::HashMap, fmt::Debug};
 use crate::{
 	api::{context::Context, scope::ScopeId, traits::TryAs as _},
 	ast::{
-		expressions::{field_access::FieldAccessType, literal::LiteralObject, Expression, Spanned, Typed},
+		expressions::{field_access::FieldAccessType, literal::LiteralObject, Expression},
 		misc::tag::TagList,
 	},
 	comptime::CompileTime,
-	lexer::Span,
 	transpiler::{TranspileError, TranspileToC},
+	Span,
+	Spanned,
 };
 
 /// A pointer to a `LiteralObject` in `VirtualMemory`.
@@ -27,10 +28,10 @@ use crate::{
 ///
 /// This internally just wraps a `usize`, so cloning and copying is incredibly cheap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VirtualPointer(usize);
+pub(crate) struct VirtualPointer(usize);
 
 impl VirtualPointer {
-	pub const ERROR: VirtualPointer = VirtualPointer(0);
+	pub(crate) const ERROR: VirtualPointer = VirtualPointer(0);
 
 	/// Retrieves the `LiteralObject` value that this pointer points to.
 	///
@@ -93,12 +94,6 @@ impl std::fmt::Display for VirtualPointer {
 	}
 }
 
-impl Typed for VirtualPointer {
-	fn get_type(&self, context: &mut Context) -> anyhow::Result<VirtualPointer> {
-		self.virtual_deref(context).clone().get_type(context)
-	}
-}
-
 impl Spanned for VirtualPointer {
 	fn span(&self, context: &Context) -> Span {
 		self.virtual_deref(context).span(context)
@@ -157,7 +152,7 @@ impl VirtualMemory {
 	/// # Returns
 	///
 	/// A `VirtualPointer` that points to the object that was stored.
-	pub fn store(&mut self, mut value: LiteralObject) -> VirtualPointer {
+	pub(crate) fn store(&mut self, mut value: LiteralObject) -> VirtualPointer {
 		let address = self.next_unused_virtual_address();
 		value.address = Some(VirtualPointer(address));
 		let _ = self.memory.insert(address, value);
@@ -174,11 +169,11 @@ impl VirtualMemory {
 	/// # Parameters
 	///
 	/// - `address` - A `VirtualPointer` to the location to get the `LiteralObject` from in virtual memory.
-	pub fn get(&self, address: &VirtualPointer) -> &LiteralObject {
+	pub(crate) fn get(&self, address: &VirtualPointer) -> &LiteralObject {
 		self.memory.get(&address.0).unwrap()
 	}
 
-	pub fn replace(&mut self, address: VirtualPointer, value: LiteralObject) {
+	pub(crate) fn replace(&mut self, address: VirtualPointer, value: LiteralObject) {
 		let _ = self.memory.insert(address.0, value);
 	}
 
@@ -195,45 +190,5 @@ impl VirtualMemory {
 			next_unused_virtual_address += 1;
 		}
 		next_unused_virtual_address
-	}
-
-	/// Moves the value at the first given location to the address at the second given location, overwriting and deleting any previous
-	/// value that was stored there.
-	///
-	/// This is used by `Declaration::evaluate_at_compile_time()` to handle a special case involving `Groups` to fix the compiler
-	/// from crashing in certain situations; Read the comments in that function for more information.
-	///
-	/// The `LiteralObject` that was moved will have it's `address` field appropriately updated.
-	///
-	/// # Parameters
-	///
-	/// - `location_of_value_to_move` - A pointer to the value that should be moved in memory.
-	/// - `destination_to_overwrite` - A pointer to the destination slot in memory, in which the moved value will now reside and
-	/// the previous value at this destination will be deleted.
-	pub fn move_overwrite(&mut self, location_of_value_to_move: VirtualPointer, destination_to_overwrite: VirtualPointer) {
-		let mut value = self.memory.remove(&location_of_value_to_move.0).unwrap();
-		value.address = Some(destination_to_overwrite);
-		let _ = self.memory.insert(destination_to_overwrite.0, value);
-	}
-
-	/// Returns a `Vec` of the entries of all objects stored in virtual memory. The returned `Vec` contains tuples of owned
-	/// pointers and owned `LiteralObjects`, which are clones of the `LiteralObjects` that exist in memory. This doesn't return
-	/// references to the original `LiteralObjects` because each one would borrow the compilers `context`, and then it would be
-	/// impossible to make further mutable borrows of it.
-	///
-	/// This is used by the transpiler to transpile all literals in virtual memory into C code. This really shouldn't be needed
-	/// or used at any step of compilation other than transpilation.
-	///
-	/// # Returns
-	///
-	/// An owned `Vec` containing tuples of owned `VirtualPointers` and `LiteralObjects` representing every object stored in this
-	/// virtual memory.
-	pub fn entries(&self) -> Vec<(VirtualPointer, &LiteralObject)> {
-		self.memory
-			.iter()
-			.collect::<Vec<_>>()
-			.into_iter()
-			.map(|(address, object)| (VirtualPointer(*address), object))
-			.collect()
 	}
 }

@@ -1,12 +1,13 @@
 use std::collections::VecDeque;
 
-use super::extend::Extend;
+use super::choice::OneOf;
 use crate::{
 	api::context::Context,
 	ast::{
 		expressions::{
 			block::Block,
 			either::Either,
+			extend::Extend,
 			foreach::ForEachLoop,
 			function_call::{FunctionCall, PostfixOperators},
 			function_declaration::FunctionDeclaration,
@@ -14,7 +15,6 @@ use crate::{
 			if_expression::IfExpression,
 			name::Name,
 			object::ObjectConstructor,
-			oneof::OneOf,
 			run::RunExpression,
 			Expression,
 		},
@@ -23,7 +23,6 @@ use crate::{
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 	parser::{Parse as _, ParseError, TokenQueueFunctionality as _, TryParse},
-	Error,
 };
 
 /// A binary operation. More specifically, this represents not one operation, but a group of operations that share the same precedence.
@@ -31,7 +30,7 @@ use crate::{
 ///
 /// # Parameters
 /// `<'this>` - The lifetime of this operation, to ensure that the contained reference to the precedent operation lives at least that long.
-pub struct BinaryOperation {
+pub(crate) struct BinaryOperation {
 	/// The operation that has the next highest precedence, or `None` if this operation has the highest precedence.
 	precedent: Option<&'static BinaryOperation>,
 	/// The token types that represent this operation, used to parse a binary expression.
@@ -56,7 +55,7 @@ impl BinaryOperation {
 
 /// A binary expression node in the abstract syntax tree. This represents an operation that takes two operands in infix notation.
 #[derive(Clone, Debug)]
-pub struct BinaryExpression;
+pub(crate) struct BinaryExpression;
 
 fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Expression, Diagnostic> {
 	let mut expression = operation.parse_precedent(tokens, context)?;
@@ -138,7 +137,7 @@ impl TryParse for PrimaryExpression {
 			token_type => {
 				return Err(Diagnostic {
 					span: tokens.current_position().unwrap(),
-					info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedTokenExpected {
+					info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedTokenExpected {
 						expected: "primary expression",
 						actual: token_type,
 					})),

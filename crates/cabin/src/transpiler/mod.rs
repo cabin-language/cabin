@@ -1,6 +1,12 @@
 use crate::Context;
 
-pub trait TranspileToC {
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum TranspileError {
+	#[error("Attempted to transpile an AST that contains an error")]
+	TranspileError,
+}
+
+pub(crate) trait TranspileToC {
 	/// Transpiles this AST node into C code.
 	///
 	/// # Parameters
@@ -16,17 +22,11 @@ pub trait TranspileToC {
 	/// If this AST node is invalid, meaning it contains an error node, an error is returned.
 	fn to_c(&self, context: &mut Context, output: Option<String>) -> Result<String, TranspileError>;
 
-	fn c_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
+	fn c_prelude(&self, _context: &mut Context) -> Result<String, TranspileError> {
 		Ok(String::new())
 	}
 
-	fn c_type_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
+	fn c_type_prelude(&self, _context: &mut Context) -> Result<String, TranspileError> {
 		Ok(String::new())
 	}
-}
-
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum TranspileError {
-	#[error("Attempted to transpile an AST that contains an error")]
-	TranspileError,
 }

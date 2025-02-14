@@ -2,7 +2,7 @@ use crate::{
 	api::context::Context,
 	ast::expressions::{Expression, Spanned},
 	comptime::CompileTime,
-	lexer::Span,
+	Span,
 };
 
 /// A unary operator. These are types of operators that take a single expression and operate on it.

@@ -13,7 +13,6 @@ use crate::{
 			object::{Field, Fields as _, InternalFieldValue},
 			parameter::Parameter,
 			Expression,
-			Spanned,
 		},
 		misc::tag::TagList,
 	},
@@ -21,9 +20,11 @@ use crate::{
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	if_then_some,
-	lexer::{Span, TokenType},
+	lexer::TokenType,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	Span,
+	Spanned,
 };
 
 ///
@@ -179,19 +180,7 @@ impl CompileTime for Extend {
 }
 
 impl Extend {
-	pub const fn type_to_represent(&self) -> &Expression {
-		&self.type_to_extend
-	}
-
-	pub fn type_to_represent_as(&self) -> Option<&Expression> {
-		self.type_to_be.as_ref().map(|type_to_be| type_to_be.as_ref())
-	}
-
-	pub fn fields(&self) -> &[Field] {
-		&self.fields
-	}
-
-	pub fn set_name(&mut self, name: Name) {
+	pub(crate) fn set_name(&mut self, name: Name) {
 		self.name = name.clone();
 	}
 }

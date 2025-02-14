@@ -1,9 +1,10 @@
-pub mod builtin;
 pub mod config;
 pub mod context;
 pub mod diagnostics;
-pub mod macros;
 pub mod project;
 pub mod scope;
-pub mod toml;
-pub mod traits;
+pub mod span;
+
+pub(crate) mod builtin;
+pub(crate) mod macros;
+pub(crate) mod traits;

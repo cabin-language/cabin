@@ -2,21 +2,29 @@ use std::collections::HashMap;
 
 use try_as::traits as try_as_traits;
 
-use super::literal::LiteralObject;
 use crate::{
 	api::{context::Context, scope::ScopeId},
 	ast::{
-		expressions::{field_access::FieldAccessType, group::GroupDeclaration, literal::LiteralConvertible as _, name::Name, parameter::Parameter, Expression, Spanned},
+		expressions::{
+			field_access::FieldAccessType,
+			group::GroupDeclaration,
+			literal::{LiteralConvertible as _, LiteralObject},
+			name::Name,
+			parameter::Parameter,
+			Expression,
+			Spanned,
+		},
 		misc::tag::TagList,
 	},
 	comptime::{memory::VirtualPointer, CompileTime},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	if_then_some,
-	lexer::{Span, TokenType},
+	lexer::TokenType,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
+	Span,
 };
 
 #[derive(Debug, Clone)]
@@ -39,7 +47,7 @@ pub struct Field {
 	pub value: Option<Expression>,
 }
 
-pub trait Fields {
+pub(crate) trait Fields {
 	fn add_or_overwrite_field(&mut self, field: Field);
 }
 
@@ -53,7 +61,7 @@ impl Fields for Vec<Field> {
 }
 
 impl ObjectConstructor {
-	pub fn untyped(fields: Vec<Field>, span: Span, context: &mut Context) -> ObjectConstructor {
+	pub(crate) fn untyped(fields: Vec<Field>, span: Span, context: &mut Context) -> ObjectConstructor {
 		ObjectConstructor {
 			type_name: "Object".into(),
 			name: "anonymous_object".into(),
@@ -67,7 +75,7 @@ impl ObjectConstructor {
 		}
 	}
 
-	pub fn typed<T: Into<Name>>(type_name: T, fields: Vec<Field>, span: Span, context: &mut Context) -> ObjectConstructor {
+	pub(crate) fn typed<T: Into<Name>>(type_name: T, fields: Vec<Field>, span: Span, context: &mut Context) -> ObjectConstructor {
 		ObjectConstructor {
 			type_name: type_name.into(),
 			name: "anonymous_object".into(),
@@ -81,7 +89,7 @@ impl ObjectConstructor {
 		}
 	}
 
-	pub fn string(string: &str, span: Span, context: &mut Context) -> ObjectConstructor {
+	pub(crate) fn string(string: &str, span: Span, context: &mut Context) -> ObjectConstructor {
 		ObjectConstructor {
 			type_name: Name::from("Text"),
 			fields: Vec::new(),
@@ -95,7 +103,7 @@ impl ObjectConstructor {
 		}
 	}
 
-	pub fn number(number: f64, span: Span, context: &mut Context) -> ObjectConstructor {
+	pub(crate) fn number(number: f64, span: Span, context: &mut Context) -> ObjectConstructor {
 		ObjectConstructor {
 			type_name: Name::from("Number"),
 			fields: Vec::new(),
@@ -109,7 +117,7 @@ impl ObjectConstructor {
 		}
 	}
 
-	pub fn is_literal(&self) -> bool {
+	pub(crate) fn is_literal(&self) -> bool {
 		for field in &self.fields {
 			let value = field.value.as_ref().unwrap();
 			if let Expression::Pointer(_) = value {
@@ -128,7 +136,7 @@ impl ObjectConstructor {
 		true
 	}
 
-	pub fn get_field<T: Into<Name>>(&self, name: T) -> Option<&Expression> {
+	pub(crate) fn get_field<T: Into<Name>>(&self, name: T) -> Option<&Expression> {
 		let name = name.into();
 		self.fields.iter().find_map(|field| (field.name == name).then(|| field.value.as_ref().unwrap()))
 	}
@@ -291,32 +299,4 @@ impl Spanned for ObjectConstructor {
 	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
-}
-
-#[macro_export]
-macro_rules! object {
-	(
-		$context: expr,
-		$type_name: ident {
-			$(
-				$field_name: ident = $field_value: expr
-			),* $(,)?
-		}
-	) => {
-		$crate::parser::expressions::object::ObjectConstructor {
-			type_name: stringify!($type_name).into(),
-			fields: vec![$($crate::parser::expressions::object::Field {
-				name: stringify!($field_name),
-				field_type: None,
-				value: Some($field_value),
-			}),*],
-			internal_fields: std::collections::HashMap::new(),
-			name: $crate::parser::expressions::name::Name::non_mangled("anonymous_object"),
-			span: $crate::lexer::Span::unknown(),
-			outer_scope_id: $context.scope_data.unique_id(),
-			inner_scope_id: $context.scope_data.unique_id(),
-			tags: $crate::parser::statements::tag::TagList::default(),
-			field_access_type: $crate::parser::expressions::field_access::FieldAccessType::Normal,
-		}
-	};
 }

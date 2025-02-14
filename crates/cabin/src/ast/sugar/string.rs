@@ -7,8 +7,9 @@ use crate::{
 	api::{context::Context, traits::TryAs as _},
 	ast::expressions::{field_access::FieldAccess, function_call::FunctionCall, object::ObjectConstructor, Expression},
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	lexer::{tokenize_string, Span, Token, TokenType},
+	lexer::{tokenize_string, Token, TokenType},
 	parser::{Parse as _, ParseError, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	Span,
 };
 
 /// A part of a formatted string literal. Each part is either just a regular string value, or an
@@ -36,7 +37,7 @@ use crate::{
 /// ]
 /// ```
 #[derive(Debug, try_as::macros::TryAsRef)]
-pub enum StringPart {
+pub(crate) enum StringPart {
 	/// A literal string part.
 	Literal(String),
 
@@ -45,7 +46,7 @@ pub enum StringPart {
 }
 
 impl StringPart {
-	pub fn into_expression(self, context: &mut Context) -> Expression {
+	pub(crate) fn into_expression(self, context: &mut Context) -> Expression {
 		match self {
 			StringPart::Expression(expression) => expression,
 			StringPart::Literal(literal) => Expression::ObjectConstructor(ObjectConstructor::string(&literal, Span::unknown(), context)),
@@ -55,7 +56,7 @@ impl StringPart {
 
 /// A wrapper for implementing `Parse` for parsing string literals. In Cabin, all strings are
 /// formatted strings by default, so they require special logic for parsing.
-pub struct CabinString;
+pub(crate) struct CabinString;
 
 impl TryParse for CabinString {
 	type Output = Expression;

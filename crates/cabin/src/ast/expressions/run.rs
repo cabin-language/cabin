@@ -1,11 +1,12 @@
 use crate::{
 	api::context::Context,
-	ast::expressions::{Expression, Spanned, Typed},
+	ast::expressions::{Expression, Spanned},
 	comptime::{memory::VirtualPointer, CompileTime},
 	diagnostics::Diagnostic,
-	lexer::{Span, TokenType},
+	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
+	Span,
 };
 
 /// A `Run` expression in the language. Run-expressions forcibly run an expression at runtime instead of compile-time. Since
@@ -63,12 +64,6 @@ impl CompileTime for RunExpression {
 impl TranspileToC for RunExpression {
 	fn to_c(&self, context: &mut Context, output: Option<String>) -> Result<String, TranspileError> {
 		self.expression.to_c(context, output)
-	}
-}
-
-impl Typed for RunExpression {
-	fn get_type(&self, context: &mut Context) -> anyhow::Result<VirtualPointer> {
-		self.expression.get_type(context)
 	}
 }
 

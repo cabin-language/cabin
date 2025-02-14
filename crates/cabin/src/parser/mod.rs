@@ -37,7 +37,7 @@ pub enum ParseError {
 
 /// A trait for treating a collection of tokens as a queue of tokens that can be parsed. This is
 /// traditionally implemented for `VecDeque<Token>`.
-pub trait TokenQueueFunctionality {
+pub(crate) trait TokenQueueFunctionality {
 	/// Removes and returns the next token's value in the queue if the token matches the given token type. If it
 	/// does not (or the token stream is empty), an error is returned.
 	///
@@ -47,23 +47,6 @@ pub trait TokenQueueFunctionality {
 	/// # Returns
 	/// A `Result` containing either the value of the popped token or an `Error`.
 	fn pop(&mut self, token_type: TokenType) -> Result<Token, Diagnostic>;
-
-	/// Removes and returns the next token's type in the queue if the token matches the given token type. If it
-	/// does not (or the token stream is empty), an error is returned.
-	///
-	/// # Parameters
-	/// - `token_type` - The type of token to pop.
-	///
-	/// # Returns
-	/// A `Result` containing either the type of the popped token or an `Error`.
-	fn pop_type(&mut self, token_type: TokenType) -> Result<TokenType, Diagnostic>;
-
-	/// Returns a reference to the next token in the queue without removing it. If the queue is empty, `None`
-	/// is returned.
-	///
-	/// # Returns
-	/// A reference to the next token in the queue or `None` if the queue is empty.
-	fn peek(&self) -> Result<&str, Diagnostic>;
 
 	fn peek_type(&self) -> Result<TokenType, Diagnostic>;
 
@@ -96,22 +79,6 @@ pub trait TokenQueueFunctionality {
 }
 
 impl TokenQueueFunctionality for TokenQueue {
-	fn peek(&self) -> Result<&str, Diagnostic> {
-		let mut index = 0;
-		let mut next = self.get(index).ok_or_else(|| Diagnostic {
-			span: Span::unknown(),
-			info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
-		})?;
-		while next.token_type.is_whitespace() {
-			index += 1;
-			next = self.get(index).ok_or_else(|| Diagnostic {
-				span: Span::unknown(),
-				info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
-			})?;
-		}
-		Ok(&next.value)
-	}
-
 	fn peek_type(&self) -> Result<TokenType, Diagnostic> {
 		let mut index = 0;
 		let mut next = self.get(index).ok_or_else(|| Diagnostic {
@@ -192,34 +159,6 @@ impl TokenQueueFunctionality for TokenQueue {
 		});
 	}
 
-	fn pop_type(&mut self, token_type: TokenType) -> Result<TokenType, Diagnostic> {
-		let mut maybe_whitespace = TokenType::Whitespace;
-		while maybe_whitespace.is_whitespace() {
-			if let Some(token) = self.pop_front() {
-				maybe_whitespace = token.token_type;
-
-				if token.token_type == token_type {
-					return Ok(token.token_type);
-				}
-
-				if !maybe_whitespace.is_whitespace() {
-					return Err(Diagnostic {
-						span: token.span,
-						info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedToken {
-							expected: token_type,
-							actual: token.token_type,
-						})),
-					});
-				}
-			}
-		}
-
-		return Err(Diagnostic {
-			span: Span::unknown(),
-			info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedEOF { expected: token_type })),
-		});
-	}
-
 	fn current_position(&self) -> Option<Span> {
 		self.front().map(|front| front.span)
 	}
@@ -254,16 +193,16 @@ impl ListType {
 	}
 }
 
-pub trait TryParse {
+pub(crate) trait TryParse {
 	type Output;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic>;
 }
 
-pub trait Parse {
+pub(crate) trait Parse {
 	type Output;
 
 	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output;
 }
 
-pub type TokenQueue = VecDeque<Token>;
+pub(crate) type TokenQueue = VecDeque<Token>;

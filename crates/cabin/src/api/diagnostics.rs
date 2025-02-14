@@ -2,13 +2,7 @@ use std::fmt::Display;
 
 use convert_case::{Case, Casing as _};
 
-use super::context::Context;
-use crate::{
-	ast::expressions::Spanned,
-	comptime::CompileTimeError,
-	lexer::{Span, TokenizeError},
-	parser::ParseError,
-};
+use crate::{comptime::CompileTimeError, lexer::TokenizeError, parser::ParseError, Context, Span, Spanned};
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum Warning {

@@ -1,2 +1,4 @@
 let Text = builtin.Text;
+let system = builtin.system;
+let terminal = builtin.system.terminal;
 let print = builtin.system.terminal.print;

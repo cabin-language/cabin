@@ -14,7 +14,6 @@ use crate::{
 			object::InternalFieldValue,
 			parameter::Parameter,
 			Expression,
-			Spanned,
 		},
 		misc::tag::TagList,
 	},
@@ -22,9 +21,11 @@ use crate::{
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	if_then_some,
-	lexer::{Span, TokenType},
+	lexer::TokenType,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	Span,
+	Spanned,
 };
 
 #[derive(Debug, Clone)]
@@ -243,43 +244,43 @@ impl Spanned for FunctionDeclaration {
 }
 
 impl FunctionDeclaration {
-	pub fn error() -> &'static FunctionDeclaration {
+	pub(crate) fn error() -> &'static FunctionDeclaration {
 		&ERROR
 	}
 
-	pub const fn body(&self) -> Option<&Expression> {
+	pub(crate) const fn body(&self) -> Option<&Expression> {
 		self.body.as_ref()
 	}
 
-	pub const fn return_type(&self) -> Option<&Expression> {
+	pub(crate) const fn return_type(&self) -> Option<&Expression> {
 		self.return_type.as_ref()
 	}
 
-	pub fn parameters(&self) -> &[Parameter] {
+	pub(crate) fn parameters(&self) -> &[Parameter] {
 		&self.parameters
 	}
 
-	pub const fn tags(&self) -> &TagList {
+	pub(crate) const fn tags(&self) -> &TagList {
 		&self.tags
 	}
 
-	pub const fn name(&self) -> &Name {
+	pub(crate) const fn name(&self) -> &Name {
 		&self.name
 	}
 
-	pub const fn this_object(&self) -> Option<&Expression> {
+	pub(crate) const fn this_object(&self) -> Option<&Expression> {
 		self.this_object.as_ref()
 	}
 
-	pub fn set_this_object(&mut self, this_object: Expression) {
+	pub(crate) fn set_this_object(&mut self, this_object: Expression) {
 		self.this_object = Some(this_object);
 	}
 
-	pub fn compile_time_parameters(&self) -> &[Parameter] {
+	pub(crate) fn compile_time_parameters(&self) -> &[Parameter] {
 		&self.compile_time_parameters
 	}
 
-	pub fn set_name(&mut self, name: Name) {
+	pub(crate) fn set_name(&mut self, name: Name) {
 		self.name = name;
 	}
 }

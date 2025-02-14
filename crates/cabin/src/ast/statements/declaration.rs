@@ -3,43 +3,34 @@ use convert_case::{Case, Casing as _};
 use crate::{
 	api::{context::Context, scope::ScopeId},
 	ast::{
-		expressions::{name::Name, Expression, Spanned},
+		expressions::{name::Name, Expression},
 		misc::tag::TagList,
 		statements::Statement,
 	},
 	comptime::CompileTime,
 	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	if_then_some,
-	lexer::{Span, TokenType},
+	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
+	Span,
+	Spanned,
 };
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DeclarationType {
-	Normal,
-	RepresentAs,
-}
 
 #[derive(Debug, Clone)]
 pub struct Declaration {
 	name: Name,
 	scope_id: ScopeId,
-	declaration_type: DeclarationType,
 	span: Span,
 }
 
 impl Declaration {
-	pub const fn name(&self) -> &Name {
+	pub(crate) const fn name(&self) -> &Name {
 		&self.name
 	}
 
-	pub fn value<'a>(&self, context: &'a Context) -> &'a Expression {
+	pub(crate) fn value<'a>(&self, context: &'a Context) -> &'a Expression {
 		context.scope_tree.get_variable_from_id(self.name.clone(), self.scope_id).unwrap()
-	}
-
-	pub const fn declaration_type(&self) -> &DeclarationType {
-		&self.declaration_type
 	}
 }
 
@@ -123,7 +114,6 @@ impl TryParse for Declaration {
 		Ok(Statement::Declaration(Declaration {
 			name,
 			scope_id: context.scope_tree.unique_id(),
-			declaration_type: DeclarationType::Normal,
 			span: start.to(end),
 		}))
 	}
