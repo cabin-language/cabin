@@ -1,11 +1,9 @@
-[description]
-name = "unnamed"
+[information]
+name = "dev-testing"
 description = "An example cabin project."
 version = "0.1.0"
+type = "program"
 
 [options]
-quiet = false
-developer_mode = false
-detailed_errors = true
-tab_size = 4
-theme = "catppuccin-mocha"
+
+[libraries]

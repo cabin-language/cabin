@@ -1,28 +1,12 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 
 use crate::{
-	api::{
-		context::Context,
-		scope::{ScopeId, ScopeType},
-		traits::TryAs,
-	},
-	comptime::{memory::VirtualPointer, CompileTime},
+	ast::statements::Statement,
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	lexer::{Span, Token, TokenType},
-	parser::{
-		expressions::{
-			field_access::FieldAccessType,
-			literal::LiteralObject,
-			object::{Field, ObjectConstructor},
-			Spanned as _,
-		},
-		statements::{declaration::Declaration, tag::TagList, Statement},
-	},
-	Error,
+	lexer::{Token, TokenType},
+	Context,
+	Span,
 };
-
-pub mod expressions;
-pub mod statements;
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum ParseError {
@@ -49,124 +33,6 @@ pub enum ParseError {
 
 	#[error("Duplicate field \"{0}\"")]
 	DuplicateField(String),
-}
-
-#[derive(Debug)]
-pub struct Program {
-	statements: Vec<Statement>,
-	inner_scope_id: ScopeId,
-}
-
-impl Parse for Program {
-	type Output = Self;
-
-	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
-		context.scope_data.enter_new_scope(ScopeType::File);
-		let inner_scope_id = context.scope_data.unique_id();
-		let mut statements = Vec::new();
-
-		while !tokens.is_all_whitespace() {
-			statements.push(Statement::parse(tokens, context));
-		}
-
-		context.scope_data.exit_scope().unwrap();
-
-		Program { statements, inner_scope_id }
-	}
-}
-
-impl CompileTime for Program {
-	type Output = Program;
-
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		let scope_reverter = context.scope_data.set_current_scope(self.inner_scope_id);
-		let evaluated = Self {
-			statements: self.statements.into_iter().map(|statement| statement.evaluate_at_compile_time(context)).collect(),
-			inner_scope_id: self.inner_scope_id,
-		};
-		scope_reverter.revert(context);
-		evaluated
-	}
-}
-
-#[derive(Debug)]
-pub struct Module {
-	declarations: Vec<Declaration>,
-	inner_scope_id: ScopeId,
-}
-
-impl Parse for Module {
-	type Output = Self;
-
-	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
-		context.scope_data.enter_new_scope(ScopeType::File);
-		let inner_scope_id = context.scope_data.unique_id();
-		let mut declarations = Vec::new();
-
-		while !tokens.is_all_whitespace() {
-			let statement = Statement::parse(tokens, context);
-
-			match statement {
-				Statement::Declaration(declaration) => {
-					declarations.push(declaration);
-				},
-				Statement::Error(_span) => {},
-				statement => context.add_diagnostic(Diagnostic {
-					span: statement.span(context),
-					info: DiagnosticInfo::Error(Error::Parse(ParseError::InvalidTopLevelStatement { statement })),
-				}),
-			};
-		}
-
-		context.scope_data.exit_scope().unwrap();
-		Module { declarations, inner_scope_id }
-	}
-}
-
-impl CompileTime for Module {
-	type Output = Module;
-
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		let scope_reverter = context.scope_data.set_current_scope(self.inner_scope_id);
-		let evaluated = Self {
-			declarations: self.declarations.into_iter().map(|statement| statement.evaluate_at_compile_time(context)).collect(),
-			inner_scope_id: self.inner_scope_id,
-		};
-		scope_reverter.revert(context);
-		evaluated
-	}
-}
-
-impl Module {
-	pub fn to_pointer(&self, context: &mut Context) -> VirtualPointer {
-		LiteralObject {
-			type_name: "Module".into(),
-			fields: self
-				.declarations
-				.iter()
-				.map(|declaration| {
-					(
-						declaration.name().to_owned(),
-						*declaration
-							.value(context)
-							.clone()
-							.evaluate_at_compile_time(context)
-							.try_as::<VirtualPointer>()
-							.unwrap_or(&VirtualPointer::ERROR),
-					)
-				})
-				.collect(),
-			internal_fields: HashMap::new(),
-			field_access_type: FieldAccessType::Normal,
-			outer_scope_id: context.scope_data.unique_id(),
-			inner_scope_id: None,
-			name: "module".into(),
-			address: None,
-			span: Span::unknown(),
-			tags: TagList::default(),
-		}
-		.store_in_memory(context)
-	}
 }
 
 /// A trait for treating a collection of tokens as a queue of tokens that can be parsed. This is
@@ -234,13 +100,13 @@ impl TokenQueueFunctionality for TokenQueue {
 		let mut index = 0;
 		let mut next = self.get(index).ok_or_else(|| Diagnostic {
 			span: Span::unknown(),
-			info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
+			info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
 		})?;
 		while next.token_type.is_whitespace() {
 			index += 1;
 			next = self.get(index).ok_or_else(|| Diagnostic {
 				span: Span::unknown(),
-				info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
+				info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
 			})?;
 		}
 		Ok(&next.value)
@@ -250,13 +116,13 @@ impl TokenQueueFunctionality for TokenQueue {
 		let mut index = 0;
 		let mut next = self.get(index).ok_or_else(|| Diagnostic {
 			span: Span::unknown(),
-			info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
+			info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
 		})?;
 		while next.token_type.is_whitespace() {
 			index += 1;
 			next = self.get(index).ok_or_else(|| Diagnostic {
 				span: Span::unknown(),
-				info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
+				info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
 			})?;
 		}
 		Ok(next.token_type)
@@ -268,26 +134,26 @@ impl TokenQueueFunctionality for TokenQueue {
 		// The one time I'd enjoy a do-while loop
 		let mut next = self.get(index).ok_or_else(|| Diagnostic {
 			span: Span::unknown(),
-			info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
+			info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
 		})?;
 		index += 1;
 		while next.token_type.is_whitespace() {
 			next = self.get(index).ok_or_else(|| Diagnostic {
 				span: Span::unknown(),
-				info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
+				info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
 			})?;
 			index += 1;
 		}
 
 		let mut next_next = self.get(index).ok_or_else(|| Diagnostic {
 			span: Span::unknown(),
-			info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
+			info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
 		})?;
 		while next_next.token_type.is_whitespace() {
 			index += 1;
 			next_next = self.get(index).ok_or_else(|| Diagnostic {
 				span: Span::unknown(),
-				info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedGenericEOF)),
+				info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
 			})?;
 		}
 
@@ -311,7 +177,7 @@ impl TokenQueueFunctionality for TokenQueue {
 				if !maybe_whitespace.is_whitespace() {
 					return Err(Diagnostic {
 						span: token.span,
-						info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedToken {
+						info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedToken {
 							expected: token_type,
 							actual: token.token_type,
 						})),
@@ -322,7 +188,7 @@ impl TokenQueueFunctionality for TokenQueue {
 
 		return Err(Diagnostic {
 			span: Span::unknown(),
-			info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedEOF { expected: token_type })),
+			info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedEOF { expected: token_type })),
 		});
 	}
 
@@ -339,7 +205,7 @@ impl TokenQueueFunctionality for TokenQueue {
 				if !maybe_whitespace.is_whitespace() {
 					return Err(Diagnostic {
 						span: token.span,
-						info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedToken {
+						info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedToken {
 							expected: token_type,
 							actual: token.token_type,
 						})),
@@ -350,7 +216,7 @@ impl TokenQueueFunctionality for TokenQueue {
 
 		return Err(Diagnostic {
 			span: Span::unknown(),
-			info: DiagnosticInfo::Error(Error::Parse(ParseError::UnexpectedEOF { expected: token_type })),
+			info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedEOF { expected: token_type })),
 		});
 	}
 
@@ -359,54 +225,7 @@ impl TokenQueueFunctionality for TokenQueue {
 	}
 }
 
-impl Module {
-	pub fn into_literal(self, context: &mut Context) -> anyhow::Result<LiteralObject> {
-		Ok(LiteralObject {
-			type_name: "Object".into(),
-			fields: self
-				.declarations
-				.into_iter()
-				.map(|declaration| {
-					let name = declaration.name().to_owned();
-					let value = declaration.value(context);
-					(name, value.try_as::<VirtualPointer>().unwrap().to_owned())
-				})
-				.collect(),
-			internal_fields: HashMap::new(),
-			field_access_type: FieldAccessType::Normal,
-			inner_scope_id: Some(self.inner_scope_id),
-			outer_scope_id: self.inner_scope_id,
-			name: "anonymous_module".into(),
-			address: None,
-			span: Span::unknown(),
-			tags: TagList::default(),
-		})
-	}
-
-	pub fn into_object(self, context: &mut Context) -> anyhow::Result<ObjectConstructor> {
-		Ok(ObjectConstructor {
-			type_name: "Module".into(),
-			fields: self
-				.declarations
-				.into_iter()
-				.map(|declaration| {
-					let name = declaration.name().to_owned();
-					let value = Some(declaration.value(context).clone());
-					Field { name, value, field_type: None }
-				})
-				.collect(),
-			internal_fields: HashMap::new(),
-			field_access_type: FieldAccessType::Normal,
-			inner_scope_id: self.inner_scope_id,
-			outer_scope_id: self.inner_scope_id,
-			name: "anonymous_module".into(),
-			span: Span::unknown(),
-			tags: TagList::default(),
-		})
-	}
-}
-
-pub enum ListType {
+pub(crate) enum ListType {
 	AngleBracketed,
 	Braced,
 	Bracketed,
@@ -415,7 +234,7 @@ pub enum ListType {
 }
 
 impl ListType {
-	const fn opening(&self) -> TokenType {
+	pub(crate) const fn opening(&self) -> TokenType {
 		match self {
 			Self::AngleBracketed => TokenType::LeftAngleBracket,
 			Self::Braced => TokenType::LeftBrace,
@@ -425,7 +244,7 @@ impl ListType {
 		}
 	}
 
-	const fn closing(&self) -> TokenType {
+	pub(crate) const fn closing(&self) -> TokenType {
 		match self {
 			Self::AngleBracketed => TokenType::RightAngleBracket,
 			Self::Braced => TokenType::RightBrace,
@@ -448,7 +267,3 @@ pub trait Parse {
 }
 
 pub type TokenQueue = VecDeque<Token>;
-
-pub trait ToCabin {
-	fn to_cabin(&self) -> String;
-}

@@ -1,5 +1,5 @@
 pub mod builtin;
-pub mod config_files;
+pub mod config;
 pub mod context;
 pub mod diagnostics;
 pub mod macros;

@@ -5,11 +5,10 @@ use indoc::indoc;
 
 use crate::{
 	lsp::text_document::{
-		diagnostics::{get_diagnostics, Diagnostic, PublishDiagnosticParams},
+		diagnostics::{get_diagnostics, PublishDiagnosticParams},
 		did_change::TextDocumentDidChangeEvent,
 		hover::HoverResult,
 		Position,
-		Range,
 		TextDocumentIdentifier,
 		TextDocumentItem,
 		VersionTextDocumentIdentifier,
@@ -150,8 +149,8 @@ impl Request {
 
                             # Mutability
 
-                            `let` declarations may optionally specify a type on the value, indicating that it
-                            can be reassigned:
+                            `let` declarations may optionally specify a type on the value, indicating that 
+							it can be reassigned:
 
                             ```cabin
                             let message: Text = "Hello world!";
@@ -172,7 +171,8 @@ impl Request {
                             group
                             =====
 
-                            `group` is used to declare a group type, similar to a `struct` in other languages:
+                            `group` is used to declare a group type, similar to a `struct` in other 
+							languages:
 
                             ```cabin
                             let Person = group {
@@ -188,8 +188,9 @@ impl Request {
 
                             # Nominality
 
-                            Groups are nominally typed, meaning even if two groups share the same structure,
-                            you cannot use them interchangeably, i.e., the following isn't valid:
+                            Groups are nominally typed, meaning even if two groups share the same 
+							structure, you cannot use them interchangeably, i.e., the following isn't 
+							valid:
 
                             ```cabin
                             let Point = group { x: Number, y: Number };
@@ -302,6 +303,98 @@ impl Request {
 
                             Default extensions cannot be bound to a name.
                             "#,
+						),
+						TokenType::KeywordNew => indoc!(
+							r#"
+							new
+							===
+
+							`new` is used to create a new instance of a `group`:
+
+                            ```cabin
+                            let Person = group {
+                                name: Text,
+                                age: Number
+                            };
+
+                            let john = new Person {
+                                name = "John",
+                                age = 30
+                            };
+							```
+							"#
+						),
+						TokenType::KeywordAction => indoc!(
+							r#"
+                            action
+                            ======
+
+                            `action` takes a list of statements and runs them when it's called:
+
+                            ```cabin
+                            let print_hello = action {
+                                print("Hello!");
+                            };
+
+                            print_hello(); # Prints "Hello!"
+                            ```
+
+                            # Returning
+
+                            `action` can give a value back to the caller by breaking from the
+                            `return` label:
+
+                            ```cabin
+                            let get_name = action: Text {
+                                return is "john";
+                            };
+
+                            let name = get_name();
+                            ```
+
+                            # Parameters
+
+                            `actions` can take parameters:
+
+                            ```cabin
+                            let capitalize = action(text: Text): Text {
+                                return is text.uppercase();
+                            };
+                            ```
+
+                            # Compile-Time Parameters
+
+                            `actions` may also specify parameters in angle brackets to indicate
+                            that their values must be known at compile-time:
+
+                            ```cabin
+                            let compile_time_capitalize = action<text: Text>: Text {
+                                return is text.uppercase();
+                            };
+
+                            let uppercase = compile_time_capitalize<"john">;
+                            ```
+
+                            Compile-Time parameters don't need to specify a type, they will default
+                            to `Anything`:
+
+                            ```cabin
+                            let do_something = action<T> { # equivalent to <T: Anything>
+                                # ...
+                            };
+                            ```
+
+                            Furthermore, compile-time parameters may be used as types of runtime
+                            parameters:
+
+                            ```cabin
+                            let do_something = action<T>(value: T) {
+                                # ...
+                            };
+
+                            do_something<Text>("Hello");
+                            ```
+                            "#
 						),
 						_ => "",
 					})

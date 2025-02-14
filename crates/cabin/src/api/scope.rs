@@ -2,10 +2,10 @@ use std::{collections::HashMap, fmt::Debug};
 
 use colored::Colorize as _;
 
-use super::context::Context;
-use crate::parser::{
-	expressions::{name::Name, Expression},
-	ParseError,
+use crate::{
+	api::context::Context,
+	ast::expressions::{name::Name, Expression},
+	parser::ParseError,
 };
 
 /// Scopes never get deleted, so all `ScopeIds` are always guaranteed to point to a valid `Scope`.
@@ -603,6 +603,6 @@ pub struct ScopeReverter(ScopeId);
 
 impl ScopeReverter {
 	pub fn revert(&self, context: &mut Context) {
-		context.scope_data.current_scope = self.0 .0;
+		context.scope_tree.current_scope = self.0 .0;
 	}
 }

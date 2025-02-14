@@ -4,9 +4,10 @@ use convert_case::{Case, Casing as _};
 
 use super::context::Context;
 use crate::{
+	ast::expressions::Spanned,
 	comptime::CompileTimeError,
 	lexer::{Span, TokenizeError},
-	parser::{expressions::Spanned, ParseError},
+	parser::ParseError,
 };
 
 #[derive(Clone, Debug, thiserror::Error)]

@@ -13,3 +13,19 @@ pub trait CabinCommand {
 pub enum SubCommand {
 	Run(RunCommand),
 }
+
+#[macro_export]
+macro_rules! check_errors {
+	($diagnostics: expr) => {
+		if !$diagnostics.errors().is_empty() {
+			eprintln!();
+
+			for (error, _span) in $diagnostics.errors() {
+				eprintln!("{} {error}\n", "Error:".bold().red());
+			}
+
+			eprintln!("{} due to the errors above.\n", "Cancelling".bold().red());
+			return;
+		}
+	};
+}

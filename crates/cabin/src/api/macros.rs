@@ -1,67 +1,9 @@
 use super::context::Context;
 use crate::{
+	ast::expressions::{object::ObjectConstructor, Expression},
 	comptime::CompileTime,
 	lexer::Span,
-	parser::expressions::{object::ObjectConstructor, Expression},
 };
-
-/// Returns a `err!()` from the current function, wrapped in a `Result::Err()`.
-#[macro_export]
-macro_rules! bail_err {
-	(
-		$($tokens: tt)*
-    ) => {
-		return Err($crate::err!($($tokens)*))
-	};
-}
-
-/// If someone could make it so that this doesn't require a trailing comma I will actually serve you for life
-#[macro_export]
-macro_rules! err {
-	(
-        base = $base: expr,
-        $(while = $process: expr,)?
-        $(position = $position: expr,)?
-        $(details = $details: expr,)?
-    ) => {{
-        use colored::Colorize as _;
-
-		#[allow(clippy::needless_update, reason = "Sometimes all values are given, sometimes not.")]
-		let error = $crate::api::macros::CabinError {
-            base: Some(anyhow::anyhow!($base)),
-            $(process: Some("while ".to_owned() + &$process),)?
-            $(at: Some($position),)?
-            $(details: Some($details),)?
-            .. Default::default()
-        };
-
-
-        anyhow::anyhow!("{}{}", error.base.unwrap(), if let Some(process) = error.process { format!("\n\t{}", process).dimmed() } else { String::new().bold() })
-	}}
-}
-
-/// Equivalent to `err!`, but returns a closure that takes an error as a parameter and uses that error as the base for
-/// the error stack. This is generally used in `map_err()`, i.e.:
-///
-/// ```rust
-/// try_something().map_err(mapped_err! {
-/// 	while = "trying to do something",
-/// 	context = context,
-/// })?;
-/// ```
-#[macro_export]
-macro_rules! mapped_err {
-	(
-		$($tokens: tt)*
-    ) => {
-		|error| {
-			$crate::err! {
-				base = error,
-				$($tokens)*
-			}
-		}
-	};
-}
 
 /// Returns the fully qualified path to the current function, similar to how `file!()` from `std` works, but for function names.
 ///
@@ -149,39 +91,9 @@ macro_rules! parse_list {
 	}};
 }
 
-#[derive(Default)]
-pub struct CabinError {
-	pub base: Option<anyhow::Error>,
-	pub details: Option<String>,
-	pub at: Option<Span>,
-	pub process: Option<String>,
-}
-
 #[macro_export]
 macro_rules! here {
 	() => {
 		$crate::api::context::SourceFilePosition::new(std::line!(), std::column!(), std::file!(), $crate::function!())
 	};
-}
-
-#[macro_export]
-macro_rules! warn {
-	(
-		$($tokens: tt)*
-	) => {
-		$crate::api::context::context().add_warning(format!($($tokens)*));
-	};
-}
-
-#[macro_export]
-macro_rules! expression {
-	($($tokens: tt)*) => {{
-		use $crate::parser::Parse as _;
-		let code = format!($($tokens)*);
-		let mut tokens = $crate::lexer::tokenize_without_prelude(&code);
-		match tokens {
-			Ok(tokens) => $crate::parser::expressions::Expression::parse(&mut tokens),
-			Err(error) => Err(error)
-		}
-	}};
 }

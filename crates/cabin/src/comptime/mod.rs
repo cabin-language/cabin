@@ -39,5 +39,5 @@ pub enum CompileTimeError {
 	ExpressionUsedAsType,
 
 	#[error("No property \"{0}\" exists on this value")]
-	FieldNotFound(String),
+	NoSuchField(String),
 }

@@ -4,6 +4,8 @@ let Nothing = either {
 	nothing
 }; 
 
+let RepresentAs = group {};
+
 let Optional = choice<Data> {
 	Data,
 	Nothing
@@ -37,6 +39,8 @@ let Function = group {
 };
 
 let system_side_effects = new Object {};
+let no_side_effects = new Object {};
+let default = new Object {};
 
 let RuntimeTag = group {
 	reason: Text
@@ -73,12 +77,13 @@ let builtin_function = action<name: Text>: BuiltinTag {
 
 let Number = group {}; 
 
-let AddableTo = group<Operand: Anything, Result: Anything> {
+let Addable = group<Operand: Anything, Result: Anything> {
+
+	#[no_side_effects]
 	plus: action(this: This, other: Operand): Result
 }; 
 
-let Addable = group {};
-
+#[default]
 let AddNumbers = extensionof Number tobe Addable { 
 	plus = action(this: Number, other: Number): Number,
 };
@@ -124,6 +129,7 @@ let Compareable = group {
 	compared_to: action(this: This, other: This): Ordering
 };
 
+#[default]
 let CompareablesAreEqualable = extensionof Compareable tobe Equalable {
 	equals = action(this: This, other: This): Boolean {
 		return is this.compared_to(other) == Ordering.equal;

@@ -1,6 +1,7 @@
 use colored::Colorize as _;
 
 use super::CabinCommand;
+use crate::check_errors;
 
 /// Run a cabin file or project.
 #[derive(clap::Parser)]
@@ -8,15 +9,26 @@ pub struct RunCommand {}
 
 impl CabinCommand for RunCommand {
 	fn execute(self) {
-		let program = std::fs::read_to_string("./src/main.cabin").unwrap_or_else(|_| {
-			println!("{} No main file found.", "Error:".bold().red());
-			std::process::exit(1);
-		});
+		let mut project = match cabin::Project::new(std::env::current_dir().unwrap()) {
+			Ok(project) => project,
+			Err(error) => {
+				eprintln!("\n{} {error}\n", "Error:".bold().red());
+				return;
+			},
+		};
 
-		let context = cabin::check_program(&program);
+		// Compile-time evaluation
+		println!("{} {}...", "\nRunning".bold().green(), project.config().information().name().bold());
+		println!("    {} compile-time code...", "Running".bold().green());
+		let diagnostics = project.run_compile_time_code();
+		check_errors!(diagnostics);
 
-		for (error, _span) in context.diagnostics().errors() {
-			println!("{} {error}", "Error:".bold().red());
-		}
+		// Compilation
+		println!("    {} compile-time evaluated code...", "Compiling".bold().green());
+		let c = project.transpile().unwrap();
+		std::fs::write("./output.c", c).unwrap();
+
+		// Running
+		println!("    {} runtime code...", "Running".bold().green());
 	}
 }

@@ -3,9 +3,9 @@ use std::{collections::VecDeque, fmt::Write as _, io::Write};
 use super::context::Context;
 use crate::{
 	api::{macros::string, scope::ScopeId, traits::TryAs as _},
+	ast::expressions::{name::Name, object::ObjectConstructor, Expression},
 	comptime::{memory::VirtualPointer, CompileTime},
 	lexer::Span,
-	parser::expressions::{name::Name, object::ObjectConstructor, Expression},
 };
 
 pub struct BuiltinFunction {
@@ -20,13 +20,7 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 			let returned_object = call_builtin_at_compile_time("Anything.to_string", context, caller_scope_id, vec![pointer], span);
 			let string_value = returned_object.try_as_literal(context).try_as::<String>().unwrap().to_owned();
 
-			if context.lines_printed == 0 && !context.config().options().quiet() {
-				//println!("\n");
-				context.lines_printed += 1;
-			}
-
 			println!("{string_value}");
-			context.lines_printed += string_value.chars().filter(|character| character == &'\n').count() + 1;
 
 			Expression::ErrorExpression(Span::unknown())
 		},
@@ -37,12 +31,6 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 			let options = arguments.pop_front().unwrap().try_as::<VirtualPointer>().unwrap_or(&VirtualPointer::ERROR).virtual_deref(context);
 			let prompt = options.get_field_literal("prompt").unwrap().virtual_deref(context).get_internal_field::<String>("internal_value").unwrap().to_owned();
 
-			if context.lines_printed == 0 {
-				println!("\n");
-				context.lines_printed += 1;
-			}
-
-			context.lines_printed += 1;
 			print!("{prompt}");
 			std::io::stdout().flush().unwrap();
 			let mut line = String::new();

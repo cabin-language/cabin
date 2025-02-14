@@ -2,12 +2,13 @@ use std::{collections::HashMap, fmt::Debug};
 
 use crate::{
 	api::{context::Context, scope::ScopeId, traits::TryAs as _},
+	ast::{
+		expressions::{field_access::FieldAccessType, literal::LiteralObject, Expression, Spanned, Typed},
+		misc::tag::TagList,
+	},
 	comptime::CompileTime,
 	lexer::Span,
-	parser::{
-		expressions::{field_access::FieldAccessType, literal::LiteralObject, Expression, Spanned, Typed},
-		statements::tag::TagList,
-	},
+	transpiler::{TranspileError, TranspileToC},
 };
 
 /// A pointer to a `LiteralObject` in `VirtualMemory`.
@@ -62,6 +63,20 @@ impl CompileTime for VirtualPointer {
 		let evaluated = self.virtual_deref(context).clone().evaluate_at_compile_time(context);
 		let _ = context.virtual_memory.memory.insert(self.0, evaluated);
 		self
+	}
+}
+
+impl TranspileToC for VirtualPointer {
+	fn to_c(&self, _context: &mut Context, output: Option<String>) -> Result<String, TranspileError> {
+		Ok(format!("{}&literal_{}", output.map(|name| format!("{name} = ")).unwrap_or_default(), self.0))
+	}
+
+	fn c_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
+		self.virtual_deref(context).to_owned().c_prelude(context)
+	}
+
+	fn c_type_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
+		self.virtual_deref(context).to_owned().c_type_prelude(context)
 	}
 }
 
