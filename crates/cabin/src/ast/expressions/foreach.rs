@@ -1,7 +1,10 @@
 use crate::{
 	api::{context::Context, scope::ScopeId, traits::TryAs as _},
-	ast::expressions::{block::Block, name::Name, Expression},
-	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
+	ast::{
+		expressions::{block::Block, name::Name, Expression},
+		sugar::list::LiteralList,
+	},
+	comptime::{memory::ExpressionPointer, CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -17,10 +20,10 @@ pub struct ForEachLoop {
 
 	/// The expression being iterated over. For example, in a loop such as `foreach fruit in fruits { ... }`, this refers to the
 	/// expression `fruits`.
-	iterable: Box<Expression>,
+	iterable: ExpressionPointer,
 
 	/// The body of the loop. This is the code that gets run when each iteration of the loop.
-	body: Box<Expression>,
+	body: Block,
 
 	/// The scope id of for the *inside* of the loop.
 	inner_scope_id: ScopeId,
@@ -39,7 +42,7 @@ impl TryParse for ForEachLoop {
 
 		let _ = tokens.pop(TokenType::KeywordIn)?;
 
-		let iterable = Box::new(Expression::parse(tokens, context));
+		let iterable = Expression::parse(tokens, context);
 
 		let body = Block::try_parse(tokens, context)?;
 
@@ -47,10 +50,8 @@ impl TryParse for ForEachLoop {
 
 		// Add the binding name to scope
 		let inner_scope_id = body.inner_scope_id();
-		if let Err(error) = context
-			.scope_tree
-			.declare_new_variable_from_id(binding_name.clone(), Expression::ErrorExpression(Span::unknown()), inner_scope_id)
-		{
+		let error = Expression::error(Span::unknown(), context);
+		if let Err(error) = context.scope_tree.declare_new_variable_from_id(binding_name.clone(), error, inner_scope_id) {
 			context.add_diagnostic(Diagnostic {
 				span: binding_name.span(context),
 				info: DiagnosticInfo::Error(error),
@@ -59,7 +60,7 @@ impl TryParse for ForEachLoop {
 
 		Ok(ForEachLoop {
 			binding_name,
-			body: Box::new(Expression::Block(body)),
+			body,
 			iterable,
 			inner_scope_id,
 			span: start.to(end),
@@ -68,41 +69,32 @@ impl TryParse for ForEachLoop {
 }
 
 impl CompileTime for ForEachLoop {
-	type Output = Expression;
+	type Output = ExpressionPointer;
 
 	fn evaluate_at_compile_time(mut self, context: &mut Context) -> Self::Output {
-		self.iterable = Box::new(self.iterable.evaluate_at_compile_time(context));
+		self.iterable = self.iterable.evaluate_at_compile_time(context);
 
-		let default = Vec::new();
-		let literal = self.iterable.as_ref().try_as::<VirtualPointer>();
+		let literal = self.iterable.try_as_literal(context);
 		if let Ok(pointer) = literal {
-			if !pointer.is_list(context) {
+			if !pointer.literal(context).is::<LiteralList>() {
 				context.add_diagnostic(Diagnostic {
 					span: self.iterable.span(context),
 					info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::IterateOverNonList)),
 				});
-				return Expression::ForEachLoop(self);
+				return Expression::ForEachLoop(self).store_in_memory(context);
 			}
 
-			let elements = pointer
-				.virtual_deref(context)
-				.try_as::<Vec<Expression>>()
-				.unwrap_or_else(|_| &default)
-				.to_owned()
-				.into_iter()
-				.map(|element| element.evaluate_at_compile_time(context))
-				.collect::<Vec<_>>();
+			let elements = pointer.literal(context).try_as::<LiteralList>().cloned().unwrap_or_else(|_| LiteralList::empty());
 
-			for element in elements {
-				context.scope_tree.reassign_variable_from_id(&self.binding_name, element.clone(), self.inner_scope_id);
-				let value = self.body.clone().evaluate_at_compile_time(context);
-				if value.is_pointer() {
-					return value;
-				}
+			for element in &*elements {
+				context
+					.scope_tree
+					.reassign_variable_from_id(&self.binding_name, element.clone().into(), self.inner_scope_id);
+				let _value = self.body.clone().evaluate_at_compile_time(context);
 			}
 		}
 
-		Expression::ForEachLoop(self)
+		Expression::ForEachLoop(self).store_in_memory(context)
 	}
 }
 

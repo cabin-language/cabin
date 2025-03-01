@@ -25,27 +25,31 @@ fn diagnostic_code(diagnostic: &cabin::diagnostics::Diagnostic) -> u8 {
 }
 
 pub fn get_diagnostics(state: &State, logger: &mut Logger, uri: &str) -> anyhow::Result<Vec<Diagnostic>> {
-	let code = state.files.get(uri).unwrap();
 	logger.log("\n*Checking for diagnostics...*")?;
-	let context = if uri.ends_with("/main.cabin") {
-		cabin::check_program(code)
-	} else {
-		cabin::check_module(code)
+
+	let code = state.files.get(uri).unwrap();
+
+	let mut project = match cabin::Project::from_child(std::env::current_dir().unwrap()) {
+		Ok(project) => project,
+		Err(error) => anyhow::bail!(error),
 	};
+
+	let diagnostics = project.run_compile_time_code();
+
 	logger.log("\n*Done checking. Reporting diagnostics.*")?;
-	Ok(context
-		.diagnostics()
+
+	Ok(diagnostics
 		.to_owned()
 		.into_iter()
 		.map(|diagnostic| {
-			let span = diagnostic.span(&context);
+			let span = diagnostic.span;
 			Diagnostic {
 				severity: diagnostic_code(&diagnostic),
 				message: format!("{diagnostic}"),
 				source: "Cabin Language Server".to_owned(),
 				range: Range {
 					start: span.start_line_column(code).unwrap_or((0, 0)).into(),
-					end: diagnostic.span(&context).end_line_column(code).unwrap_or((0, 0)).into(),
+					end: diagnostic.span.end_line_column(code).unwrap_or((0, 0)).into(),
 				},
 			}
 		})

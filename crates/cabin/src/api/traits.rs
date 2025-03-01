@@ -13,6 +13,13 @@ pub trait TryAs {
 	{
 		self.try_as_ref().ok_or_else(|| anyhow::anyhow!("Incorrect variant"))
 	}
+
+	fn is<T>(&self) -> bool
+	where
+		Self: TryAsRef<T>,
+	{
+		self.try_as::<T>().is_ok()
+	}
 }
 
 impl<T> TryAs for T {}

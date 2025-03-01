@@ -1,10 +1,12 @@
 use std::fmt::Debug;
 
+use function_declaration::FunctionDeclaration;
+use new_literal::Literal;
 // This is required because of a bug in `try_as`
 use try_as::traits::{self as try_as_traits, TryAsMut};
 
 use crate::{
-	api::{context::Context, scope::ScopeData, traits::TryAs as _},
+	api::context::Context,
 	ast::{
 		expressions::{
 			block::Block,
@@ -15,7 +17,6 @@ use crate::{
 			function_call::FunctionCall,
 			group::GroupDeclaration,
 			if_expression::IfExpression,
-			literal::{LiteralConvertible, LiteralObject},
 			name::Name,
 			object::ObjectConstructor,
 			operators::BinaryExpression,
@@ -23,18 +24,18 @@ use crate::{
 			run::{RunExpression, RuntimeableExpression},
 			unary::UnaryOperation,
 		},
-		misc::tag::TagList,
+		sugar::list::List,
 	},
-	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
+	comptime::{memory::ExpressionPointer, CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	parser::{Parse, TokenQueue, TokenQueueFunctionality as _, TryParse as _},
 	transpiler::{TranspileError, TranspileToC},
+	typechecker::{Type, Typed},
 	Span,
 	Spanned,
 };
 
 pub mod block;
-pub mod choice;
 pub mod either;
 pub mod extend;
 pub mod field_access;
@@ -43,8 +44,8 @@ pub mod function_call;
 pub mod function_declaration;
 pub mod group;
 pub mod if_expression;
-pub mod literal;
 pub mod name;
+pub mod new_literal;
 pub mod object;
 pub mod operators;
 pub mod parameter;
@@ -60,16 +61,20 @@ pub enum Expression {
 	Name(Name),
 	ObjectConstructor(ObjectConstructor),
 	ForEachLoop(ForEachLoop),
-	Pointer(VirtualPointer),
 	Run(RunExpression),
 	Unary(UnaryOperation),
 	Parameter(Parameter),
 	Extend(Extend),
+	Group(GroupDeclaration),
+	FunctionDeclaration(FunctionDeclaration),
+	Either(Either),
+	Literal(Literal),
+	List(List),
 	ErrorExpression(Span),
 }
 
 impl Parse for Expression {
-	type Output = Self;
+	type Output = ExpressionPointer;
 
 	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
 		let start = tokens.front().unwrap().span;
@@ -82,213 +87,68 @@ impl Parse for Expression {
 					let _ = tokens.pop(token_type).unwrap();
 				}
 				let end = tokens.front().unwrap().span;
-				Expression::ErrorExpression(start.to(end))
+				Expression::error(start.to(end), context)
 			},
 		}
 	}
 }
 
 impl CompileTime for Expression {
-	type Output = Expression;
+	type Output = ExpressionPointer;
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		match self {
-			Self::Block(block) => block.evaluate_at_compile_time(context),
+			Self::Block(block) => Expression::Block(block.evaluate_at_compile_time(context)).store_in_memory(context),
 			Self::FieldAccess(field_access) => field_access.evaluate_at_compile_time(context),
 			Self::FunctionCall(function_call) => function_call.evaluate_at_compile_time(context),
 			Self::If(if_expression) => if_expression.evaluate_at_compile_time(context),
-			Self::Extend(represent_as) => Expression::Extend(represent_as.evaluate_at_compile_time(context)),
+			Self::Extend(extend) => Expression::Literal(Literal::Extend(extend.evaluate_at_compile_time(context))).store_in_memory(context),
 			Self::Name(name) => name.clone().evaluate_at_compile_time(context),
 			Self::ObjectConstructor(constructor) => constructor.evaluate_at_compile_time(context),
-			Self::Parameter(parameter) => Expression::Parameter(parameter.evaluate_at_compile_time(context)),
-			Self::Unary(unary) => unary.evaluate_at_compile_time(context),
 			Self::ForEachLoop(for_loop) => for_loop.evaluate_at_compile_time(context),
-			Self::Run(run_expression) => Expression::Run(run_expression.evaluate_at_compile_time(context)),
-			Self::Pointer(pointer) => Expression::Pointer(pointer.evaluate_at_compile_time(context)),
-			Self::ErrorExpression(_) => self,
+			Self::Run(run_expression) => Expression::Run(run_expression.evaluate_at_compile_time(context)).store_in_memory(context),
+			Expression::Group(group_declaration) => Expression::Literal(Literal::Group(group_declaration.evaluate_at_compile_time(context))).store_in_memory(context),
+			Expression::FunctionDeclaration(function_declaration) => {
+				Expression::Literal(Literal::FunctionDeclaration(function_declaration.evaluate_at_compile_time(context))).store_in_memory(context)
+			},
+			Expression::Either(either) => Expression::Literal(Literal::Either(either.evaluate_at_compile_time(context))).store_in_memory(context),
+			Self::ErrorExpression(_) => self.store_in_memory(context),
+			Self::Literal(_) => self.store_in_memory(context),
+			Self::List(list) => list.evaluate_at_compile_time(context),
+			Self::Unary(_) | Self::Parameter(_) => todo!(),
 		}
 	}
 }
 
 impl TranspileToC for Expression {
-	fn to_c(&self, context: &mut Context, output: Option<String>) -> Result<String, TranspileError> {
-		Ok(match self {
-			Expression::Block(block) => block.to_c(context, None)?,
-			Expression::If(if_expression) => if_expression.to_c(context, None)?,
-			Expression::Name(name) => name.to_c(context, output)?,
-			Expression::Pointer(pointer) => pointer.to_c(context, output)?,
-			Expression::Run(run_expression) => run_expression.to_c(context, output)?,
-			Expression::FieldAccess(field_access) => field_access.to_c(context, output)?,
-			Expression::ObjectConstructor(object_constructor) => object_constructor.to_c(context, output)?,
-
-			// later...
-			Expression::FunctionCall(function_call) => todo!(),
-			Expression::ForEachLoop(for_each_loop) => todo!(),
-			Expression::Unary(unary_operation) => todo!(),
-
-			// Special cases
-			Expression::Parameter(_parameter) => unreachable!(),
-			Expression::Extend(_extend) => String::new(),
-			Expression::ErrorExpression(_) => return Err(TranspileError::TranspileError),
-		})
+	fn to_c(&self, _context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
+		todo!()
 	}
 
 	fn c_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
 		match self {
 			Expression::ObjectConstructor(object) => object.c_prelude(context),
-			Expression::Pointer(pointer) => pointer.c_prelude(context),
 			_ => Ok(String::new()),
 		}
 	}
 }
 
+impl Typed for Expression {
+	fn get_type(&self, context: &mut Context) -> Type {
+		match self {
+			Expression::Literal(literal) => literal.get_type(context),
+			value => todo!("{value:?}"),
+		}
+	}
+}
+
 impl Expression {
-	pub(crate) fn try_as_literal<'ctx>(&self, context: &'ctx mut Context) -> &'ctx LiteralObject {
-		match self {
-			Self::Pointer(pointer) => pointer.virtual_deref(context),
-			Self::Name(name) => name.clone().evaluate_at_compile_time(context).try_as_literal(context),
-			_ => VirtualPointer::ERROR.virtual_deref(context),
-		}
+	pub(crate) fn error(span: Span, context: &mut Context) -> ExpressionPointer {
+		Expression::ErrorExpression(span).store_in_memory(context)
 	}
 
-	pub(crate) fn is_fully_known_at_compile_time(&self, context: &mut Context) -> bool {
-		match self {
-			Self::Pointer(_) => true,
-			Self::Parameter(_) => true,
-			Self::Name(name) => name.clone().evaluate_at_compile_time(context).is_fully_known_at_compile_time(context),
-			_ => false,
-		}
-	}
-
-	pub(crate) fn is_error(&self) -> bool {
-		matches!(self, Expression::ErrorExpression(_))
-	}
-
-	pub(crate) fn evaluate_as_type(self, context: &mut Context) -> Expression {
-		match self {
-			Self::Pointer(pointer) => Expression::Pointer(pointer),
-			_ => self.evaluate_at_compile_time(context),
-		}
-	}
-
-	/// Returns whether this expression is a virtual pointer.
-	pub(crate) const fn is_pointer(&self) -> bool {
-		matches!(self, Self::Pointer(_))
-	}
-
-	/// Returns the name of this type of expression as a string.
-	///
-	/// This is used when the compiler reports errors; For example, if an if-expression is
-	/// used as a type, which should be a literal, the compiler will say something like "attempted
-	/// to parse a literal, but an if-expression was found".
-	///
-	/// # Returns
-	/// The name of the kind of expression of this as a string.
-	pub(crate) const fn kind_name(&self) -> &'static str {
-		match self {
-			Self::Block(_) => "block",
-			Self::FieldAccess(_) => "field access",
-			Self::FunctionCall(_) => "function call",
-			Self::Name(_) => "name",
-			Self::ObjectConstructor(_) => "object constructor",
-			Self::Unary(_) => "unary operation",
-			Self::ErrorExpression(_) => "non-existent value",
-			Self::Pointer(_) => "pointer",
-			Self::If(_) => "if expression",
-			Self::ForEachLoop(_) => "for-each loop",
-			Self::Run(_) => "run expression",
-			Self::Parameter(_) => "parameter",
-			Self::Extend(_) => "represent-as expression",
-		}
-	}
-
-	/// Returns a new owned pointer to the same value in virtual memory as this referenced
-	/// pointer. If this expression does indeed refer to a pointer, this is effectively a
-	/// cheap `to_owned()`. If not, an error is returned.
-	///
-	/// # Errors
-	///
-	/// If this expression doesn't refer to a pointer.
-	///
-	/// # Performance
-	///
-	/// This clone is very cheap; Only the underlying pointer address (a `usize`) is cloned.
-	pub(crate) fn try_clone_pointer(&self) -> anyhow::Result<Expression> {
-		if let Self::Pointer(address) = self {
-			return Ok(Expression::Pointer(*address));
-		}
-
-		anyhow::bail!(
-			"A value that's not fully known at compile-time was used as a type; It can only be evaluated into a {}",
-			self.kind_name()
-		);
-	}
-
-	pub(crate) fn is_true(&self, context: &mut Context) -> bool {
-		let Ok(literal_address) = self.try_as::<VirtualPointer>() else {
-			return false;
-		};
-
-		let true_address = context.scope_tree.get_variable_from_id("true", ScopeData::get_stdlib_id()).unwrap().try_as().unwrap();
-
-		literal_address == true_address
-	}
-
-	pub(crate) fn set_tags(&mut self, tags: TagList, context: &mut Context) {
-		match self {
-			Self::ObjectConstructor(constructor) => constructor.tags = tags,
-			Self::Pointer(pointer) => pointer.virtual_deref_mut(context).tags = tags,
-			Self::FunctionCall(function_call) => function_call.tags = tags,
-			_ => {},
-		};
-	}
-
-	pub(crate) fn try_set_name(&mut self, name: Name, context: &mut Context) {
-		match self {
-			Self::ObjectConstructor(object) => object.name = name,
-			Self::Pointer(pointer) => {
-				let value = pointer.virtual_deref_mut(context);
-				let address = value.address;
-
-				if value.type_name() == &"Group".into() {
-					let mut group = GroupDeclaration::from_literal(value).unwrap();
-					group.set_name(name);
-					*value = group.to_literal();
-					value.address = address;
-					return;
-				}
-
-				if value.type_name() == &"RepresentAs".into() {
-					let mut represent_as = Extend::from_literal(value).unwrap();
-					represent_as.set_name(name);
-					*value = represent_as.to_literal();
-					value.address = address;
-					return;
-				}
-
-				if value.type_name() == &"Either".into() {
-					let either = Either::from_literal(value).unwrap();
-					*value = either.to_literal();
-					value.address = address;
-					return;
-				}
-
-				value.name = name;
-			},
-			_ => {},
-		}
-	}
-
-	pub fn try_set_scope_label(&mut self, name: Name, context: &mut Context) {
-		let scope_id = match self {
-			Self::If(if_expression) => Some(if_expression.inner_scope_id()),
-			Self::Pointer(pointer) => pointer.virtual_deref(context).inner_scope_id,
-			_ => None,
-		};
-
-		if let Some(scope_id) = scope_id {
-			context.scope_tree.get_scope_mut_from_id(scope_id).set_label(name);
-		}
+	pub(crate) fn store_in_memory(self, context: &mut Context) -> ExpressionPointer {
+		context.virtual_memory.store(self)
 	}
 }
 
@@ -299,7 +159,6 @@ impl Spanned for Expression {
 			Expression::Run(run_expression) => run_expression.span(context),
 			Expression::Block(block) => block.span(context),
 			Expression::ObjectConstructor(object_constructor) => object_constructor.span(context),
-			Expression::Pointer(virtual_pointer) => virtual_pointer.span(context),
 			Expression::FunctionCall(function_call) => function_call.span(context),
 			Expression::If(if_expression) => if_expression.span(context),
 			Expression::FieldAccess(field_access) => field_access.span(context),
@@ -307,7 +166,9 @@ impl Spanned for Expression {
 			Expression::Parameter(parameter) => parameter.span(context),
 			Expression::Extend(represent_as) => represent_as.span(context),
 			Expression::Unary(unary) => unary.span(context),
+			Expression::Literal(literal) => literal.span(context),
 			Expression::ErrorExpression(span) => *span,
+			_ => Span::unknown(),
 		}
 	}
 }
@@ -325,4 +186,9 @@ impl RuntimeableExpression for Expression {
 			},
 		}
 	}
+}
+
+#[derive(Debug, Clone, try_as::macros::From, try_as::macros::TryInto, try_as::macros::TryAsRef, try_as::macros::TryAsMut)]
+pub enum CompileTimeEvaluatedExpression {
+	Literal(Literal),
 }

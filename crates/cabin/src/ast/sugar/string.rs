@@ -5,11 +5,13 @@ use try_as::traits as try_as_traits;
 
 use crate::{
 	api::{context::Context, traits::TryAs as _},
-	ast::expressions::{field_access::FieldAccess, function_call::FunctionCall, object::ObjectConstructor, Expression},
+	ast::expressions::{field_access::FieldAccess, function_call::FunctionCall, new_literal::Literal, Expression},
+	comptime::memory::ExpressionPointer,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{tokenize_string, Token, TokenType},
 	parser::{Parse as _, ParseError, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	Span,
+	Spanned,
 };
 
 /// A part of a formatted string literal. Each part is either just a regular string value, or an
@@ -39,30 +41,35 @@ use crate::{
 #[derive(Debug, try_as::macros::TryAsRef)]
 pub(crate) enum StringPart {
 	/// A literal string part.
-	Literal(String),
+	Literal(CabinString),
 
 	/// An interpolated expression string part.
-	Expression(Expression),
+	Expression(ExpressionPointer),
 }
 
 impl StringPart {
-	pub(crate) fn into_expression(self, context: &mut Context) -> Expression {
+	pub(crate) fn into_expression(self, context: &mut Context) -> ExpressionPointer {
 		match self {
 			StringPart::Expression(expression) => expression,
-			StringPart::Literal(literal) => Expression::ObjectConstructor(ObjectConstructor::string(&literal, Span::unknown(), context)),
+			StringPart::Literal(literal) => Expression::Literal(Literal::String(literal)).store_in_memory(context),
 		}
 	}
 }
 
 /// A wrapper for implementing `Parse` for parsing string literals. In Cabin, all strings are
 /// formatted strings by default, so they require special logic for parsing.
-pub(crate) struct CabinString;
+#[derive(Debug, Clone)]
+pub struct CabinString {
+	pub(crate) span: Span,
+	pub(crate) value: String,
+}
 
 impl TryParse for CabinString {
-	type Output = Expression;
+	type Output = ExpressionPointer;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let token = tokens.pop(TokenType::String)?;
+		let span = token.span;
 		let with_quotes = token.value;
 		let mut without_quotes = with_quotes.get(1..with_quotes.len() - 1).unwrap().to_owned();
 
@@ -72,7 +79,7 @@ impl TryParse for CabinString {
 			match without_quotes.chars().next().unwrap() {
 				'{' => {
 					if !builder.is_empty() {
-						parts.push(StringPart::Literal(builder));
+						parts.push(StringPart::Literal(CabinString { value: builder, span }));
 						builder = String::new();
 					}
 					// Pop the opening brace
@@ -102,15 +109,15 @@ impl TryParse for CabinString {
 			}
 		}
 		if !builder.is_empty() {
-			parts.push(StringPart::Literal(builder));
+			parts.push(StringPart::Literal(CabinString { value: builder, span }));
 		}
 
 		if parts.iter().all(|part| matches!(part, StringPart::Literal(_))) {
-			return Ok(Expression::ObjectConstructor(ObjectConstructor::string(
-				&parts.into_iter().map(|part| part.try_as::<String>().unwrap().to_owned()).collect::<String>(),
-				token.span,
-				context,
-			)));
+			return Ok(Expression::Literal(Literal::String(CabinString {
+				value: parts.into_iter().map(|part| part.try_as::<CabinString>().unwrap().value.clone()).collect::<String>(),
+				span,
+			}))
+			.store_in_memory(context));
 		}
 
 		// Composite into function call, i.e., "hello {name}!" becomes
@@ -118,18 +125,26 @@ impl TryParse for CabinString {
 		let mut parts = VecDeque::from(parts);
 		let mut left = parts.pop_front().unwrap().into_expression(context);
 		for part in parts {
-			let mut right: Expression = part.into_expression(context);
+			let mut right = part.into_expression(context);
 			right = Expression::FunctionCall(FunctionCall::basic(
-				Expression::FieldAccess(FieldAccess::new(right, "to_text".into(), context.scope_tree.unique_id(), Span::unknown())),
+				Expression::FieldAccess(FieldAccess::new(right, "to_text".into(), context.scope_tree.unique_id(), span)).store_in_memory(context),
 				context,
-			));
+			))
+			.store_in_memory(context);
 			left = Expression::FunctionCall(FunctionCall::from_binary_operation(context, left, right, Token {
 				token_type: TokenType::Plus,
 				value: "+".to_owned(),
-				span: Span::unknown(),
-			})?);
+				span,
+			})?)
+			.store_in_memory(context);
 		}
 
 		Ok(left)
+	}
+}
+
+impl Spanned for CabinString {
+	fn span(&self, _context: &Context) -> Span {
+		self.span
 	}
 }

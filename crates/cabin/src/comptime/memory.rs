@@ -1,13 +1,13 @@
 use std::{collections::HashMap, fmt::Debug};
 
+use super::CompileTimeError;
 use crate::{
-	api::{context::Context, scope::ScopeId, traits::TryAs as _},
-	ast::{
-		expressions::{field_access::FieldAccessType, literal::LiteralObject, Expression},
-		misc::tag::TagList,
-	},
+	api::context::Context,
+	ast::expressions::{new_literal::Literal, Expression},
 	comptime::CompileTime,
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	transpiler::{TranspileError, TranspileToC},
+	typechecker::{Type, Typed},
 	Span,
 	Spanned,
 };
@@ -28,10 +28,10 @@ use crate::{
 ///
 /// This internally just wraps a `usize`, so cloning and copying is incredibly cheap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct VirtualPointer(usize);
+pub struct ExpressionPointer(usize);
 
-impl VirtualPointer {
-	pub(crate) const ERROR: VirtualPointer = VirtualPointer(0);
+impl ExpressionPointer {
+	pub(crate) const ERROR: ExpressionPointer = ExpressionPointer(0);
 
 	/// Retrieves the `LiteralObject` value that this pointer points to.
 	///
@@ -44,40 +44,92 @@ impl VirtualPointer {
 	/// # Returns
 	///
 	/// A reference to the `LiteralObject` that this `VirtualPointer` points to.
-	pub fn virtual_deref<'a>(&self, context: &'a Context) -> &'a LiteralObject {
+	pub(crate) fn expression<'a>(&self, context: &'a Context) -> &'a Expression {
 		context.virtual_memory.get(self)
 	}
 
-	pub fn virtual_deref_mut<'a>(&self, context: &'a mut Context) -> &'a mut LiteralObject {
-		context.virtual_memory.memory.get_mut(&self.0).unwrap()
+	pub(crate) fn is_literal(&self, context: &mut Context) -> bool {
+		match self.expression(context).to_owned() {
+			Expression::Literal(_) => true,
+			Expression::Name(name) => name.value(context).is_some_and(|value| value.is_literal(context)),
+			_ => false,
+		}
 	}
 
-	pub fn is_list(&self, context: &Context) -> bool {
-		self.virtual_deref(context).try_as::<Vec<Expression>>().is_ok()
+	pub(crate) fn is_error(&self) -> bool {
+		self == &ExpressionPointer::ERROR
+	}
+
+	pub(crate) fn evaluate_to_literal(self, context: &mut Context) -> LiteralPointer {
+		let evaluated = self.expression(context).clone().evaluate_at_compile_time(context).expression(context).to_owned();
+		let _ = context.virtual_memory.memory.insert(self.0, evaluated);
+		self.try_as_literal(context).unwrap_or(LiteralPointer::ERROR)
+	}
+
+	pub(crate) fn try_as_literal(self, context: &mut Context) -> Result<LiteralPointer, ()> {
+		match self.expression(context).to_owned() {
+			Expression::Literal(_) => Ok(LiteralPointer(self)),
+			Expression::Name(name) => name.value(context).ok_or(())?.try_as_literal(context),
+			_ => Err(()),
+		}
+	}
+
+	pub(crate) fn as_literal(self, context: &mut Context) -> LiteralPointer {
+		self.try_as_literal(context).unwrap_or_else(|_| {
+			context.add_diagnostic(Diagnostic {
+				span: self.span(context),
+				info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::GroupValueNotKnownAtCompileTime)),
+			});
+			LiteralPointer::ERROR
+		})
 	}
 }
 
-impl CompileTime for VirtualPointer {
-	type Output = VirtualPointer;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LiteralPointer(ExpressionPointer);
+
+impl LiteralPointer {
+	pub const ERROR: LiteralPointer = LiteralPointer(ExpressionPointer::ERROR);
+
+	pub fn literal<'ctx>(&self, context: &'ctx Context) -> &'ctx Literal {
+		let Expression::Literal(literal) = self.0.expression(context) else { unreachable!() };
+		literal
+	}
+}
+
+impl From<LiteralPointer> for ExpressionPointer {
+	fn from(value: LiteralPointer) -> Self {
+		value.0
+	}
+}
+
+impl CompileTime for ExpressionPointer {
+	type Output = ExpressionPointer;
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		let evaluated = self.virtual_deref(context).clone().evaluate_at_compile_time(context);
-		let _ = context.virtual_memory.memory.insert(self.0, evaluated);
+		let evaluated = self.expression(context).clone().evaluate_at_compile_time(context);
+		let _ = context.virtual_memory.memory.insert(self.0, evaluated.expression(context).clone());
 		self
 	}
 }
 
-impl TranspileToC for VirtualPointer {
+impl Typed for ExpressionPointer {
+	fn get_type(&self, context: &mut Context) -> Type {
+		self.expression(context).clone().get_type(context)
+	}
+}
+
+impl TranspileToC for ExpressionPointer {
 	fn to_c(&self, _context: &mut Context, output: Option<String>) -> Result<String, TranspileError> {
 		Ok(format!("{}&literal_{}", output.map(|name| format!("{name} = ")).unwrap_or_default(), self.0))
 	}
 
 	fn c_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
-		self.virtual_deref(context).to_owned().c_prelude(context)
+		self.expression(context).to_owned().c_prelude(context)
 	}
 
 	fn c_type_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
-		self.virtual_deref(context).to_owned().c_type_prelude(context)
+		self.expression(context).to_owned().c_type_prelude(context)
 	}
 }
 
@@ -88,15 +140,15 @@ impl TranspileToC for VirtualPointer {
 /// ...but hey, not much we can do about it. It's pretty hacky anyway so it should be a pretty glaring sign
 /// that it's not really meant to be used that way. If nothing else it's a backdoor for some obscure situation
 /// where the numeric value is needed.
-impl std::fmt::Display for VirtualPointer {
+impl std::fmt::Display for ExpressionPointer {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "{}", self.0)
 	}
 }
 
-impl Spanned for VirtualPointer {
+impl Spanned for ExpressionPointer {
 	fn span(&self, context: &Context) -> Span {
-		self.virtual_deref(context).span(context)
+		self.expression(context).span(context)
 	}
 }
 
@@ -110,7 +162,7 @@ impl Spanned for VirtualPointer {
 /// memory via `virtual_memory.store()`.
 pub struct VirtualMemory {
 	/// The internal memory storage as a simple `HashMap` between `usize` (pointers/address) and `LiteralObject` values.
-	memory: HashMap<usize, LiteralObject>,
+	memory: HashMap<usize, Expression>,
 }
 
 impl VirtualMemory {
@@ -122,18 +174,7 @@ impl VirtualMemory {
 	/// The created empty virtual memory.
 	pub fn empty() -> VirtualMemory {
 		VirtualMemory {
-			memory: HashMap::from([(0, LiteralObject {
-				type_name: "Error".into(),
-				fields: HashMap::new(),
-				internal_fields: HashMap::new(),
-				field_access_type: FieldAccessType::Normal,
-				outer_scope_id: ScopeId::global(),
-				inner_scope_id: None,
-				name: "error".into(),
-				address: Some(VirtualPointer::ERROR),
-				span: Span::unknown(),
-				tags: TagList::default(),
-			})]),
+			memory: HashMap::from([(0, Expression::ErrorExpression(Span::unknown()))]),
 		}
 	}
 
@@ -152,11 +193,10 @@ impl VirtualMemory {
 	/// # Returns
 	///
 	/// A `VirtualPointer` that points to the object that was stored.
-	pub(crate) fn store(&mut self, mut value: LiteralObject) -> VirtualPointer {
+	pub(crate) fn store(&mut self, value: Expression) -> ExpressionPointer {
 		let address = self.next_unused_virtual_address();
-		value.address = Some(VirtualPointer(address));
 		let _ = self.memory.insert(address, value);
-		VirtualPointer(address)
+		ExpressionPointer(address)
 	}
 
 	/// Returns an immutable reference to a `LiteralObject` stored in virtual memory. This is equivalent to calling `.virtual_deref()`
@@ -169,12 +209,8 @@ impl VirtualMemory {
 	/// # Parameters
 	///
 	/// - `address` - A `VirtualPointer` to the location to get the `LiteralObject` from in virtual memory.
-	pub(crate) fn get(&self, address: &VirtualPointer) -> &LiteralObject {
+	pub(crate) fn get(&self, address: &ExpressionPointer) -> &Expression {
 		self.memory.get(&address.0).unwrap()
-	}
-
-	pub(crate) fn replace(&mut self, address: VirtualPointer, value: LiteralObject) {
-		let _ = self.memory.insert(address.0, value);
 	}
 
 	/// Returns the first unused virtual address. When storing an object in memory, this is used to determine what address to give it.

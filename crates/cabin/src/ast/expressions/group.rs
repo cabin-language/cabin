@@ -3,22 +3,16 @@ use std::collections::{HashMap, VecDeque};
 use convert_case::{Case, Casing as _};
 
 use crate::{
-	api::{
-		context::Context,
-		scope::{ScopeId, ScopeType},
-	},
+	api::{context::Context, scope::ScopeType},
 	ast::{
-		expressions::{
-			field_access::FieldAccessType,
-			literal::{LiteralConvertible, LiteralObject},
-			name::Name,
-			object::{Field, InternalFieldValue},
-			parameter::Parameter,
-			Expression,
-		},
+		expressions::{name::Name, parameter::Parameter, Expression},
 		misc::tag::TagList,
 	},
-	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
+	comptime::{
+		memory::{ExpressionPointer, LiteralPointer},
+		CompileTime,
+		CompileTimeError,
+	},
 	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	if_then_else_default,
 	if_then_some,
@@ -30,29 +24,39 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct GroupDeclaration {
-	fields: Vec<Field>,
-	inner_scope_id: ScopeId,
-	outer_scope_id: ScopeId,
+pub struct GroupField {
 	name: Name,
+	default_value: Option<ExpressionPointer>,
+	field_type: Option<ExpressionPointer>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GroupFieldLiteral {
+	name: Name,
+	default_value: Option<LiteralPointer>,
+	field_type: Option<LiteralPointer>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GroupDeclaration {
+	fields: HashMap<Name, GroupField>,
 	span: Span,
 }
 
 impl TryParse for GroupDeclaration {
-	type Output = VirtualPointer;
+	type Output = GroupDeclaration;
 
 	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordGroup)?.span;
-		let outer_scope_id = context.scope_tree.unique_id();
 		context.scope_tree.enter_new_scope(ScopeType::Group);
-		let inner_scope_id = context.scope_tree.unique_id();
 
 		let _compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, ListType::AngleBracketed, {
 				let parameter = Parameter::try_parse(tokens, context)?;
-				let name = parameter.virtual_deref(context).name().to_owned();
-				if let Err(error) = context.scope_tree.declare_new_variable(name.clone(), Expression::Pointer(parameter)) {
+				let name = parameter.name().to_owned();
+				let error = Expression::error(Span::unknown(), context);
+				if let Err(error) = context.scope_tree.declare_new_variable(name.clone(), error) {
 					context.add_diagnostic(Diagnostic {
 						span: name.span(context),
 						info: DiagnosticInfo::Error(error),
@@ -64,10 +68,10 @@ impl TryParse for GroupDeclaration {
 		});
 
 		// Fields
-		let mut fields: Vec<Field> = Vec::new();
+		let mut fields = HashMap::new();
 		let end = parse_list!(tokens, ListType::Braced, {
 			//  Group field tags
-			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
+			let _tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
 
 			// Group field name
 			let name = Name::try_parse(tokens, context)?;
@@ -80,7 +84,7 @@ impl TryParse for GroupDeclaration {
 				});
 			}
 
-			if fields.iter().any(|field| field.name == name) {
+			if fields.keys().any(|field_name| field_name == &name) {
 				context.add_diagnostic(Diagnostic {
 					span: name.span(context),
 					info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::DuplicateField(name.unmangled_name().to_owned()))),
@@ -96,116 +100,66 @@ impl TryParse for GroupDeclaration {
 			// Group field value
 			let value = if_then_some!(tokens.next_is(TokenType::Equal), {
 				let _ = tokens.pop(TokenType::Equal)?;
-				let mut value = Expression::parse(tokens, context);
-
-				// Set tags
-				if let Some(tags) = tags {
-					value.set_tags(tags, context);
-				}
-
-				value.try_set_name(format!("anonymous_group_{}", name.unmangled_name()).into(), context);
+				let value = Expression::parse(tokens, context);
 
 				value
 			});
 
 			// Add field
-			fields.push(Field { name, value, field_type });
+			_ = fields.insert(name.clone(), GroupField {
+				name,
+				default_value: value,
+				field_type,
+			});
 		})
 		.span;
 		context.scope_tree.exit_scope().unwrap();
 
-		Ok(GroupDeclaration {
-			fields,
-			inner_scope_id,
-			outer_scope_id,
-			name: "anonymous_group".into(),
-			span: start.to(end),
-		}
-		.to_literal()
-		.store_in_memory(context))
+		Ok(GroupDeclaration { fields, span: start.to(end) })
 	}
 }
 
 impl CompileTime for GroupDeclaration {
-	type Output = GroupDeclaration;
+	type Output = EvaluatedGroupDeclaration;
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		let scope_reverter = context.scope_tree.set_current_scope(self.inner_scope_id);
-		let mut fields = Vec::new();
+		let mut fields = HashMap::new();
 
-		for field in self.fields {
+		for (name, field) in self.fields {
 			// Field value
-			let value = if let Some(value) = field.value {
+			let value = if let Some(value) = field.default_value {
 				let span = value.span(context);
 				let evaluated = value.evaluate_at_compile_time(context);
 
-				if !evaluated.is_pointer() && !evaluated.is_error() {
+				if !evaluated.is_literal(context) && !evaluated.is_error() {
 					context.add_diagnostic(Diagnostic {
 						span,
 						info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::GroupValueNotKnownAtCompileTime)),
 					});
 				}
 
-				Some(evaluated)
+				Some(evaluated.as_literal(context))
 			} else {
 				None
 			};
 
 			// Field type
 			let field_type = if let Some(field_type) = field.field_type {
-				Some(field_type.evaluate_at_compile_time(context))
+				Some(field_type.evaluate_at_compile_time(context).as_literal(context))
 			} else {
 				None
 			};
 
 			// Add the field
-			fields.push(Field {
-				name: field.name,
-				value,
+			_ = fields.insert(name.clone(), GroupFieldLiteral {
+				name,
+				default_value: value,
 				field_type,
 			});
 		}
 
 		// Store in memory and return a pointer
-		scope_reverter.revert(context);
-		GroupDeclaration {
-			fields,
-			inner_scope_id: self.inner_scope_id,
-			outer_scope_id: self.outer_scope_id,
-			name: self.name,
-			span: self.span,
-		}
-	}
-}
-
-impl LiteralConvertible for GroupDeclaration {
-	fn to_literal(self) -> LiteralObject {
-		LiteralObject {
-			address: None,
-			fields: HashMap::from([]),
-			internal_fields: HashMap::from([("fields".to_owned(), InternalFieldValue::FieldList(self.fields))]),
-			name: self.name,
-			field_access_type: FieldAccessType::Normal,
-			outer_scope_id: self.outer_scope_id,
-			inner_scope_id: Some(self.inner_scope_id),
-			span: self.span,
-			type_name: "Group".into(),
-			tags: TagList::default(),
-		}
-	}
-
-	fn from_literal(literal: &LiteralObject) -> anyhow::Result<Self> {
-		if literal.field_access_type != FieldAccessType::Normal {
-			anyhow::bail!("attempted to convert a non-group literal into a group");
-		}
-
-		Ok(GroupDeclaration {
-			fields: literal.get_internal_field::<Vec<Field>>("fields").cloned().unwrap_or(Vec::new()),
-			outer_scope_id: literal.outer_scope_id(),
-			inner_scope_id: literal.inner_scope_id.unwrap_or(ScopeId::global()),
-			name: literal.name.clone(),
-			span: literal.span,
-		})
+		EvaluatedGroupDeclaration { fields, span: self.span }
 	}
 }
 
@@ -215,12 +169,8 @@ impl Spanned for GroupDeclaration {
 	}
 }
 
-impl GroupDeclaration {
-	pub(crate) fn fields(&self) -> &[Field] {
-		&self.fields
-	}
-
-	pub(crate) fn set_name(&mut self, name: Name) {
-		self.name = name.clone();
-	}
+#[derive(Debug, Clone)]
+pub struct EvaluatedGroupDeclaration {
+	fields: HashMap<Name, GroupFieldLiteral>,
+	span: Span,
 }

@@ -1,8 +1,8 @@
 use crate::{
 	api::{context::Context, scope::ScopeId},
-	ast::expressions::{function_declaration::FunctionDeclaration, literal::LiteralConvertible as _, name::Name, operators::PrimaryExpression, Expression},
-	comptime::{memory::VirtualPointer, CompileTime, CompileTimeError},
-	diagnostics::{Diagnostic, DiagnosticInfo},
+	ast::expressions::{name::Name, operators::PrimaryExpression, Expression},
+	comptime::{memory::ExpressionPointer, CompileTime},
+	diagnostics::Diagnostic,
 	lexer::TokenType,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
@@ -10,26 +10,16 @@ use crate::{
 	Spanned,
 };
 
-/// A type describing how fields are accessed on this type of objects via the dot operator.
-/// For example, on a normal object, the dot operator just gets a field with the given name,
-/// but for `eithers`, it indexes into the either's variants and finds the one with the given
-/// name.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FieldAccessType {
-	Normal,
-	Either,
-}
-
 #[derive(Debug, Clone)]
 pub struct FieldAccess {
-	left: Box<Expression>,
+	left: ExpressionPointer,
 	right: Name,
 	scope_id: ScopeId,
 	span: Span,
 }
 
 impl TryParse for FieldAccess {
-	type Output = Expression;
+	type Output = ExpressionPointer;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let mut expression = PrimaryExpression::try_parse(tokens, context)?;
@@ -39,11 +29,12 @@ impl TryParse for FieldAccess {
 			let right = Name::try_parse(tokens, context)?;
 			let end = right.span(context);
 			expression = Expression::FieldAccess(Self {
-				left: Box::new(expression),
+				left: expression,
 				right,
 				scope_id: context.scope_tree.unique_id(),
 				span: start.to(end),
-			});
+			})
+			.store_in_memory(context);
 		}
 
 		Ok(expression)
@@ -51,63 +42,25 @@ impl TryParse for FieldAccess {
 }
 
 impl CompileTime for FieldAccess {
-	type Output = Expression;
+	type Output = ExpressionPointer;
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		let span = self.span(context);
 		let left_evaluated = self.left.evaluate_at_compile_time(context);
 
 		// Resolvable at compile-time
-		let pointer = left_evaluated.try_as_literal(context).address.unwrap();
-		if pointer != VirtualPointer::ERROR {
-			let literal = pointer.virtual_deref(context);
-			match literal.field_access_type() {
-				// Object fields
-				FieldAccessType::Normal => {
-					let field = literal.get_field(self.right.clone());
-					let field_pointer = field.unwrap_or_else(|| {
-						context.add_diagnostic(Diagnostic {
-							span: self.right.span(context),
-							info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::NoSuchField(self.right.unmangled_name().to_owned()))),
-						});
-						VirtualPointer::ERROR
-					});
-
-					let field_value_literal = field_pointer.virtual_deref(context);
-
-					if field_value_literal.type_name() == &"Function".into() {
-						let mut function_declaration = FunctionDeclaration::from_literal(field_value_literal).unwrap();
-						function_declaration.set_this_object(left_evaluated);
-						context.virtual_memory.replace(field_pointer, function_declaration.to_literal());
-					}
-
-					Expression::Pointer(field_pointer)
-				},
-
-				// Either fields
-				FieldAccessType::Either => {
-					let variants = literal.get_internal_field::<Vec<(Name, VirtualPointer)>>("variants").unwrap();
-					variants
-						.iter()
-						.find_map(|(name, value)| (name == &self.right).then_some(Expression::Pointer(value.to_owned())))
-						.unwrap_or_else(|| {
-							context.add_diagnostic(Diagnostic {
-								span: self.right.span(context),
-								info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::NoSuchField(self.right.unmangled_name().to_owned()))),
-							});
-							Expression::ErrorExpression(span)
-						})
-				},
-			}
+		if let Ok(pointer) = left_evaluated.try_as_literal(context) {
+			let literal = pointer.literal(context).to_owned();
+			literal.dot(&self.right, context)
 		}
 		// Not resolvable at compile-time - return the original expression
 		else {
 			Expression::FieldAccess(FieldAccess {
-				left: Box::new(left_evaluated),
+				left: left_evaluated,
 				right: self.right,
 				scope_id: self.scope_id,
 				span: self.span,
 			})
+			.store_in_memory(context)
 		}
 	}
 }
@@ -130,12 +83,11 @@ impl Spanned for FieldAccess {
 }
 
 impl FieldAccess {
-	pub(crate) fn new(left: Expression, right: Name, scope_id: ScopeId, span: Span) -> FieldAccess {
-		FieldAccess {
-			left: Box::new(left),
-			right,
-			scope_id,
-			span,
-		}
+	pub(crate) fn new(left: ExpressionPointer, right: Name, scope_id: ScopeId, span: Span) -> FieldAccess {
+		FieldAccess { left, right, scope_id, span }
 	}
+}
+
+pub trait Dot {
+	fn dot(&self, name: &Name, context: &mut Context) -> ExpressionPointer;
 }

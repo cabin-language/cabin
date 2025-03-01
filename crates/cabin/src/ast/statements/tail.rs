@@ -1,7 +1,7 @@
 use crate::{
 	api::context::Context,
 	ast::expressions::{name::Name, Expression},
-	comptime::CompileTime,
+	comptime::{memory::ExpressionPointer, CompileTime},
 	diagnostics::Diagnostic,
 	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -13,7 +13,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct TailStatement {
 	pub label: Name,
-	pub value: Expression,
+	pub value: ExpressionPointer,
 	pub span: Span,
 }
 

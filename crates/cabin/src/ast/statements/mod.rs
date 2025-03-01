@@ -4,7 +4,7 @@ use crate::{
 		expressions::Expression,
 		statements::{declaration::Declaration, tail::TailStatement},
 	},
-	comptime::CompileTime,
+	comptime::{memory::ExpressionPointer, CompileTime},
 	diagnostics::Diagnostic,
 	lexer::TokenType,
 	parser::{Parse, TokenQueue, TokenQueueFunctionality as _, TryParse as _},
@@ -20,7 +20,7 @@ pub mod tail;
 pub enum Statement {
 	Declaration(Declaration),
 	Tail(TailStatement),
-	Expression(Expression),
+	Expression(ExpressionPointer),
 	Error(Span),
 }
 

@@ -1,14 +1,11 @@
 let This = group {};
+let Object = group {};
+let Number = group {}; 
+let List = group {};
 
-let Nothing = either {
+let Optional = either {
+	data,
 	nothing
-}; 
-
-let RepresentAs = group {};
-
-let Optional = choice<Data> {
-	Data,
-	Nothing
 };
 
 let Text = group {};
@@ -16,8 +13,6 @@ let Text = group {};
 let Anything = group {
 	to_text: action(this: Anything): Text,
 };
-
-let Object = group {};
 
 let Group = group {
 	fields: Anything,
@@ -27,8 +22,6 @@ let Parameter = group {
 	name: Text,
 	type: Anything
 };
-
-let OneOf = group {}; 
 
 let Function = group {
 	parameters: Anything,
@@ -52,8 +45,6 @@ let runtime = action<reason: Text>: RuntimeTag {
 	};
 };
 
-let List = group {};
-
 let Either = group {
 	variants: List
 };
@@ -75,22 +66,20 @@ let builtin_function = action<name: Text>: BuiltinTag {
 	};
 };
 
-let Number = group {}; 
-
 let Addable = group<Operand: Anything, Result: Anything> {
-
 	#[no_side_effects]
 	plus: action(this: This, other: Operand): Result
 }; 
 
 #[default]
 let AddNumbers = extensionof Number tobe Addable { 
+	#[public] 
 	plus = action(this: Number, other: Number): Number,
 };
 
-let Attempted = choice<Data, Error> {
-	Data,
-	Error
+let Attempted = either {
+	data,
+	error
 };
 
 let system = new Object {
@@ -102,7 +91,7 @@ let system = new Object {
 			system_side_effects, 
 			runtime<"print() is meant for the user. Use debug() at compile-time, or use a run expression to print to the user.">
 		]
-		print = action(object: Anything): Nothing,
+		print = action(object: Anything): Optional.nothing,
 
 		#[
 			builtin_function<"terminal.input">, 
@@ -110,6 +99,7 @@ let system = new Object {
 			runtime<"Taking input at compile-time can produce varying outputs depending on user input. Consider embedding a file.">
 		] 
 		input = action(): Text,
+
 	},
 };
 

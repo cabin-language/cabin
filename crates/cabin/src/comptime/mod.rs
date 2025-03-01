@@ -1,4 +1,4 @@
-use crate::api::context::Context;
+use crate::{api::context::Context, typechecker::Type};
 
 pub mod memory;
 
@@ -40,4 +40,7 @@ pub enum CompileTimeError {
 
 	#[error("No property \"{0}\" exists on this value")]
 	NoSuchField(String),
+
+	#[error("Type mismatch: This value cannot be assigned to this type")]
+	TypeMismatch(Type, Type),
 }

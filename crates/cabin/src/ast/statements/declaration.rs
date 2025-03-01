@@ -3,11 +3,11 @@ use convert_case::{Case, Casing as _};
 use crate::{
 	api::{context::Context, scope::ScopeId},
 	ast::{
-		expressions::{name::Name, Expression},
+		expressions::{name::Name, new_literal::Literal, Expression},
 		misc::tag::TagList,
 		statements::Statement,
 	},
-	comptime::CompileTime,
+	comptime::{memory::ExpressionPointer, CompileTime},
 	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	if_then_some,
 	lexer::TokenType,
@@ -29,7 +29,7 @@ impl Declaration {
 		&self.name
 	}
 
-	pub(crate) fn value<'a>(&self, context: &'a Context) -> &'a Expression {
+	pub(crate) fn value(&self, context: &Context) -> ExpressionPointer {
 		context.scope_tree.get_variable_from_id(self.name.clone(), self.scope_id).unwrap()
 	}
 }
@@ -42,8 +42,7 @@ impl TryParse for Declaration {
 		let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
 
 		if tags.is_some() && !tokens.next_is(TokenType::KeywordLet) {
-			let mut expression = Expression::parse(tokens, context);
-			expression.set_tags(tags.unwrap(), context);
+			let expression = Expression::parse(tokens, context);
 			let _ = tokens.pop(TokenType::Semicolon)?;
 			return Ok(Statement::Expression(expression));
 		}
@@ -55,22 +54,18 @@ impl TryParse for Declaration {
 		// Value
 		let _ = tokens.pop(TokenType::Equal)?;
 
-		let mut value = Expression::parse(tokens, context);
+		let value = Expression::parse(tokens, context);
 		let end = value.span(context);
 
-		if let Expression::Pointer(pointer) = &value {
-			let literal = pointer.virtual_deref(context);
-			if literal.type_name() == &"Group".into()
-				|| literal.type_name() == &"Either".into()
-				|| literal.type_name() == &"OneOf".into()
-				|| literal.type_name() == &"RepresentAs".into()
-			{
+		if let Ok(literal) = value.try_as_literal(context) {
+			let literal = literal.literal(context);
+			if matches!(literal, Literal::Group(_) | Literal::Either(_)) {
 				if !name.unmangled_name().is_case(Case::Pascal) {
 					context.add_diagnostic(Diagnostic {
 						span: name.span(context),
 						info: DiagnosticInfo::Warning(Warning::NonPascalCaseGroup {
 							original_name: name.unmangled_name().to_owned(),
-							type_name: literal.type_name().unmangled_name().to_owned(),
+							type_name: literal.kind_name().to_owned(),
 						}),
 					});
 				}
@@ -90,15 +85,6 @@ impl TryParse for Declaration {
 				}),
 			});
 		}
-
-		// Tags
-		if let Some(tags) = tags {
-			value.set_tags(tags, context);
-		}
-
-		// Set name
-		value.try_set_name(name.clone(), context);
-		value.try_set_scope_label(name.clone(), context);
 
 		// Add the name declaration to the scope
 		if let Err(error) = context.scope_tree.declare_new_variable(name.clone(), value) {

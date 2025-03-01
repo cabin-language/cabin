@@ -36,21 +36,22 @@ impl Project {
 	///
 	/// # Parameters
 	///
-	/// - `root_directory` - The project's root directory
+	/// - `root_directory` - The project's root directory. To create a `Project` from anywhere
+	/// nested within a project, use `Project::from_child()`.
 	///
 	/// # Returns
 	///
 	/// The project object, or an error if the project is corrupted in some way (root
 	/// directory doesn't exist, `cabin.toml` doesn't exist, etc.)
-	pub fn new<P: AsRef<Path>>(root_directory: P) -> Result<Project, ProjectError> {
+	pub fn from_root<P: AsRef<Path>>(root_directory: P) -> Result<Project, ProjectError> {
 		let root_directory = root_directory.as_ref();
 		if !root_directory.is_dir() {
 			return Err(ProjectError::RootDirectoryDoesntExist);
 		}
 
 		let config_file = root_directory.join("cabin.toml");
-		let Ok(config) = std::fs::read_to_string(config_file) else { return Err(ProjectError::ConfigFileDoesntExist) };
-		let Ok(config) = toml_edit::de::from_str(&config) else { return Err(ProjectError::MalformattedConfigFile) };
+		let Ok(config_contents) = std::fs::read_to_string(config_file) else { return Err(ProjectError::ConfigFileDoesntExist) };
+		let Ok(config) = toml_edit::de::from_str(&config_contents) else { return Err(ProjectError::MalformattedConfigFile) };
 
 		let main_file = root_directory.join("src").join("main.cabin");
 		let Ok(main_file_contents) = std::fs::read_to_string(main_file) else { return Err(ProjectError::NoMainFile) };
@@ -62,6 +63,14 @@ impl Project {
 			config,
 			main_file_contents,
 		})
+	}
+
+	pub fn from_child<P: AsRef<Path>>(directory: P) -> Result<Project, ProjectError> {
+		let mut directory = directory.as_ref().canonicalize().map_err(|_| ProjectError::RootDirectoryDoesntExist)?;
+		while !directory.join("cabin.toml").is_file() {
+			directory = directory.parent().ok_or(ProjectError::ConfigFileDoesntExist)?.into();
+		}
+		Project::from_root(directory)
 	}
 
 	pub const fn root_directory(&self) -> &PathBuf {

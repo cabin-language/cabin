@@ -1,7 +1,7 @@
 use crate::{
 	api::context::Context,
 	ast::expressions::{Expression, Spanned},
-	comptime::{memory::VirtualPointer, CompileTime},
+	comptime::{memory::ExpressionPointer, CompileTime},
 	diagnostics::Diagnostic,
 	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -35,7 +35,7 @@ use crate::{
 /// `run <expression>`
 #[derive(Debug, Clone)]
 pub struct RunExpression {
-	expression: Box<Expression>,
+	expression: ExpressionPointer,
 	span: Span,
 }
 
@@ -44,7 +44,7 @@ impl TryParse for RunExpression {
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let mut span = tokens.pop(TokenType::KeywordRuntime)?.span;
-		let expression = Box::new(Expression::parse(tokens, context));
+		let expression = Expression::parse(tokens, context);
 		span = span.to(expression.span(context));
 		Ok(RunExpression { span, expression })
 	}
@@ -53,9 +53,9 @@ impl TryParse for RunExpression {
 impl CompileTime for RunExpression {
 	type Output = RunExpression;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+	fn evaluate_at_compile_time(self, _context: &mut Context) -> Self::Output {
 		RunExpression {
-			expression: Box::new(self.expression.evaluate_subexpressions_at_compile_time(context)),
+			expression: self.expression,
 			span: self.span,
 		}
 	}

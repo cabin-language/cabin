@@ -1,7 +1,7 @@
 use crate::{
 	api::context::Context,
 	ast::expressions::{Expression, Spanned},
-	comptime::CompileTime,
+	comptime::{memory::ExpressionPointer, CompileTime},
 	Span,
 };
 
@@ -17,7 +17,7 @@ pub enum UnaryOperator {
 #[derive(Debug, Clone)]
 pub struct UnaryOperation {
 	pub operator: UnaryOperator,
-	pub expression: Box<Expression>,
+	pub expression: ExpressionPointer,
 	pub span: Span,
 }
 

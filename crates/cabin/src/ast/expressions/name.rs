@@ -3,10 +3,11 @@ use std::{fmt::Debug, hash::Hash};
 use crate::{
 	api::context::Context,
 	ast::expressions::Expression,
-	comptime::{CompileTime, CompileTimeError},
+	comptime::{memory::ExpressionPointer, CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::TokenType,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
+	scope::ScopeId,
 	transpiler::{TranspileError, TranspileToC},
 	Span,
 	Spanned,
@@ -29,41 +30,51 @@ pub struct Name {
 	/// For regular identifiers in the language, this is always `true`; But some special exceptions are made when the
 	/// compiler needs to insert names into the program.
 	should_mangle: bool,
+
+	scope_id: ScopeId,
+}
+
+impl Name {
+	pub(crate) fn value(&self, context: &mut Context) -> Option<ExpressionPointer> {
+		context
+			.scope_tree
+			.get_variable_from_id(self, self.scope_id)
+			.ok_or_else(|| {
+				context.add_diagnostic(Diagnostic {
+					info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::UnknownVariable(self.unmangled_name().to_owned()))),
+					span: self.span,
+				});
+			})
+			.ok()
+	}
 }
 
 impl TryParse for Name {
 	type Output = Self;
 
-	fn try_parse(tokens: &mut TokenQueue, _context: &mut Context) -> anyhow::Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> anyhow::Result<Self::Output, Diagnostic> {
 		let token = tokens.pop(TokenType::Identifier)?;
 
 		Ok(Name {
 			name: token.value,
 			span: token.span,
 			should_mangle: true,
+			scope_id: context.scope_tree.unique_id(),
 		})
 	}
 }
 
 impl CompileTime for Name {
-	type Output = Expression;
+	type Output = ExpressionPointer;
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		if !context.scope_tree.has_variable(self.clone()) {
+		context.scope_tree.get_variable_from_id(self.clone(), self.scope_id).unwrap_or_else(|| {
 			context.add_diagnostic(Diagnostic {
 				span: self.span(context),
 				info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::UnknownVariable(self.unmangled_name().to_owned()))),
 			});
-			return Expression::ErrorExpression(self.span(context));
-		}
-
-		let value = context.scope_tree.get_variable(self.clone()).unwrap();
-
-		if matches!(value, Expression::ErrorExpression(_)) {
-			return value.clone();
-		}
-
-		value.try_clone_pointer().unwrap_or(Expression::Name(self))
+			return Expression::error(self.span(context), context);
+		})
 	}
 }
 
@@ -78,6 +89,7 @@ impl<T: AsRef<str>> From<T> for Name {
 		Name {
 			name: value.as_ref().to_owned(),
 			span: Span::unknown(),
+			scope_id: ScopeId::global(),
 			should_mangle: true,
 		}
 	}
@@ -120,11 +132,12 @@ impl Debug for Name {
 }
 
 impl Name {
-	pub(crate) fn non_mangled<T: AsRef<str>>(name: T) -> Name {
+	pub(crate) fn hardcoded<T: AsRef<str>>(name: T) -> Name {
 		Name {
 			name: name.as_ref().to_owned(),
 			span: Span::unknown(),
-			should_mangle: false,
+			scope_id: ScopeId::global(),
+			should_mangle: true,
 		}
 	}
 

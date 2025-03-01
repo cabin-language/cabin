@@ -3,7 +3,7 @@ use crate::{
 		context::Context,
 		scope::{ScopeId, ScopeType},
 	},
-	ast::{expressions::Expression, statements::Statement},
+	ast::statements::Statement,
 	comptime::CompileTime,
 	diagnostics::Diagnostic,
 	lexer::TokenType,
@@ -76,34 +76,21 @@ impl CompileTime for Block {
 	/// will not be able to be fully evaluated and will remain as blocks, some others *will* be able to be resolved
 	/// fully, and those will return either the expressed from their tail statement, or `Expression::Void` if no tail
 	/// statement was present.
-	type Output = Expression;
+	type Output = Block;
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		let mut statements = Vec::new();
-		let scope_reverter = context.scope_tree.set_current_scope(self.inner_scope_id);
 
 		for statement in self.statements {
 			let evaluated_statement = statement.evaluate_at_compile_time(context);
-
-			// Tail statement
-			if let Statement::Tail(tail_statement) = evaluated_statement {
-				if context.has_side_effects() && !tail_statement.value.try_as_literal(context).is_error() {
-					return tail_statement.value;
-				}
-				statements.push(Statement::Tail(tail_statement));
-			}
-			// Not tail statement
-			else {
-				statements.push(evaluated_statement);
-			}
+			statements.push(evaluated_statement);
 		}
 
-		scope_reverter.revert(context);
-		Expression::Block(Block {
+		Block {
 			statements,
 			inner_scope_id: self.inner_scope_id,
 			span: self.span,
-		})
+		}
 	}
 }
 

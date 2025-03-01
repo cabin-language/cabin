@@ -1,4 +1,5 @@
-let Text = builtin.Text;
-let system = builtin.system;
-let terminal = builtin.system.terminal;
-let print = builtin.system.terminal.print;
+let x2 = 30;
+let x = 10;
+builtin.system.terminal.print("Hello world");
+let y = 20;
+let z2 = 40;

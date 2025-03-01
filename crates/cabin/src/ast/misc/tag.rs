@@ -3,7 +3,7 @@ use std::{fmt::Debug, ops::Deref};
 use crate::{
 	api::context::Context,
 	ast::expressions::Expression,
-	comptime::CompileTime,
+	comptime::{memory::ExpressionPointer, CompileTime},
 	diagnostics::Diagnostic,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TryParse},
@@ -11,7 +11,13 @@ use crate::{
 
 #[derive(Clone, Default)]
 pub struct TagList {
-	pub values: Vec<Expression>,
+	pub values: Vec<ExpressionPointer>,
+}
+
+impl TagList {
+	pub const fn empty() -> TagList {
+		TagList { values: Vec::new() }
+	}
 }
 
 impl TryParse for TagList {
@@ -21,7 +27,7 @@ impl TryParse for TagList {
 		let mut tags = Vec::new();
 		let _ = parse_list!(tokens, ListType::Tag, {
 			tags.push(Expression::parse(tokens, context));
-		}); // TODO: Probably span this maybe?
+		});
 		Ok(TagList { values: tags })
 	}
 }
@@ -40,15 +46,15 @@ impl CompileTime for TagList {
 }
 
 impl Deref for TagList {
-	type Target = Vec<Expression>;
+	type Target = Vec<ExpressionPointer>;
 
 	fn deref(&self) -> &Self::Target {
 		&self.values
 	}
 }
 
-impl From<Vec<Expression>> for TagList {
-	fn from(values: Vec<Expression>) -> Self {
+impl From<Vec<ExpressionPointer>> for TagList {
+	fn from(values: Vec<ExpressionPointer>) -> Self {
 		Self { values }
 	}
 }

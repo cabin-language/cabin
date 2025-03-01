@@ -1,41 +1,64 @@
+use std::ops::Deref;
+
 use crate::{
 	api::context::Context,
-	ast::{
-		expressions::{
-			field_access::FieldAccessType,
-			name::Name,
-			object::{InternalFieldValue, ObjectConstructor},
-			Expression,
-		},
-		misc::tag::TagList,
+	ast::expressions::{new_literal::Literal, Expression},
+	comptime::{
+		memory::{ExpressionPointer, LiteralPointer},
+		CompileTime,
 	},
 	diagnostics::Diagnostic,
 	parse_list,
-	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	parser::{ListType, Parse as _, TokenQueue, TryParse},
 };
 
-pub(crate) struct List;
+#[derive(Debug, Clone)]
+pub struct List(Vec<ExpressionPointer>);
 
 impl TryParse for List {
-	type Output = Expression;
+	type Output = List;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let mut list = Vec::new();
-		let start = tokens.current_position().unwrap();
-		let end = parse_list!(tokens, ListType::Bracketed, { list.push(Expression::parse(tokens, context)) }).span;
+		let _end = parse_list!(tokens, ListType::Bracketed, { list.push(Expression::parse(tokens, context)) }).span;
+		Ok(List(list))
+	}
+}
 
-		let constructor = ObjectConstructor {
-			type_name: Name::from("List"),
-			fields: Vec::new(),
-			internal_fields: std::collections::HashMap::from([("elements".to_owned(), InternalFieldValue::ExpressionList(list))]),
-			outer_scope_id: context.scope_tree.unique_id(),
-			inner_scope_id: context.scope_tree.unique_id(),
-			field_access_type: FieldAccessType::Normal,
-			name: "anonymous_runtime_list".into(),
-			span: start.to(end),
-			tags: TagList::default(),
-		};
+impl CompileTime for List {
+	type Output = ExpressionPointer;
 
-		Ok(Expression::ObjectConstructor(constructor))
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+		let items = self.0.into_iter().map(|item| item.evaluate_at_compile_time(context)).collect::<Vec<_>>();
+		if items.iter().all(|item| item.is_literal(context)) {
+			Expression::Literal(Literal::List(LiteralList(items.into_iter().map(|item| item.as_literal(context)).collect()))).store_in_memory(context)
+		} else {
+			Expression::List(List(items)).store_in_memory(context)
+		}
+	}
+}
+
+impl Deref for List {
+	type Target = Vec<ExpressionPointer>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.0
+	}
+}
+
+#[derive(Debug, Clone)]
+pub struct LiteralList(Vec<LiteralPointer>);
+
+impl LiteralList {
+	pub(crate) fn empty() -> LiteralList {
+		LiteralList(Vec::new())
+	}
+}
+
+impl Deref for LiteralList {
+	type Target = Vec<LiteralPointer>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.0
 	}
 }

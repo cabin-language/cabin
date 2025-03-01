@@ -1,10 +1,3 @@
-use crate::{
-	ast::expressions::{object::ObjectConstructor, Expression},
-	comptime::CompileTime,
-	Context,
-	Span,
-};
-
 /// Returns the fully qualified path to the current function, similar to how `file!()` from `std` works, but for function names.
 ///
 /// This is used by the compiler to log stack traces for printing developer information upon errors.
@@ -22,11 +15,6 @@ macro_rules! function {
 		let simplified = regex_macro::regex!("^<([^>< ]+) as ([^>< ]+)>(.*)$").replace(stripped, "${1}${3}").to_string();
 		simplified.strip_suffix("::{{closure}}").unwrap_or(&simplified).to_owned()
 	}};
-}
-
-/// This should only be called after parse-time.
-pub fn string(value: &str, span: Span, context: &mut Context) -> Expression {
-	ObjectConstructor::string(value, span, context).evaluate_at_compile_time(context)
 }
 
 /// Returns the second value provided wrapped in `Some()` if the first value is true; Otherwise, returns `None`.

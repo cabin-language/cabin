@@ -2,6 +2,8 @@ use clap::Parser as _;
 use commands::{CabinCommand as _, SubCommand};
 
 mod commands;
+mod snippet;
+mod theme;
 
 /// The Cabin compiler.
 #[derive(clap::Parser)]

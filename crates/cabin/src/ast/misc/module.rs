@@ -2,17 +2,14 @@ use std::collections::HashMap;
 
 use crate::{
 	ast::{
-		expressions::{field_access::FieldAccessType, literal::LiteralObject},
-		misc::tag::TagList,
+		expressions::new_literal::Object,
 		statements::{declaration::Declaration, Statement},
 	},
-	comptime::{memory::VirtualPointer, CompileTime},
+	comptime::{memory::LiteralPointer, CompileTime},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	parser::{Parse, ParseError, TokenQueue, TokenQueueFunctionality as _},
 	scope::{ScopeId, ScopeType},
-	traits::TryAs as _,
 	Context,
-	Span,
 	Spanned as _,
 };
 
@@ -54,44 +51,27 @@ impl CompileTime for Module {
 	type Output = Module;
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		let scope_reverter = context.scope_tree.set_current_scope(self.inner_scope_id);
 		let evaluated = Self {
 			declarations: self.declarations.into_iter().map(|statement| statement.evaluate_at_compile_time(context)).collect(),
 			inner_scope_id: self.inner_scope_id,
 		};
-		scope_reverter.revert(context);
 		evaluated
 	}
 }
 
 impl Module {
-	pub(crate) fn to_pointer(&self, context: &mut Context) -> VirtualPointer {
-		LiteralObject {
-			type_name: "Object".into(),
-			fields: self
-				.declarations
-				.iter()
-				.map(|declaration| {
-					(
-						declaration.name().to_owned(),
-						*declaration
-							.value(context)
-							.clone()
-							.evaluate_at_compile_time(context)
-							.try_as::<VirtualPointer>()
-							.unwrap_or(&VirtualPointer::ERROR),
-					)
-				})
-				.collect(),
-			internal_fields: HashMap::new(),
-			field_access_type: FieldAccessType::Normal,
-			outer_scope_id: ScopeId::stdlib(),
-			inner_scope_id: None,
-			name: "module".into(),
-			address: None,
-			span: Span::unknown(),
-			tags: TagList::default(),
+	pub(crate) fn into_object(self, context: &mut Context) -> Object {
+		let mut fields = HashMap::new();
+		for declaration in self.declarations {
+			let _ = fields.insert(
+				declaration.name().to_owned(),
+				declaration.value(context).evaluate_at_compile_time(context).as_literal(context),
+			);
 		}
-		.store_in_memory(context)
+
+		Object {
+			type_name: "Module".into(),
+			fields,
+		}
 	}
 }

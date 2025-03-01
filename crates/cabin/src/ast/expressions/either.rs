@@ -1,19 +1,17 @@
-use std::collections::HashMap;
-
 use convert_case::{Case, Casing as _};
 
+use super::field_access::Dot;
 use crate::{
-	api::{context::Context, scope::ScopeId},
+	api::context::Context,
 	ast::{
 		expressions::{
-			field_access::FieldAccessType,
-			literal::{LiteralConvertible, LiteralObject},
 			name::Name,
-			object::InternalFieldValue,
+			new_literal::{Literal, Object},
+			Expression,
 		},
 		misc::tag::TagList,
 	},
-	comptime::{memory::VirtualPointer, CompileTime},
+	comptime::{memory::ExpressionPointer, CompileTime},
 	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	lexer::TokenType,
 	parse_list,
@@ -46,22 +44,19 @@ use crate::{
 /// ```
 #[derive(Debug, Clone)]
 pub struct Either {
-	variants: Vec<(Name, VirtualPointer)>,
-	scope_id: ScopeId,
-	name: Name,
+	variants: Vec<(Name, ExpressionPointer)>,
 	span: Span,
 	tags: TagList,
 }
 
 impl TryParse for Either {
-	type Output = VirtualPointer;
+	type Output = Either;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordEither)?.span;
 		let mut variants = Vec::new();
 		let end = parse_list!(tokens, ListType::Braced, {
 			let name = Name::try_parse(tokens, context)?;
-			let span = name.span(context);
 			if name.unmangled_name() != name.unmangled_name().to_case(Case::Snake) {
 				context.add_diagnostic(Diagnostic {
 					span: name.span(context),
@@ -70,19 +65,15 @@ impl TryParse for Either {
 					}),
 				});
 			}
-			variants.push((name, LiteralObject::empty(span, context).store_in_memory(context)));
+			variants.push((name, Expression::Literal(Literal::Object(Object::empty())).store_in_memory(context)));
 		})
 		.span;
 
 		Ok(Either {
 			variants,
-			scope_id: context.scope_tree.unique_id(),
-			name: "anonymous_either".into(),
 			span: start.to(end),
 			tags: TagList::default(),
-		}
-		.to_literal()
-		.store_in_memory(context))
+		})
 	}
 }
 
@@ -105,35 +96,18 @@ impl CompileTime for Either {
 	}
 }
 
-impl LiteralConvertible for Either {
-	fn to_literal(self) -> LiteralObject {
-		LiteralObject {
-			address: None,
-			fields: HashMap::from([]),
-			internal_fields: HashMap::from([("variants".to_owned(), InternalFieldValue::LiteralMap(self.variants))]),
-			name: self.name,
-			field_access_type: FieldAccessType::Either,
-			outer_scope_id: self.scope_id,
-			inner_scope_id: Some(self.scope_id),
-			span: self.span,
-			type_name: "Either".into(),
-			tags: self.tags,
-		}
-	}
-
-	fn from_literal(literal: &LiteralObject) -> anyhow::Result<Self> {
-		Ok(Either {
-			variants: literal.get_internal_field::<Vec<(Name, VirtualPointer)>>("variants")?.to_owned(),
-			scope_id: literal.outer_scope_id(),
-			name: literal.name.clone(),
-			span: literal.span,
-			tags: literal.tags.clone(),
-		})
-	}
-}
-
 impl Spanned for Either {
 	fn span(&self, _context: &Context) -> Span {
 		self.span.to_owned()
+	}
+}
+
+impl Dot for Either {
+	fn dot(&self, name: &Name, context: &mut Context) -> ExpressionPointer {
+		self.variants
+			.iter()
+			.find_map(|(variant_name, value)| (name == variant_name).then_some(value))
+			.unwrap_or(&ExpressionPointer::ERROR)
+			.to_owned()
 	}
 }
