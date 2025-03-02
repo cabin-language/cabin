@@ -17,23 +17,33 @@ impl CabinCommand for RunCommand {
 				return;
 			},
 		};
-		let program = std::fs::read_to_string(project.root_directory().join("src").join("main.cabin")).unwrap();
 
 		// Compile-time evaluation
 		println!("{} {}...", "\nRunning".bold().green(), project.config().information().name().bold());
 		println!("    {} compile-time code...", "Running".bold().green());
+
+		// Check diagnostics
 		let diagnostics = project.run_compile_time_code().to_owned();
+		let one_error = diagnostics.errors().len() == 1;
 		if !diagnostics.errors().is_empty() {
 			eprintln!("\n{}\n", "-".repeat(80));
 			for diagnostic in diagnostics.into_iter() {
 				if let DiagnosticInfo::Error(error) = &diagnostic.info {
 					eprintln!("{} {error}\n", "Error:".bold().red());
-					show_snippet::<CatppuccinMocha>(&program, &diagnostic);
+					show_snippet::<CatppuccinMocha>(&diagnostic);
+					let (line, _) = diagnostic.start_line_column().unwrap();
+					eprintln!(
+						"In {} on line {}\n",
+						format!("{}", pathdiff::diff_paths(diagnostic.file, project.root_directory()).unwrap().display())
+							.bold()
+							.cyan(),
+						line.to_string().bold().cyan()
+					);
 					eprintln!("{}\n", "-".repeat(80));
 				}
 			}
 
-			eprintln!("{} due to the errors above.\n", "Cancelling".bold().red());
+			eprintln!("{} due to the {} above.\n", "Cancelling".bold().red(), if one_error { "error" } else { "errors" });
 			return;
 		}
 

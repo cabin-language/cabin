@@ -1,3 +1,4 @@
+use super::ExpressionOrPointer;
 use crate::{
 	api::{context::Context, scope::ScopeId},
 	ast::expressions::{name::Name, operators::PrimaryExpression, Expression},
@@ -24,8 +25,8 @@ impl TryParse for FieldAccess {
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let mut expression = PrimaryExpression::try_parse(tokens, context)?;
 		let start = expression.span(context);
-		while tokens.next_is(TokenType::Dot) {
-			let _ = tokens.pop(TokenType::Dot)?;
+		while tokens.next_is(TokenType::Dot, context) {
+			let _ = tokens.pop(TokenType::Dot, context)?;
 			let right = Name::try_parse(tokens, context)?;
 			let end = right.span(context);
 			expression = Expression::FieldAccess(Self {
@@ -42,7 +43,7 @@ impl TryParse for FieldAccess {
 }
 
 impl CompileTime for FieldAccess {
-	type Output = ExpressionPointer;
+	type Output = ExpressionOrPointer;
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		let left_evaluated = self.left.evaluate_at_compile_time(context);
@@ -50,17 +51,17 @@ impl CompileTime for FieldAccess {
 		// Resolvable at compile-time
 		if let Ok(pointer) = left_evaluated.try_as_literal(context) {
 			let literal = pointer.literal(context).to_owned();
-			literal.dot(&self.right, context)
+			let field_value = literal.dot(&self.right, context);
+			ExpressionOrPointer::Pointer(field_value)
 		}
 		// Not resolvable at compile-time - return the original expression
 		else {
-			Expression::FieldAccess(FieldAccess {
+			ExpressionOrPointer::Expression(Expression::FieldAccess(FieldAccess {
 				left: left_evaluated,
 				right: self.right,
 				scope_id: self.scope_id,
 				span: self.span,
-			})
-			.store_in_memory(context)
+			}))
 		}
 	}
 }

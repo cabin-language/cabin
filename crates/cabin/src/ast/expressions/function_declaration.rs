@@ -37,13 +37,13 @@ impl TryParse for FunctionDeclaration {
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		// "function" keyword
-		let start = tokens.pop(TokenType::KeywordAction)?.span;
+		let start = tokens.pop(TokenType::KeywordAction, context)?.span;
 		let mut end = start;
 
 		// Compile-time parameters
-		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
+		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket, context), {
 			let mut compile_time_parameters = Vec::new();
-			end = parse_list!(tokens, ListType::AngleBracketed, {
+			end = parse_list!(tokens, context, ListType::AngleBracketed, {
 				let parameter = Parameter::try_parse(tokens, context)?;
 				compile_time_parameters.push(parameter);
 			})
@@ -52,9 +52,9 @@ impl TryParse for FunctionDeclaration {
 		});
 
 		// Parameters
-		let parameters = if_then_else_default!(tokens.next_is(TokenType::LeftParenthesis), {
+		let parameters = if_then_else_default!(tokens.next_is(TokenType::LeftParenthesis, context), {
 			let mut parameters = Vec::new();
-			end = parse_list!(tokens, ListType::Parenthesized, {
+			end = parse_list!(tokens, context, ListType::Parenthesized, {
 				let parameter = Parameter::try_parse(tokens, context)?;
 				parameters.push(parameter);
 			})
@@ -63,20 +63,21 @@ impl TryParse for FunctionDeclaration {
 		});
 
 		// Return Type
-		let return_type = if_then_some!(tokens.next_is(TokenType::Colon), {
-			let _ = tokens.pop(TokenType::Colon)?;
+		let return_type = if_then_some!(tokens.next_is(TokenType::Colon, context), {
+			let _ = tokens.pop(TokenType::Colon, context)?;
 			let expression = Expression::parse(tokens, context);
 			end = expression.span(context);
 			expression
 		});
 
 		// Body
-		let body = if_then_some!(tokens.next_is(TokenType::LeftBrace), {
+		let body = if_then_some!(tokens.next_is(TokenType::LeftBrace, context), {
 			let block = Block::parse_with_scope_type(tokens, context, ScopeType::Function)?;
 			let error = Expression::error(Span::unknown(), context);
 			for parameter in &compile_time_parameters {
 				if let Err(error) = context.scope_tree.declare_new_variable_from_id(parameter.name().clone(), error, block.inner_scope_id()) {
 					context.add_diagnostic(Diagnostic {
+						file: context.file.clone(),
 						span: parameter.name().span(context),
 						info: DiagnosticInfo::Error(error),
 					});
@@ -86,6 +87,7 @@ impl TryParse for FunctionDeclaration {
 				let error = Expression::error(Span::unknown(), context);
 				if let Err(error) = context.scope_tree.declare_new_variable_from_id(parameter.name().clone(), error, block.inner_scope_id()) {
 					context.add_diagnostic(Diagnostic {
+						file: context.file.clone(),
 						span: parameter.name().span(context),
 						info: DiagnosticInfo::Error(error),
 					});
@@ -154,6 +156,12 @@ impl CompileTime for FunctionDeclaration {
 impl Spanned for FunctionDeclaration {
 	fn span(&self, _context: &Context) -> Span {
 		self.span
+	}
+}
+
+impl FunctionDeclaration {
+	pub(crate) fn set_tags(&mut self, tags: TagList) {
+		self.tags = tags;
 	}
 }
 

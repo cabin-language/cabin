@@ -10,7 +10,7 @@ pub(crate) trait Typed {
 }
 
 impl Type {
-	pub(crate) fn is_assignable_to(&self, other: &Type) -> bool {
+	pub(crate) fn is_assignable_to(&self, other: &Type, context: &Context) -> bool {
 		let Type::Literal(source) = self;
 		let Type::Literal(target) = other;
 

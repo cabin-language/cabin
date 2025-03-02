@@ -25,7 +25,7 @@ impl TryParse for TagList {
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let mut tags = Vec::new();
-		let _ = parse_list!(tokens, ListType::Tag, {
+		let _ = parse_list!(tokens, context, ListType::Tag, {
 			tags.push(Expression::parse(tokens, context));
 		});
 		Ok(TagList { values: tags })

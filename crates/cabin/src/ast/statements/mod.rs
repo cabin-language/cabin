@@ -29,22 +29,22 @@ impl Parse for Statement {
 
 	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
 		fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Statement, Diagnostic> {
-			let statement = match tokens.peek_type()? {
+			let statement = match tokens.peek_type(context)? {
 				TokenType::KeywordLet | TokenType::TagOpening => Declaration::try_parse(tokens, context)?,
 				TokenType::Identifier => {
-					if tokens.peek_type2()? == TokenType::KeywordIs {
+					if tokens.peek_type2(context)? == TokenType::KeywordIs {
 						let tail = Statement::Tail(TailStatement::try_parse(tokens, context)?);
-						let _ = tokens.pop(TokenType::Semicolon)?;
+						let _ = tokens.pop(TokenType::Semicolon, context)?;
 						tail
 					} else {
 						let expression = Statement::Expression(Expression::parse(tokens, context));
-						let _ = tokens.pop(TokenType::Semicolon)?;
+						let _ = tokens.pop(TokenType::Semicolon, context)?;
 						expression
 					}
 				},
 				_ => {
 					let expression = Statement::Expression(Expression::parse(tokens, context));
-					let _ = tokens.pop(TokenType::Semicolon)?;
+					let _ = tokens.pop(TokenType::Semicolon, context)?;
 					expression
 				},
 			};
@@ -56,13 +56,13 @@ impl Parse for Statement {
 			Ok(statement) => statement,
 			Err(error) => {
 				context.add_diagnostic(error);
-				while let Ok(token_type) = tokens.peek_type() {
+				while let Ok(token_type) = tokens.peek_type(context) {
 					if token_type == TokenType::Semicolon {
-						let _ = tokens.pop(TokenType::Semicolon).unwrap();
+						let _ = tokens.pop(TokenType::Semicolon, context).unwrap();
 						break;
 					}
 
-					let _ = tokens.pop(token_type).unwrap();
+					let _ = tokens.pop(token_type, context).unwrap();
 				}
 				let end = tokens.front().unwrap().span;
 				Statement::Error(start.to(end))

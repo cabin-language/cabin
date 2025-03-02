@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use super::ExpressionOrPointer;
 use crate::{
 	api::{builtin::call_builtin_at_compile_time, context::Context, scope::ScopeId, traits::TryAs as _},
 	ast::{
@@ -60,14 +61,17 @@ impl TryParse for PostfixOperators {
 		let mut end = start;
 
 		// Postfix function call operators
-		while tokens.next_is_one_of(&[
-			TokenType::LeftParenthesis,
-			TokenType::LeftAngleBracket,
-			TokenType::QuestionMark,
-			TokenType::ExclamationPoint,
-		]) {
-			if tokens.next_is(TokenType::QuestionMark) {
-				end = tokens.pop(TokenType::QuestionMark)?.span;
+		while tokens.next_is_one_of(
+			&[
+				TokenType::LeftParenthesis,
+				TokenType::LeftAngleBracket,
+				TokenType::QuestionMark,
+				TokenType::ExclamationPoint,
+			],
+			context,
+		) {
+			if tokens.next_is(TokenType::QuestionMark, context) {
+				end = tokens.pop(TokenType::QuestionMark, context)?.span;
 				return Ok(Expression::Unary(UnaryOperation {
 					expression,
 					operator: UnaryOperator::QuestionMark,
@@ -77,9 +81,9 @@ impl TryParse for PostfixOperators {
 			}
 
 			// Compile-time arguments
-			let compile_time_arguments = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
+			let compile_time_arguments = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket, context), {
 				let mut compile_time_arguments = Vec::new();
-				end = parse_list!(tokens, ListType::AngleBracketed, {
+				end = parse_list!(tokens, context, ListType::AngleBracketed, {
 					compile_time_arguments.push(Expression::parse(tokens, context));
 				})
 				.span;
@@ -87,9 +91,9 @@ impl TryParse for PostfixOperators {
 			});
 
 			// Arguments
-			let arguments = if_then_else_default!(tokens.next_is(TokenType::LeftParenthesis), {
+			let arguments = if_then_else_default!(tokens.next_is(TokenType::LeftParenthesis, context), {
 				let mut arguments = Vec::new();
-				end = parse_list!(tokens, ListType::Parenthesized, {
+				end = parse_list!(tokens, context, ListType::Parenthesized, {
 					arguments.push(Expression::parse(tokens, context));
 				})
 				.span;
@@ -113,7 +117,7 @@ impl TryParse for PostfixOperators {
 }
 
 impl CompileTime for FunctionCall {
-	type Output = ExpressionPointer;
+	type Output = ExpressionOrPointer;
 
 	fn evaluate_at_compile_time(mut self, context: &mut Context) -> Self::Output {
 		let span = self.span(context);
@@ -143,15 +147,14 @@ impl CompileTime for FunctionCall {
 		// If not all arguments are known at compile-time, we can't call the function at compile time. In this case, we just
 		// return a function call expression, and it'll get transpiled to C and called at runtime.
 		if arguments.iter().map(|argument| argument.is_literal(context)).any(|value| !value) {
-			return Expression::FunctionCall(FunctionCall {
+			return ExpressionOrPointer::Expression(Expression::FunctionCall(FunctionCall {
 				function,
 				compile_time_arguments,
 				arguments,
 				scope_id: self.scope_id,
 				span: self.span,
 				tags: self.tags,
-			})
-			.store_in_memory(context);
+			}));
 		}
 
 		// Evaluate function
@@ -159,8 +162,9 @@ impl CompileTime for FunctionCall {
 			let literal = pointer.literal(context).to_owned();
 			let function_declaration = literal.try_as::<EvaluatedFunctionDeclaration>().unwrap_or_else(|_error| {
 				context.add_diagnostic(Diagnostic {
+					file: context.file.clone(),
 					span,
-					info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::CallNonFunction)),
+					info: CompileTimeError::CallNonFunction.into(),
 				});
 				EvaluatedFunctionDeclaration::error()
 			});
@@ -179,8 +183,9 @@ impl CompileTime for FunctionCall {
 			for (argument, parameter) in compile_time_arguments.iter().zip(function_declaration.compile_time_parameters().iter()) {
 				// Typecheck that the argument is assignable to the parameter type
 				let argument_type = argument.get_type(context);
-				if !argument_type.is_assignable_to(parameter.parameter_type()) {
+				if !argument_type.is_assignable_to(parameter.parameter_type(), context) {
 					context.add_diagnostic(Diagnostic {
+						file: context.file.clone(),
 						span: argument.span(context),
 						info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::TypeMismatch(
 							parameter.parameter_type().to_owned(),
@@ -192,6 +197,7 @@ impl CompileTime for FunctionCall {
 				// Argument to compile-time parameter must be known at compile-time
 				if !argument.is_literal(context) {
 					context.add_diagnostic(Diagnostic {
+						file: context.file.clone(),
 						span: argument.span(context),
 						info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::ExpressionUsedAsType)),
 					});
@@ -201,8 +207,9 @@ impl CompileTime for FunctionCall {
 			// Validate arguments
 			for (argument, parameter) in arguments.iter().zip(function_declaration.parameters().iter()) {
 				let argument_type = argument.get_type(context);
-				if !argument_type.is_assignable_to(parameter.parameter_type()) {
+				if !argument_type.is_assignable_to(parameter.parameter_type(), context) {
 					context.add_diagnostic(Diagnostic {
+						file: context.file.clone(),
 						span: argument.span(context),
 						info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::TypeMismatch(
 							parameter.parameter_type().to_owned(),
@@ -226,7 +233,7 @@ impl CompileTime for FunctionCall {
 
 				// Return value
 				let return_value = block.clone().evaluate_at_compile_time(context);
-				return Expression::Block(return_value).store_in_memory(context);
+				return ExpressionOrPointer::Expression(Expression::Block(return_value));
 			}
 			// Builtin function
 			else {
@@ -242,6 +249,7 @@ impl CompileTime for FunctionCall {
 
 				// Get builtin and side effect tags
 				for tag in &function_declaration.tags().values {
+					dbg!(tag.expression(context));
 					if let Ok(literal) = tag.try_as_literal(context) {
 						let object = literal.literal(context).try_as::<Object>().unwrap();
 						if object.type_name() == &Name::from("BuiltinTag") {
@@ -293,25 +301,24 @@ impl CompileTime for FunctionCall {
 							// TODO: runtime tag
 						}
 
-						return call_builtin_at_compile_time(&internal_name, context, self.scope_id, arguments, self.span);
+						return ExpressionOrPointer::Pointer(call_builtin_at_compile_time(&internal_name, context, self.scope_id, arguments, self.span));
 					}
 
-					return Expression::error(Span::unknown(), context);
+					return ExpressionOrPointer::Pointer(Expression::error(Span::unknown(), context));
 				}
 
-				return Expression::error(span, context);
+				return ExpressionOrPointer::Pointer(Expression::error(span, context));
 			}
 		}
 
-		Expression::FunctionCall(FunctionCall {
+		ExpressionOrPointer::Expression(Expression::FunctionCall(FunctionCall {
 			function,
 			compile_time_arguments,
 			arguments,
 			scope_id: self.scope_id,
 			span: self.span,
 			tags: self.tags,
-		})
-		.store_in_memory(context)
+		}))
 	}
 }
 

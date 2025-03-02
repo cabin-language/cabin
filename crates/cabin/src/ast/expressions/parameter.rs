@@ -23,7 +23,7 @@ impl TryParse for Parameter {
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let name = Name::try_parse(tokens, context)?;
-		let _ = tokens.pop(TokenType::Colon)?;
+		let _ = tokens.pop(TokenType::Colon, context)?;
 		let parameter_type = Expression::parse(tokens, context);
 		Ok(Parameter {
 			span: name.span(context).to(parameter_type.span(context)),

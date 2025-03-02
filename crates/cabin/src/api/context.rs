@@ -1,4 +1,7 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+	collections::HashMap,
+	path::{Path, PathBuf},
+};
 
 use crate::{
 	api::{
@@ -18,6 +21,7 @@ pub struct Context {
 	pub(crate) virtual_memory: VirtualMemory,
 	pub(crate) libraries: HashMap<Name, ExpressionPointer>,
 	pub(crate) side_effects: bool,
+	pub(crate) file: PathBuf,
 
 	// Privately mutable
 	diagnostics: Diagnostics,
@@ -31,17 +35,13 @@ impl Default for Context {
 			diagnostics: Diagnostics::empty(),
 			libraries: HashMap::new(),
 			side_effects: true,
+			file: "builtin.cabin".into(),
 		};
 
 		// Add stdlib
 		let library = Expression::Literal(Literal::Object(crate::parse_library(STDLIB, &mut context).into_object(&mut context))).store_in_memory(&mut context);
 		let _ = context.libraries.insert("builtin".into(), library);
-		if let Err(error) = context.scope_tree.declare_new_variable("builtin", library) {
-			context.add_diagnostic(Diagnostic {
-				span: Span::unknown(),
-				info: DiagnosticInfo::Error(error),
-			});
-		}
+		context.scope_tree.declare_new_variable("builtin", library).unwrap();
 
 		context
 	}

@@ -14,7 +14,7 @@ clap = { version = "4.5.28", features = ["derive"] }
 colored = "3.0.0"
 enum_dispatch = "0.3.13"
 tree-sitter = "0.25.2"
-phf = { version = "0.11.3", features = ["macros"] }
+pathdiff = "0.2.3"
 
 [build-dependencies]
 cc = "*"

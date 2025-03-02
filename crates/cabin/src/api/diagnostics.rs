@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, path::PathBuf};
 
 use convert_case::{Case, Casing as _};
 
@@ -41,11 +41,16 @@ pub enum DiagnosticInfo {
 pub struct Diagnostic {
 	pub span: Span,
 	pub info: DiagnosticInfo,
+	pub file: PathBuf,
 }
 
 impl Diagnostic {
 	pub fn info(&self) -> &DiagnosticInfo {
 		&self.info
+	}
+
+	pub fn start_line_column(&self) -> Result<(usize, usize), std::io::Error> {
+		std::fs::read_to_string(&self.file).map(|contents| self.span.start_line_column(&contents).unwrap())
 	}
 }
 

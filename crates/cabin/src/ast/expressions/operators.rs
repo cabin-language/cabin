@@ -61,8 +61,8 @@ pub(crate) struct BinaryExpression;
 fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<ExpressionPointer, Diagnostic> {
 	let mut expression = operation.parse_precedent(tokens, context)?;
 
-	while tokens.next_is_one_of(operation.token_types) {
-		let operator_token = tokens.pop(tokens.peek_type()?)?;
+	while tokens.next_is_one_of(operation.token_types, context) {
+		let operator_token = tokens.pop(tokens.peek_type(context)?, context)?;
 		let right = operation.parse_precedent(tokens, context)?;
 		expression = Expression::FunctionCall(FunctionCall::from_binary_operation(context, expression, right, operator_token)?).store_in_memory(context);
 	}
@@ -84,11 +84,11 @@ impl TryParse for PrimaryExpression {
 	type Output = ExpressionPointer;
 
 	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
-		Ok(match tokens.peek_type()? {
+		Ok(match tokens.peek_type(context)? {
 			TokenType::LeftParenthesis => {
-				let _ = tokens.pop(TokenType::LeftParenthesis).unwrap_or_else(|_| unreachable!());
+				let _ = tokens.pop(TokenType::LeftParenthesis, context).unwrap_or_else(|_| unreachable!());
 				let expression = Expression::parse(tokens, context);
-				let _ = tokens.pop(TokenType::RightParenthesis)?;
+				let _ = tokens.pop(TokenType::RightParenthesis, context)?;
 				expression
 				// TODO: this needs to be its own expression type for transpilation/formatting
 			},
@@ -109,13 +109,14 @@ impl TryParse for PrimaryExpression {
 			TokenType::LeftBracket => Expression::List(List::try_parse(tokens, context)?).store_in_memory(context),
 			TokenType::String => CabinString::try_parse(tokens, context)?,
 			TokenType::Number => {
-				let number_token = tokens.pop(TokenType::Number).unwrap();
+				let number_token = tokens.pop(TokenType::Number, context).unwrap();
 				Expression::Literal(Literal::Number(number_token.value.parse().unwrap())).store_in_memory(context)
 			},
 
 			// bad :<
 			token_type => {
 				return Err(Diagnostic {
+					file: context.file.clone(),
 					span: tokens.current_position().unwrap(),
 					info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedTokenExpected {
 						expected: "primary expression",

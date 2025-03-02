@@ -30,19 +30,20 @@ impl TryParse for ObjectConstructor {
 	type Output = ObjectConstructor;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
-		let start = tokens.pop(TokenType::KeywordNew)?.span;
+		let start = tokens.pop(TokenType::KeywordNew, context)?.span;
 
 		// Name
 		let name = Name::try_parse(tokens, context)?;
 
-		let _compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
+		let _compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket, context), {
 			let mut compile_time_parameters = Vec::new();
-			let _ = parse_list!(tokens, ListType::AngleBracketed, {
+			let _ = parse_list!(tokens, context, ListType::AngleBracketed, {
 				let parameter = Parameter::try_parse(tokens, context)?;
 				let name = parameter.name();
 				let error = Expression::error(Span::unknown(), context);
 				if let Err(error) = context.scope_tree.declare_new_variable(name.clone(), error) {
 					context.add_diagnostic(Diagnostic {
+						file: context.file.clone(),
 						span: name.span(context),
 						info: DiagnosticInfo::Error(error),
 					});
@@ -54,16 +55,19 @@ impl TryParse for ObjectConstructor {
 
 		// Fields
 		let mut fields = HashMap::new();
-		let end = parse_list!(tokens, ListType::Braced, {
+		let end = parse_list!(tokens, context, ListType::Braced, {
 			// Parse tags
-			let _tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
+			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening, context), TagList::try_parse(tokens, context)?);
 
 			// Name
 			let field_name = Name::try_parse(tokens, context)?;
 
 			// Value
-			let _ = tokens.pop(TokenType::Equal)?;
+			let _ = tokens.pop(TokenType::Equal, context)?;
 			let value = Expression::parse(tokens, context);
+			if let Some(tags) = tags {
+				value.expression_mut(context).set_tags(tags);
+			}
 
 			// Add field
 			_ = fields.insert(field_name, value);
@@ -81,7 +85,7 @@ impl TryParse for ObjectConstructor {
 }
 
 impl CompileTime for ObjectConstructor {
-	type Output = ExpressionPointer;
+	type Output = Expression;
 
 	fn evaluate_at_compile_time(mut self, context: &mut Context) -> Self::Output {
 		self.tags = self.tags.evaluate_at_compile_time(context);
@@ -97,7 +101,6 @@ impl CompileTime for ObjectConstructor {
 		} else {
 			Expression::ObjectConstructor(self)
 		}
-		.store_in_memory(context)
 	}
 }
 

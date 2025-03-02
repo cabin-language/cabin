@@ -58,18 +58,19 @@ impl TryParse for Extend {
 	type Output = Extend;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
-		let start = tokens.pop(TokenType::KeywordExtend)?.span;
+		let start = tokens.pop(TokenType::KeywordExtend, context)?.span;
 
 		context.scope_tree.enter_new_scope(ScopeType::Extend);
 
-		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
+		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket, context), {
 			let mut parameters = Vec::new();
-			let _ = parse_list!(tokens, ListType::AngleBracketed, {
+			let _ = parse_list!(tokens, context, ListType::AngleBracketed, {
 				let parameter = Parameter::try_parse(tokens, context)?;
 				let name = parameter.name().to_owned();
 				let error = Expression::error(Span::unknown(), context);
 				if let Err(error) = context.scope_tree.declare_new_variable(name.clone(), error) {
 					context.add_diagnostic(Diagnostic {
+						file: context.file.clone(),
 						span: name.span(context),
 						info: DiagnosticInfo::Error(error),
 					});
@@ -81,21 +82,21 @@ impl TryParse for Extend {
 
 		let type_to_extend = Expression::parse(tokens, context);
 
-		let type_to_be = if_then_some!(tokens.next_is(TokenType::KeywordToBe), {
-			let _ = tokens.pop(TokenType::KeywordToBe)?;
+		let type_to_be = if_then_some!(tokens.next_is(TokenType::KeywordToBe, context), {
+			let _ = tokens.pop(TokenType::KeywordToBe, context)?;
 			Expression::parse(tokens, context)
 		});
 
 		let mut fields = HashMap::new();
-		let end = parse_list!(tokens, ListType::Braced, {
+		let end = parse_list!(tokens, context, ListType::Braced, {
 			// Parse tags
-			let _tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
+			let _tags = if_then_some!(tokens.next_is(TokenType::TagOpening, context), TagList::try_parse(tokens, context)?);
 
 			// Name
 			let name = Name::try_parse(tokens, context)?;
 
 			// Value
-			let _ = tokens.pop(TokenType::Equal)?;
+			let _ = tokens.pop(TokenType::Equal, context)?;
 			let value = Expression::parse(tokens, context);
 
 			// Add field

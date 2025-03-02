@@ -23,7 +23,7 @@ impl TryParse for TailStatement {
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let label = Name::try_parse(tokens, context)?;
 
-		let _ = tokens.pop(TokenType::KeywordIs)?;
+		let _ = tokens.pop(TokenType::KeywordIs, context)?;
 		let value = Expression::parse(tokens, context);
 
 		Ok(TailStatement {

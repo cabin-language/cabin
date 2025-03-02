@@ -56,20 +56,20 @@ macro_rules! if_then_else_default {
 #[macro_export]
 macro_rules! parse_list {
 	(
-		$tokens: expr, $list_type: expr, $body: block
+		$tokens: expr, $context: expr, $list_type: expr, $body: block
 	) => {{
 		use $crate::parser::TokenQueueFunctionality as _;
 
-		let _ = $tokens.pop($list_type.opening())?;
-		while !$tokens.next_is($list_type.closing()) {
+		let _ = $tokens.pop($list_type.opening(), $context)?;
+		while !$tokens.next_is($list_type.closing(), $context) {
 			$body
-			if $tokens.next_is($crate::lexer::TokenType::Comma) {
-				let _ = $tokens.pop($crate::lexer::TokenType::Comma)?;
+			if $tokens.next_is($crate::lexer::TokenType::Comma, $context) {
+				let _ = $tokens.pop($crate::lexer::TokenType::Comma, $context)?;
 			} else {
 				break;
 			}
 		}
 
-		$tokens.pop($list_type.closing())?
+		$tokens.pop($list_type.closing(), $context)?
 	}};
 }

@@ -43,7 +43,7 @@ impl TryParse for RunExpression {
 	type Output = RunExpression;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
-		let mut span = tokens.pop(TokenType::KeywordRuntime)?.span;
+		let mut span = tokens.pop(TokenType::KeywordRuntime, context)?.span;
 		let expression = Expression::parse(tokens, context);
 		span = span.to(expression.span(context));
 		Ok(RunExpression { span, expression })

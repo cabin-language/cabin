@@ -94,6 +94,7 @@ impl Dot for Object {
 			.get(name)
 			.unwrap_or_else(|| {
 				context.add_diagnostic(Diagnostic {
+					file: context.file.clone(),
 					info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::NoSuchField(name.unmangled_name().to_owned()))),
 					span: Span::unknown(),
 				});

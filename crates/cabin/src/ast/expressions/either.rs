@@ -53,13 +53,14 @@ impl TryParse for Either {
 	type Output = Either;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
-		let start = tokens.pop(TokenType::KeywordEither)?.span;
+		let start = tokens.pop(TokenType::KeywordEither, context)?.span;
 		let mut variants = Vec::new();
-		let end = parse_list!(tokens, ListType::Braced, {
+		let end = parse_list!(tokens, context, ListType::Braced, {
 			let name = Name::try_parse(tokens, context)?;
 			if name.unmangled_name() != name.unmangled_name().to_case(Case::Snake) {
 				context.add_diagnostic(Diagnostic {
 					span: name.span(context),
+					file: context.file.clone(),
 					info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
 						original_name: name.unmangled_name().to_owned(),
 					}),
@@ -88,6 +89,7 @@ impl CompileTime for Either {
 		if self.variants.is_empty() {
 			context.add_diagnostic(Diagnostic {
 				span: self.span(context),
+				file: context.file.clone(),
 				info: DiagnosticInfo::Warning(Warning::EmptyEither),
 			});
 		}

@@ -467,6 +467,7 @@ pub(crate) fn tokenize(code: &str, context: &mut Context) -> VecDeque<Token> {
 
 		if token_type == TokenType::Unrecognized {
 			context.add_diagnostic(Diagnostic {
+				file: context.file.clone(),
 				span: Span { start: position, length: 1 },
 				info: DiagnosticInfo::Error(Error::Tokenize(TokenizeError::UnrecognizedToken(value.clone()))),
 			});

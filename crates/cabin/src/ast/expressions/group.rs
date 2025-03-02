@@ -47,17 +47,18 @@ impl TryParse for GroupDeclaration {
 	type Output = GroupDeclaration;
 
 	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
-		let start = tokens.pop(TokenType::KeywordGroup)?.span;
+		let start = tokens.pop(TokenType::KeywordGroup, context)?.span;
 		context.scope_tree.enter_new_scope(ScopeType::Group);
 
-		let _compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
+		let _compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket, context), {
 			let mut compile_time_parameters = Vec::new();
-			let _ = parse_list!(tokens, ListType::AngleBracketed, {
+			let _ = parse_list!(tokens, context, ListType::AngleBracketed, {
 				let parameter = Parameter::try_parse(tokens, context)?;
 				let name = parameter.name().to_owned();
 				let error = Expression::error(Span::unknown(), context);
 				if let Err(error) = context.scope_tree.declare_new_variable(name.clone(), error) {
 					context.add_diagnostic(Diagnostic {
+						file: context.file.clone(),
 						span: name.span(context),
 						info: DiagnosticInfo::Error(error),
 					});
@@ -69,14 +70,15 @@ impl TryParse for GroupDeclaration {
 
 		// Fields
 		let mut fields = HashMap::new();
-		let end = parse_list!(tokens, ListType::Braced, {
+		let end = parse_list!(tokens, context, ListType::Braced, {
 			//  Group field tags
-			let _tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
+			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening, context), TagList::try_parse(tokens, context)?);
 
 			// Group field name
 			let name = Name::try_parse(tokens, context)?;
 			if !name.unmangled_name().is_case(Case::Snake) {
 				context.add_diagnostic(Diagnostic {
+					file: context.file.clone(),
 					span: name.span(context),
 					info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
 						original_name: name.unmangled_name().to_owned(),
@@ -86,21 +88,25 @@ impl TryParse for GroupDeclaration {
 
 			if fields.keys().any(|field_name| field_name == &name) {
 				context.add_diagnostic(Diagnostic {
+					file: context.file.clone(),
 					span: name.span(context),
 					info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::DuplicateField(name.unmangled_name().to_owned()))),
 				});
 			}
 
 			// Group field type
-			let field_type = if_then_some!(tokens.next_is(TokenType::Colon), {
-				let _ = tokens.pop(TokenType::Colon)?;
+			let field_type = if_then_some!(tokens.next_is(TokenType::Colon, context), {
+				let _ = tokens.pop(TokenType::Colon, context)?;
 				Expression::parse(tokens, context)
 			});
 
 			// Group field value
-			let value = if_then_some!(tokens.next_is(TokenType::Equal), {
-				let _ = tokens.pop(TokenType::Equal)?;
+			let value = if_then_some!(tokens.next_is(TokenType::Equal, context), {
+				let _ = tokens.pop(TokenType::Equal, context)?;
 				let value = Expression::parse(tokens, context);
+				if let Some(tags) = tags {
+					value.expression_mut(context).set_tags(tags);
+				}
 
 				value
 			});
@@ -133,6 +139,7 @@ impl CompileTime for GroupDeclaration {
 
 				if !evaluated.is_literal(context) && !evaluated.is_error() {
 					context.add_diagnostic(Diagnostic {
+						file: context.file.clone(),
 						span,
 						info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::GroupValueNotKnownAtCompileTime)),
 					});

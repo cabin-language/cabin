@@ -68,7 +68,7 @@ impl TryParse for CabinString {
 	type Output = ExpressionPointer;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
-		let token = tokens.pop(TokenType::String)?;
+		let token = tokens.pop(TokenType::String, context)?;
 		let span = token.span;
 		let with_quotes = token.value;
 		let mut without_quotes = with_quotes.get(1..with_quotes.len() - 1).unwrap().to_owned();
@@ -96,6 +96,7 @@ impl TryParse for CabinString {
 					// Pop closing brace
 					if without_quotes.chars().next().unwrap() != '}' {
 						return Err(Diagnostic {
+							file: context.file.clone(),
 							span: token.span,
 							info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::InvalidFormatString(with_quotes))),
 						});

@@ -93,7 +93,7 @@ dependencies = [
  "clap",
  "colored",
  "enum_dispatch",
- "phf",
+ "pathdiff",
  "tree-sitter",
  "tree-sitter-cabin",
 ]
@@ -245,6 +245,12 @@ name = "once_cell"
 version = "1.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "945462a4b81e43c4e3ba96bd7b49d834c6f61198356aa858733bc4acf3cbe62e"
+
+[[package]]
+name = "pathdiff"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
 
 [[package]]
 name = "phf"

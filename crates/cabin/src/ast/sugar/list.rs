@@ -20,20 +20,20 @@ impl TryParse for List {
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let mut list = Vec::new();
-		let _end = parse_list!(tokens, ListType::Bracketed, { list.push(Expression::parse(tokens, context)) }).span;
+		let _end = parse_list!(tokens, context, ListType::Bracketed, { list.push(Expression::parse(tokens, context)) }).span;
 		Ok(List(list))
 	}
 }
 
 impl CompileTime for List {
-	type Output = ExpressionPointer;
+	type Output = Expression;
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		let items = self.0.into_iter().map(|item| item.evaluate_at_compile_time(context)).collect::<Vec<_>>();
 		if items.iter().all(|item| item.is_literal(context)) {
-			Expression::Literal(Literal::List(LiteralList(items.into_iter().map(|item| item.as_literal(context)).collect()))).store_in_memory(context)
+			Expression::Literal(Literal::List(LiteralList(items.into_iter().map(|item| item.as_literal(context)).collect())))
 		} else {
-			Expression::List(List(items)).store_in_memory(context)
+			Expression::List(List(items))
 		}
 	}
 }

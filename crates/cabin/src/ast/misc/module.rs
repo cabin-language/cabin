@@ -36,6 +36,7 @@ impl Parse for Module {
 				},
 				Statement::Error(_span) => {},
 				statement => context.add_diagnostic(Diagnostic {
+					file: context.file.clone(),
 					span: statement.span(context),
 					info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::InvalidTopLevelStatement { statement })),
 				}),

@@ -5,6 +5,7 @@ use new_literal::Literal;
 // This is required because of a bug in `try_as`
 use try_as::traits::{self as try_as_traits, TryAsMut};
 
+use super::misc::tag::TagList;
 use crate::{
 	api::context::Context,
 	ast::{
@@ -83,8 +84,8 @@ impl Parse for Expression {
 			Ok(expression) => expression,
 			Err(error) => {
 				context.add_diagnostic(error);
-				if let Ok(token_type) = tokens.peek_type() {
-					let _ = tokens.pop(token_type).unwrap();
+				if let Ok(token_type) = tokens.peek_type(context) {
+					let _ = tokens.pop(token_type, context).unwrap();
 				}
 				let end = tokens.front().unwrap().span;
 				Expression::error(start.to(end), context)
@@ -93,28 +94,34 @@ impl Parse for Expression {
 	}
 }
 
+#[derive(Debug)]
+pub(crate) enum ExpressionOrPointer {
+	Expression(Expression),
+	Pointer(ExpressionPointer),
+}
+
 impl CompileTime for Expression {
-	type Output = ExpressionPointer;
+	type Output = ExpressionOrPointer;
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		match self {
-			Self::Block(block) => Expression::Block(block.evaluate_at_compile_time(context)).store_in_memory(context),
+			Self::Block(block) => ExpressionOrPointer::Expression(Expression::Block(block.evaluate_at_compile_time(context))),
 			Self::FieldAccess(field_access) => field_access.evaluate_at_compile_time(context),
 			Self::FunctionCall(function_call) => function_call.evaluate_at_compile_time(context),
 			Self::If(if_expression) => if_expression.evaluate_at_compile_time(context),
-			Self::Extend(extend) => Expression::Literal(Literal::Extend(extend.evaluate_at_compile_time(context))).store_in_memory(context),
-			Self::Name(name) => name.clone().evaluate_at_compile_time(context),
-			Self::ObjectConstructor(constructor) => constructor.evaluate_at_compile_time(context),
+			Self::Extend(extend) => ExpressionOrPointer::Expression(Expression::Literal(Literal::Extend(extend.evaluate_at_compile_time(context)))),
+			Self::Name(name) => ExpressionOrPointer::Expression(Expression::Name(name.clone().evaluate_at_compile_time(context))),
+			Self::ObjectConstructor(constructor) => ExpressionOrPointer::Expression(constructor.evaluate_at_compile_time(context)),
 			Self::ForEachLoop(for_loop) => for_loop.evaluate_at_compile_time(context),
-			Self::Run(run_expression) => Expression::Run(run_expression.evaluate_at_compile_time(context)).store_in_memory(context),
-			Expression::Group(group_declaration) => Expression::Literal(Literal::Group(group_declaration.evaluate_at_compile_time(context))).store_in_memory(context),
+			Self::Run(run_expression) => ExpressionOrPointer::Expression(Expression::Run(run_expression.evaluate_at_compile_time(context))),
+			Expression::Group(group_declaration) => ExpressionOrPointer::Expression(Expression::Literal(Literal::Group(group_declaration.evaluate_at_compile_time(context)))),
 			Expression::FunctionDeclaration(function_declaration) => {
-				Expression::Literal(Literal::FunctionDeclaration(function_declaration.evaluate_at_compile_time(context))).store_in_memory(context)
+				ExpressionOrPointer::Expression(Expression::Literal(Literal::FunctionDeclaration(function_declaration.evaluate_at_compile_time(context))))
 			},
-			Expression::Either(either) => Expression::Literal(Literal::Either(either.evaluate_at_compile_time(context))).store_in_memory(context),
-			Self::ErrorExpression(_) => self.store_in_memory(context),
-			Self::Literal(_) => self.store_in_memory(context),
-			Self::List(list) => list.evaluate_at_compile_time(context),
+			Expression::Either(either) => ExpressionOrPointer::Expression(Expression::Literal(Literal::Either(either.evaluate_at_compile_time(context)))),
+			Self::ErrorExpression(_) => ExpressionOrPointer::Expression(self),
+			Self::Literal(_) => ExpressionOrPointer::Expression(self),
+			Self::List(list) => ExpressionOrPointer::Expression(list.evaluate_at_compile_time(context)),
 			Self::Unary(_) | Self::Parameter(_) => todo!(),
 		}
 	}
@@ -150,6 +157,13 @@ impl Expression {
 	pub(crate) fn store_in_memory(self, context: &mut Context) -> ExpressionPointer {
 		context.virtual_memory.store(self)
 	}
+
+	pub(crate) fn set_tags(&mut self, tags: TagList) {
+		match self {
+			Self::FunctionDeclaration(function) => function.set_tags(tags),
+			_ => {},
+		}
+	}
 }
 
 impl Spanned for Expression {
@@ -179,6 +193,7 @@ impl RuntimeableExpression for Expression {
 			Self::FunctionCall(function_call) => Expression::FunctionCall(function_call.evaluate_subexpressions_at_compile_time(context)),
 			_ => {
 				context.add_diagnostic(Diagnostic {
+					file: context.file.clone(),
 					span: self.span(context),
 					info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::RunNonFunctionCall)),
 				});

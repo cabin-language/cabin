@@ -39,20 +39,20 @@ impl TryParse for Declaration {
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		// Tags
-		let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
+		let tags = if_then_some!(tokens.next_is(TokenType::TagOpening, context), TagList::try_parse(tokens, context)?);
 
-		if tags.is_some() && !tokens.next_is(TokenType::KeywordLet) {
+		if tags.is_some() && !tokens.next_is(TokenType::KeywordLet, context) {
 			let expression = Expression::parse(tokens, context);
-			let _ = tokens.pop(TokenType::Semicolon)?;
+			let _ = tokens.pop(TokenType::Semicolon, context)?;
 			return Ok(Statement::Expression(expression));
 		}
 
 		// Name
-		let start = tokens.pop(TokenType::KeywordLet)?.span;
+		let start = tokens.pop(TokenType::KeywordLet, context)?.span;
 		let name = Name::try_parse(tokens, context)?;
 
 		// Value
-		let _ = tokens.pop(TokenType::Equal)?;
+		let _ = tokens.pop(TokenType::Equal, context)?;
 
 		let value = Expression::parse(tokens, context);
 		let end = value.span(context);
@@ -62,6 +62,7 @@ impl TryParse for Declaration {
 			if matches!(literal, Literal::Group(_) | Literal::Either(_)) {
 				if !name.unmangled_name().is_case(Case::Pascal) {
 					context.add_diagnostic(Diagnostic {
+						file: context.file.clone(),
 						span: name.span(context),
 						info: DiagnosticInfo::Warning(Warning::NonPascalCaseGroup {
 							original_name: name.unmangled_name().to_owned(),
@@ -71,6 +72,7 @@ impl TryParse for Declaration {
 				}
 			} else if !name.unmangled_name().is_case(Case::Snake) {
 				context.add_diagnostic(Diagnostic {
+					file: context.file.clone(),
 					span: name.span(context),
 					info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
 						original_name: name.unmangled_name().to_owned(),
@@ -79,6 +81,7 @@ impl TryParse for Declaration {
 			}
 		} else if !name.unmangled_name().is_case(Case::Snake) {
 			context.add_diagnostic(Diagnostic {
+				file: context.file.clone(),
 				span: name.span(context),
 				info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
 					original_name: name.unmangled_name().to_owned(),
@@ -89,12 +92,13 @@ impl TryParse for Declaration {
 		// Add the name declaration to the scope
 		if let Err(error) = context.scope_tree.declare_new_variable(name.clone(), value) {
 			context.add_diagnostic(Diagnostic {
+				file: context.file.clone(),
 				span: name.span(context),
 				info: DiagnosticInfo::Error(error),
 			});
 		}
 
-		let _ = tokens.pop(TokenType::Semicolon)?;
+		let _ = tokens.pop(TokenType::Semicolon, context)?;
 
 		// Return the declaration
 		Ok(Statement::Declaration(Declaration {

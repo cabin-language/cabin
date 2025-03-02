@@ -1,3 +1,4 @@
+use super::ExpressionOrPointer;
 use crate::{
 	api::{context::Context, scope::ScopeId, traits::TryAs as _},
 	ast::{
@@ -36,11 +37,11 @@ impl TryParse for ForEachLoop {
 	type Output = ForEachLoop;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
-		let start = tokens.pop(TokenType::KeywordForEach)?.span;
+		let start = tokens.pop(TokenType::KeywordForEach, context)?.span;
 
 		let binding_name = Name::try_parse(tokens, context)?;
 
-		let _ = tokens.pop(TokenType::KeywordIn)?;
+		let _ = tokens.pop(TokenType::KeywordIn, context)?;
 
 		let iterable = Expression::parse(tokens, context);
 
@@ -53,6 +54,7 @@ impl TryParse for ForEachLoop {
 		let error = Expression::error(Span::unknown(), context);
 		if let Err(error) = context.scope_tree.declare_new_variable_from_id(binding_name.clone(), error, inner_scope_id) {
 			context.add_diagnostic(Diagnostic {
+				file: context.file.clone(),
 				span: binding_name.span(context),
 				info: DiagnosticInfo::Error(error),
 			});
@@ -69,7 +71,7 @@ impl TryParse for ForEachLoop {
 }
 
 impl CompileTime for ForEachLoop {
-	type Output = ExpressionPointer;
+	type Output = ExpressionOrPointer;
 
 	fn evaluate_at_compile_time(mut self, context: &mut Context) -> Self::Output {
 		self.iterable = self.iterable.evaluate_at_compile_time(context);
@@ -78,10 +80,11 @@ impl CompileTime for ForEachLoop {
 		if let Ok(pointer) = literal {
 			if !pointer.literal(context).is::<LiteralList>() {
 				context.add_diagnostic(Diagnostic {
+					file: context.file.clone(),
 					span: self.iterable.span(context),
 					info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::IterateOverNonList)),
 				});
-				return Expression::ForEachLoop(self).store_in_memory(context);
+				return ExpressionOrPointer::Expression(Expression::ForEachLoop(self));
 			}
 
 			let elements = pointer.literal(context).try_as::<LiteralList>().cloned().unwrap_or_else(|_| LiteralList::empty());
@@ -94,7 +97,7 @@ impl CompileTime for ForEachLoop {
 			}
 		}
 
-		Expression::ForEachLoop(self).store_in_memory(context)
+		ExpressionOrPointer::Expression(Expression::ForEachLoop(self))
 	}
 }
 

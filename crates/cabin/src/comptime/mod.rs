@@ -1,4 +1,4 @@
-use crate::{api::context::Context, typechecker::Type};
+use crate::{api::context::Context, diagnostics::DiagnosticInfo, typechecker::Type};
 
 pub mod memory;
 
@@ -43,4 +43,10 @@ pub enum CompileTimeError {
 
 	#[error("Type mismatch: This value cannot be assigned to this type")]
 	TypeMismatch(Type, Type),
+}
+
+impl From<CompileTimeError> for DiagnosticInfo {
+	fn from(value: CompileTimeError) -> Self {
+		DiagnosticInfo::Error(crate::Error::CompileTime(value))
+	}
 }

@@ -6,15 +6,35 @@ use tree_sitter::StreamingIterator;
 
 use crate::theme::Theme;
 
-pub(crate) fn show_snippet<TTheme: Theme>(code: &str, diagnostic: &Diagnostic) {
-	let (diagnostic_line, diagnostic_column) = diagnostic.span.start_line_column(code).unwrap();
-	let mut highlights = VecDeque::from(highlights::<TTheme>(code));
+/// Prints the code snippet for the given diagnostic, showing the location of the error. All
+/// printing is done to `stderr`.
+///
+/// # Parameters
+///
+/// - `code` - The source code of the file that the diagnostic occurred in
+/// - `diagnostic` - The diagnostic to show the snippet of
+///
+/// # Type Parameters
+///
+/// - `TTheme` - The theme to color the output with
+pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
+	let code = std::fs::read_to_string(&diagnostic.file).unwrap();
+	let (diagnostic_line, diagnostic_column) = diagnostic.span.start_line_column(&code).unwrap();
+	let mut highlights = VecDeque::from(highlights::<TTheme>(&code));
 
 	let (bg_r, bg_g, bg_b) = TTheme::background();
 	let (fg_r, fg_g, fg_b) = TTheme::normal();
 	let (comment_r, comment_g, comment_b) = TTheme::comment();
 
-	eprintln!("{}", format!("    {} {}    ", "".truecolor(138, 84, 45), "main.cabin").on_truecolor(bg_r, bg_g, bg_b));
+	eprintln!(
+		"{}",
+		format!(
+			"    {} {}    ",
+			"".truecolor(138, 84, 45),
+			diagnostic.file.components().last().unwrap().as_os_str().to_str().unwrap()
+		)
+		.on_truecolor(bg_r, bg_g, bg_b)
+	);
 	eprint!(
 		"{}\n{}",
 		" ".repeat(80).on_truecolor(bg_r, bg_g, bg_b),
@@ -22,10 +42,25 @@ pub(crate) fn show_snippet<TTheme: Theme>(code: &str, diagnostic: &Diagnostic) {
 	);
 
 	let mut byte_position = 0;
-	let mut line = 0;
+	let mut line: usize = 0;
 	let mut column = 0;
 
+	let characters = code.chars().collect::<Vec<_>>();
+
 	while byte_position < code.len() {
+		// Line out of range
+		if line.abs_diff(diagnostic_line) > 2 {
+			byte_position += 1;
+			if characters[byte_position] == '\n' {
+				line += 1;
+				column = 0;
+			} else {
+				column += 1;
+			}
+			continue;
+		}
+
+		// Extra highlights
 		while highlights.front().is_some_and(|highlight| highlight.start < byte_position) {
 			highlights.pop_front().unwrap();
 		}
@@ -50,7 +85,7 @@ pub(crate) fn show_snippet<TTheme: Theme>(code: &str, diagnostic: &Diagnostic) {
 		}
 
 		// Newline
-		if byte_position != code.len() - 2 && code.chars().nth(byte_position).unwrap() == '\n' {
+		if byte_position != code.len() - 2 && characters[byte_position] == '\n' {
 			let (error_r, error_g, error_b) = TTheme::error();
 			let mut ending = 0;
 			if line == diagnostic_line {
@@ -110,15 +145,7 @@ pub(crate) fn show_snippet<TTheme: Theme>(code: &str, diagnostic: &Diagnostic) {
 		}
 		// No highlight
 		else {
-			eprint!(
-				"{}",
-				code.chars()
-					.nth(byte_position)
-					.unwrap()
-					.to_string()
-					.on_truecolor(bg_r, bg_g, bg_b)
-					.truecolor(fg_r, fg_g, fg_b)
-			);
+			eprint!("{}", characters[byte_position].to_string().on_truecolor(bg_r, bg_g, bg_b).truecolor(fg_r, fg_g, fg_b));
 			byte_position += 1;
 			column += 1;
 		}
@@ -128,7 +155,25 @@ pub(crate) fn show_snippet<TTheme: Theme>(code: &str, diagnostic: &Diagnostic) {
 	eprintln!();
 }
 
-fn highlights<T: Theme>(code: &str) -> Vec<Highlight> {
+/// Returns a list of `Highlights` for the given code, using the Tree-Sitter grammar for Cabin and
+/// its highlight queries. The returned highlights are guaranteed to be in the order that they
+/// appear in the given source code.
+///
+/// Note that the returned highlights may not exhaustively cover the entire source code; There may
+/// be chunks that are left unhighlighted.
+///
+/// # Parameters
+///
+/// - `code` - The source code to highlight
+///
+/// # Type Parameters
+///
+/// - `TTheme` - The theme to highlight with
+///
+/// # Returns
+///
+/// The matched highlights in the source code.
+fn highlights<TTheme: Theme>(code: &str) -> Vec<Highlight> {
 	let mut parser = tree_sitter::Parser::new();
 	let language = tree_sitter_cabin::LANGUAGE.into();
 	parser.set_language(&language).unwrap();
@@ -143,7 +188,7 @@ fn highlights<T: Theme>(code: &str) -> Vec<Highlight> {
 			let start = capture.node.start_byte();
 			let end = capture.node.end_byte();
 			let name = query.capture_names()[capture.index as usize];
-			if let Some(highlight) = T::highlight(name) {
+			if let Some(highlight) = TTheme::highlight(name) {
 				highlights.push(Highlight { start, end, highlight });
 			}
 		}
@@ -152,14 +197,18 @@ fn highlights<T: Theme>(code: &str) -> Vec<Highlight> {
 	highlights
 }
 
-#[derive(Debug)]
+/// A highlight for a string of source code.
 struct Highlight {
+	/// The 0-based byte start index for the highlight, inclusive.
 	start: usize,
+	/// The 0-based byte end index for the highlight, non-inclusive.
 	end: usize,
+	/// The highlight color's red, green, and blue components.
 	highlight: (u8, u8, u8),
 }
 
 impl Highlight {
+	/// Returns the length of this highlight.
 	fn length(&self) -> usize {
 		self.end - self.start
 	}

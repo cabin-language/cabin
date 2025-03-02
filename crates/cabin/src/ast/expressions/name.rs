@@ -41,6 +41,7 @@ impl Name {
 			.get_variable_from_id(self, self.scope_id)
 			.ok_or_else(|| {
 				context.add_diagnostic(Diagnostic {
+					file: context.file.clone(),
 					info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::UnknownVariable(self.unmangled_name().to_owned()))),
 					span: self.span,
 				});
@@ -53,7 +54,7 @@ impl TryParse for Name {
 	type Output = Self;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> anyhow::Result<Self::Output, Diagnostic> {
-		let token = tokens.pop(TokenType::Identifier)?;
+		let token = tokens.pop(TokenType::Identifier, context)?;
 
 		Ok(Name {
 			name: token.value,
@@ -65,16 +66,10 @@ impl TryParse for Name {
 }
 
 impl CompileTime for Name {
-	type Output = ExpressionPointer;
+	type Output = Name;
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		context.scope_tree.get_variable_from_id(self.clone(), self.scope_id).unwrap_or_else(|| {
-			context.add_diagnostic(Diagnostic {
-				span: self.span(context),
-				info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::UnknownVariable(self.unmangled_name().to_owned()))),
-			});
-			return Expression::error(self.span(context), context);
-		})
+		self
 	}
 }
 

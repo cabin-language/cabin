@@ -44,14 +44,14 @@ impl Block {
 		context.scope_tree.enter_new_scope(scope_type);
 		let scope_id = context.scope_tree.unique_id();
 
-		let start = tokens.pop(TokenType::LeftBrace)?.span;
+		let start = tokens.pop(TokenType::LeftBrace, context)?.span;
 
 		let mut statements = Vec::new();
-		while !tokens.next_is(TokenType::RightBrace) {
+		while !tokens.next_is(TokenType::RightBrace, context) {
 			statements.push(Statement::parse(tokens, context));
 		}
 
-		let end = tokens.pop(TokenType::RightBrace)?.span;
+		let end = tokens.pop(TokenType::RightBrace, context)?.span;
 
 		context.scope_tree.exit_scope().unwrap();
 

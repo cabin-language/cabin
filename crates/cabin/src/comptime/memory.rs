@@ -3,9 +3,9 @@ use std::{collections::HashMap, fmt::Debug};
 use super::CompileTimeError;
 use crate::{
 	api::context::Context,
-	ast::expressions::{new_literal::Literal, Expression},
+	ast::expressions::{new_literal::Literal, Expression, ExpressionOrPointer},
 	comptime::CompileTime,
-	diagnostics::{Diagnostic, DiagnosticInfo},
+	diagnostics::Diagnostic,
 	transpiler::{TranspileError, TranspileToC},
 	typechecker::{Type, Typed},
 	Span,
@@ -48,6 +48,10 @@ impl ExpressionPointer {
 		context.virtual_memory.get(self)
 	}
 
+	pub(crate) fn expression_mut<'a>(&self, context: &'a mut Context) -> &'a mut Expression {
+		context.virtual_memory.memory.get_mut(&self.0).unwrap()
+	}
+
 	pub(crate) fn is_literal(&self, context: &mut Context) -> bool {
 		match self.expression(context).to_owned() {
 			Expression::Literal(_) => true,
@@ -61,9 +65,7 @@ impl ExpressionPointer {
 	}
 
 	pub(crate) fn evaluate_to_literal(self, context: &mut Context) -> LiteralPointer {
-		let evaluated = self.expression(context).clone().evaluate_at_compile_time(context).expression(context).to_owned();
-		let _ = context.virtual_memory.memory.insert(self.0, evaluated);
-		self.try_as_literal(context).unwrap_or(LiteralPointer::ERROR)
+		self.evaluate_at_compile_time(context).try_as_literal(context).unwrap_or(LiteralPointer::ERROR)
 	}
 
 	pub(crate) fn try_as_literal(self, context: &mut Context) -> Result<LiteralPointer, ()> {
@@ -77,8 +79,9 @@ impl ExpressionPointer {
 	pub(crate) fn as_literal(self, context: &mut Context) -> LiteralPointer {
 		self.try_as_literal(context).unwrap_or_else(|_| {
 			context.add_diagnostic(Diagnostic {
+				file: context.file.clone(),
 				span: self.span(context),
-				info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::GroupValueNotKnownAtCompileTime)),
+				info: CompileTimeError::GroupValueNotKnownAtCompileTime.into(),
 			});
 			LiteralPointer::ERROR
 		})
@@ -107,9 +110,14 @@ impl CompileTime for ExpressionPointer {
 	type Output = ExpressionPointer;
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		let evaluated = self.expression(context).clone().evaluate_at_compile_time(context);
-		let _ = context.virtual_memory.memory.insert(self.0, evaluated.expression(context).clone());
-		self
+		let evaluated = context.virtual_memory.get(&self).clone().evaluate_at_compile_time(context);
+		match evaluated {
+			ExpressionOrPointer::Expression(expression) => {
+				let _ = context.virtual_memory.memory.insert(self.0, expression);
+				self
+			},
+			ExpressionOrPointer::Pointer(pointer) => pointer,
+		}
 	}
 }
 

@@ -2,13 +2,12 @@ let This = group {};
 let Object = group {};
 let Number = group {}; 
 let List = group {};
+let Text = group {};
 
 let Optional = either {
 	data,
 	nothing
 };
-
-let Text = group {};
 
 let Anything = group {
 	to_text: action(this: Anything): Text,
@@ -91,7 +90,7 @@ let system = new Object {
 			system_side_effects, 
 			runtime<"print() is meant for the user. Use debug() at compile-time, or use a run expression to print to the user.">
 		]
-		print = action(object: Anything): Optional.nothing,
+		print = action(object: Text): Optional.nothing,
 
 		#[
 			builtin_function<"terminal.input">, 
