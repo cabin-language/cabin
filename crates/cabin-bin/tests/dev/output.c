@@ -22,23 +22,23 @@ int main(int argc, char* argv[]) {
 	
 	
 	void* u_x2;
-	u_x2 = &literal_126;
+	u_x2 = &literal_118;
 	label_end_u_x2:;
 	
 	
 	void* u_x;
-	u_x = &literal_127;
+	u_x = &literal_119;
 	label_end_u_x:;
 	
 	
-	&literal_136
+	&literal_130
 	void* u_y;
-	u_y = &literal_134;
+	u_y = &literal_126;
 	label_end_u_y:;
 	
 	
 	void* u_z2;
-	u_z2 = &literal_135;
+	u_z2 = &literal_127;
 	label_end_u_z2:;
 	
 

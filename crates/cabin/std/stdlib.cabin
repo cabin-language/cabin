@@ -59,12 +59,6 @@ let BuiltinTag = group {
 	internal_name: Text
 };
 
-let builtin_function = action<name: Text>: BuiltinTag {
-	builtin_function is new BuiltinTag {
-		internal_name = name
-	};
-};
-
 let Addable = group<Operand: Anything, Result: Anything> {
 	#[no_side_effects]
 	plus: action(this: This, other: Operand): Result
@@ -86,14 +80,14 @@ let system = new Object {
 	terminal = new Object {
 
 		#[
-			builtin_function<"terminal.print">, 
+			new BuiltinTag { internal_name = "terminal.print" }, 
 			system_side_effects, 
 			runtime<"print() is meant for the user. Use debug() at compile-time, or use a run expression to print to the user.">
 		]
 		print = action(object: Text): Optional.nothing,
 
 		#[
-			builtin_function<"terminal.input">, 
+			new BuiltinTag { internal_name = "terminal.input" }, 
 			system_side_effects, 
 			runtime<"Taking input at compile-time can produce varying outputs depending on user input. Consider embedding a file.">
 		] 

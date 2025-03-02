@@ -249,7 +249,6 @@ impl CompileTime for FunctionCall {
 
 				// Get builtin and side effect tags
 				for tag in &function_declaration.tags().values {
-					dbg!(tag.expression(context));
 					if let Ok(literal) = tag.try_as_literal(context) {
 						let object = literal.literal(context).try_as::<Object>().unwrap();
 						if object.type_name() == &Name::from("BuiltinTag") {
