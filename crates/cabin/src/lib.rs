@@ -22,7 +22,7 @@ pub(crate) mod api;
 /// The Cabin standard library. This is a Cabin file that's automatically imported into every Cabin
 /// project or file. It contains definitions for all of the built-in types and objects, such as
 /// `Text`, `Number`, `terminal`, etc. See `/std/stdlib.cabin` for its contents.
-pub(crate) const STDLIB: &str = include_str!("../std/stdlib.cabin");
+pub const STDLIB: &str = include_str!("../std/stdlib.cabin");
 
 /// The Cabin prelude. This is a Cabin file that's automatically prepended to all Cabin files
 /// written by the user. It just brings some useful items into scope from the standard library.

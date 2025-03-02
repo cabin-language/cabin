@@ -38,12 +38,6 @@ let RuntimeTag = group {
 	reason: Text
 };
 
-let runtime = action<reason: Text>: RuntimeTag {
-	runtime is new RuntimeTag {
-		reason = reason	
-	};
-};
-
 let Either = group {
 	variants: List
 };
@@ -79,18 +73,10 @@ let system = new Object {
 
 	terminal = new Object {
 
-		#[
-			new BuiltinTag { internal_name = "terminal.print" }, 
-			system_side_effects, 
-			runtime<"print() is meant for the user. Use debug() at compile-time, or use a run expression to print to the user.">
-		]
+		#[system_side_effects, new BuiltinTag { internal_name = "terminal.print" }]
 		print = action(object: Text): Optional.nothing,
 
-		#[
-			new BuiltinTag { internal_name = "terminal.input" }, 
-			system_side_effects, 
-			runtime<"Taking input at compile-time can produce varying outputs depending on user input. Consider embedding a file.">
-		] 
+		#[system_side_effects, new BuiltinTag { internal_name = "terminal.input" }] 
 		input = action(): Text,
 
 	},
@@ -104,17 +90,4 @@ let Ordering = either {
 	less,
 	greater,
 	equal
-};
-
-let Compareable = group {
-
-	# Compares this value with the given value, returning the ordering of *this* value.
-	compared_to: action(this: This, other: This): Ordering
-};
-
-#[default]
-let CompareablesAreEqualable = extensionof Compareable tobe Equalable {
-	equals = action(this: This, other: This): Boolean {
-		return is this.compared_to(other) == Ordering.equal;
-	}
 };

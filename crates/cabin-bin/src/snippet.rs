@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, io::Write, path::PathBuf};
 
 use cabin::diagnostics::Diagnostic;
 use colored::Colorize as _;
@@ -18,13 +18,19 @@ use crate::theme::Theme;
 ///
 /// - `TTheme` - The theme to color the output with
 pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
-	let code = std::fs::read_to_string(&diagnostic.file).unwrap();
+	let code = if diagnostic.file == PathBuf::from("stdlib") {
+		cabin::STDLIB.to_owned()
+	} else {
+		std::fs::read_to_string(&diagnostic.file).expect(&format!("No file {}", diagnostic.file.display()))
+	};
 	let (diagnostic_line, diagnostic_column) = diagnostic.span.start_line_column(&code).unwrap();
 	let mut highlights = VecDeque::from(highlights::<TTheme>(&code));
 
 	let (bg_r, bg_g, bg_b) = TTheme::background();
 	let (fg_r, fg_g, fg_b) = TTheme::normal();
 	let (comment_r, comment_g, comment_b) = TTheme::comment();
+
+	let mut diagnostic_line_tabs = 0;
 
 	eprintln!(
 		"{}",
@@ -35,11 +41,14 @@ pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
 		)
 		.on_truecolor(bg_r, bg_g, bg_b)
 	);
-	eprint!(
-		"{}\n{}",
-		" ".repeat(80).on_truecolor(bg_r, bg_g, bg_b),
-		" 1  ".truecolor(comment_r, comment_g, comment_b).on_truecolor(bg_r, bg_g, bg_b)
-	);
+
+	if diagnostic_line < 4 {
+		eprint!(
+			"{}\n{}",
+			" ".repeat(80).on_truecolor(bg_r, bg_g, bg_b),
+			" 1  ".truecolor(comment_r, comment_g, comment_b).on_truecolor(bg_r, bg_g, bg_b)
+		);
+	}
 
 	let mut byte_position = 0;
 	let mut line: usize = 0;
@@ -47,22 +56,39 @@ pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
 
 	let characters = code.chars().collect::<Vec<_>>();
 
+	// Line out of range
+	while line.abs_diff(diagnostic_line) > 2 {
+		if byte_position == characters.len() {
+			break;
+		}
+		if characters[byte_position] == '\n' {
+			line += 1;
+			column = 0;
+		} else {
+			column += 1;
+		}
+		byte_position += 1;
+	}
+
+	eprint!(
+		"{}\n{}",
+		" ".repeat(80).on_truecolor(bg_r, bg_g, bg_b),
+		format!(" {}  ", line + 1).truecolor(comment_r, comment_g, comment_b).on_truecolor(bg_r, bg_g, bg_b)
+	);
+	std::io::stderr().flush().unwrap();
+
 	while byte_position < code.len() {
-		// Line out of range
 		if line.abs_diff(diagnostic_line) > 2 {
-			byte_position += 1;
-			if characters[byte_position] == '\n' {
-				line += 1;
-				column = 0;
-			} else {
-				column += 1;
-			}
-			continue;
+			break;
 		}
 
 		// Extra highlights
 		while highlights.front().is_some_and(|highlight| highlight.start < byte_position) {
 			highlights.pop_front().unwrap();
+		}
+
+		if line == diagnostic_line && characters[byte_position] == '\t' {
+			diagnostic_line_tabs += 1;
 		}
 
 		// Diagnostic pointer
@@ -73,7 +99,7 @@ pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
 					"{}\n {}  ",
 					format!(
 						"{}{} here{}",
-						" ".repeat(diagnostic_column + 4),
+						" ".repeat(3 + (diagnostic_column - diagnostic_line_tabs) + (diagnostic_line_tabs * 4) + line.to_string().len()),
 						"^".repeat(diagnostic.span.length),
 						" ".repeat(80 - diagnostic.span.length - diagnostic_column - 9)
 					)
@@ -100,10 +126,13 @@ pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
 				ending = info.len() + 9;
 			}
 
-			eprint!("{}", " ".repeat(80 - column - 4 - ending).on_truecolor(bg_r, bg_g, bg_b));
+			eprint!(
+				"{}",
+				" ".repeat((80 - (column as isize) - 4 - (ending as isize)).max(0) as usize).on_truecolor(bg_r, bg_g, bg_b)
+			);
 			eprint!("{}", "\n".on_truecolor(bg_r, bg_g, bg_b));
 			if line != diagnostic_line && byte_position != code.len() - 1 {
-				if line == diagnostic_line - 1 {
+				if diagnostic_line > 0 && line == diagnostic_line - 1 {
 					eprint!(
 						"{}",
 						format!(" {}  ", (line + 2).to_string().bold().truecolor(error_r, error_g, error_b)).on_truecolor(bg_r, bg_g, bg_b)
@@ -145,7 +174,14 @@ pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
 		}
 		// No highlight
 		else {
-			eprint!("{}", characters[byte_position].to_string().on_truecolor(bg_r, bg_g, bg_b).truecolor(fg_r, fg_g, fg_b));
+			eprint!(
+				"{}",
+				characters[byte_position]
+					.to_string()
+					.replace('\t', "    ")
+					.on_truecolor(bg_r, bg_g, bg_b)
+					.truecolor(fg_r, fg_g, fg_b)
+			);
 			byte_position += 1;
 			column += 1;
 		}

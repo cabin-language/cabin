@@ -14,6 +14,10 @@ impl Type {
 		let Type::Literal(source) = self;
 		let Type::Literal(target) = other;
 
+		if source == &LiteralPointer::ERROR || target == &LiteralPointer::ERROR {
+			return true;
+		}
+
 		source == target
 	}
 }

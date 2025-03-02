@@ -10,6 +10,7 @@ use crate::{
 	parser::{Parse, ParseError, TokenQueue, TokenQueueFunctionality as _},
 	scope::{ScopeId, ScopeType},
 	Context,
+	Span,
 	Spanned as _,
 };
 
@@ -71,6 +72,7 @@ impl Module {
 		}
 
 		Object {
+			span: Span::unknown(),
 			type_name: "Module".into(),
 			fields,
 		}

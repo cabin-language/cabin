@@ -28,6 +28,14 @@ impl Span {
 		Span::cover(self, other)
 	}
 
+	pub fn or(self, other: Span) -> Span {
+		if self == Span::unknown() {
+			other
+		} else {
+			self
+		}
+	}
+
 	pub fn contains(&self, position: usize) -> bool {
 		(self.start..self.start + self.length).contains(&position)
 	}

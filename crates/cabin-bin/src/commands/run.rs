@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use cabin::diagnostics::DiagnosticInfo;
 use colored::Colorize as _;
 
@@ -31,14 +33,13 @@ impl CabinCommand for RunCommand {
 				if let DiagnosticInfo::Error(error) = &diagnostic.info {
 					eprintln!("{} {error}\n", "Error:".bold().red());
 					show_snippet::<CatppuccinMocha>(&diagnostic);
-					let (line, _) = diagnostic.start_line_column().unwrap();
-					eprintln!(
-						"In {} on line {}\n",
+					let (line, _) = diagnostic.start_line_column();
+					let path = if &diagnostic.file == &PathBuf::from("stdlib") {
+						"stdlib".to_owned()
+					} else {
 						format!("{}", pathdiff::diff_paths(diagnostic.file, project.root_directory()).unwrap().display())
-							.bold()
-							.cyan(),
-						line.to_string().bold().cyan()
-					);
+					};
+					eprintln!("In {} on line {}\n", path.bold().cyan(), line.to_string().bold().cyan());
 					eprintln!("{}\n", "-".repeat(80));
 				}
 			}

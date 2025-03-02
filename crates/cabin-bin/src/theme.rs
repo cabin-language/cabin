@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 pub(crate) trait Theme {
 	fn keyword() -> (u8, u8, u8);
+	fn type_() -> (u8, u8, u8);
 	fn function_call() -> (u8, u8, u8);
 	fn number() -> (u8, u8, u8);
 	fn field() -> (u8, u8, u8);
@@ -15,6 +16,7 @@ pub(crate) trait Theme {
 		let highlight = HashMap::from([
 			("function.call", Self::function_call()),
 			("keyword", Self::keyword()),
+			("type", Self::type_()),
 			("number", Self::number()),
 			("variable.member", Self::field()),
 		]);
@@ -27,6 +29,10 @@ pub(crate) struct CatppuccinMocha;
 impl Theme for CatppuccinMocha {
 	fn normal() -> (u8, u8, u8) {
 		(205, 214, 244)
+	}
+
+	fn type_() -> (u8, u8, u8) {
+		(249, 226, 175)
 	}
 
 	fn keyword() -> (u8, u8, u8) {

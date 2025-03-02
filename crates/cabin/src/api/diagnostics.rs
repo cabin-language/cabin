@@ -2,7 +2,7 @@ use std::{fmt::Display, path::PathBuf};
 
 use convert_case::{Case, Casing as _};
 
-use crate::{comptime::CompileTimeError, lexer::TokenizeError, parser::ParseError, Context, Span, Spanned};
+use crate::{comptime::CompileTimeError, lexer::TokenizeError, parser::ParseError, Context, Span, Spanned, STDLIB};
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum Warning {
@@ -49,8 +49,8 @@ impl Diagnostic {
 		&self.info
 	}
 
-	pub fn start_line_column(&self) -> Result<(usize, usize), std::io::Error> {
-		std::fs::read_to_string(&self.file).map(|contents| self.span.start_line_column(&contents).unwrap())
+	pub fn start_line_column(&self) -> (usize, usize) {
+		self.span.start_line_column(&std::fs::read_to_string(&self.file).unwrap_or(STDLIB.to_owned())).unwrap()
 	}
 }
 

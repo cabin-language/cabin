@@ -27,7 +27,11 @@ use crate::{
 		},
 		sugar::list::List,
 	},
-	comptime::{memory::ExpressionPointer, CompileTime, CompileTimeError},
+	comptime::{
+		memory::{ExpressionPointer, LiteralPointer},
+		CompileTime,
+		CompileTimeError,
+	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	parser::{Parse, TokenQueue, TokenQueueFunctionality as _, TryParse as _},
 	transpiler::{TranspileError, TranspileToC},
@@ -71,7 +75,6 @@ pub enum Expression {
 	Either(Either),
 	Literal(Literal),
 	List(List),
-	ErrorExpression(Span),
 }
 
 impl Parse for Expression {
@@ -119,7 +122,6 @@ impl CompileTime for Expression {
 				ExpressionOrPointer::Expression(Expression::Literal(Literal::FunctionDeclaration(function_declaration.evaluate_at_compile_time(context))))
 			},
 			Expression::Either(either) => ExpressionOrPointer::Expression(Expression::Literal(Literal::Either(either.evaluate_at_compile_time(context)))),
-			Self::ErrorExpression(_) => ExpressionOrPointer::Expression(self),
 			Self::Literal(_) => ExpressionOrPointer::Expression(self),
 			Self::List(list) => ExpressionOrPointer::Expression(list.evaluate_at_compile_time(context)),
 			Self::Unary(_) | Self::Parameter(_) => todo!(),
@@ -144,6 +146,7 @@ impl Typed for Expression {
 	fn get_type(&self, context: &mut Context) -> Type {
 		match self {
 			Expression::Literal(literal) => literal.get_type(context),
+			Expression::Name(name) => name.get_type(context),
 			value => todo!("{value:?}"),
 		}
 	}
@@ -151,7 +154,7 @@ impl Typed for Expression {
 
 impl Expression {
 	pub(crate) fn error(span: Span, context: &mut Context) -> ExpressionPointer {
-		Expression::ErrorExpression(span).store_in_memory(context)
+		Expression::Literal(Literal::ErrorLiteral(span)).store_in_memory(context)
 	}
 
 	pub(crate) fn store_in_memory(self, context: &mut Context) -> ExpressionPointer {
@@ -181,8 +184,10 @@ impl Spanned for Expression {
 			Expression::Extend(represent_as) => represent_as.span(context),
 			Expression::Unary(unary) => unary.span(context),
 			Expression::Literal(literal) => literal.span(context),
-			Expression::ErrorExpression(span) => *span,
-			_ => Span::unknown(),
+			Expression::Group(group) => group.span(context),
+			Expression::Either(either) => either.span(context),
+			Expression::FunctionDeclaration(function) => function.span(context),
+			Expression::List(list) => list.span(context),
 		}
 	}
 }

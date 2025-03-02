@@ -2,7 +2,15 @@ use std::collections::HashMap;
 
 use try_as::traits as try_as_traits;
 
-use super::{either::Either, extend::EvaluatedExtend, field_access::Dot, function_declaration::EvaluatedFunctionDeclaration, group::EvaluatedGroupDeclaration, name::Name};
+use super::{
+	either::Either,
+	extend::EvaluatedExtend,
+	field_access::Dot,
+	function_declaration::EvaluatedFunctionDeclaration,
+	group::EvaluatedGroupDeclaration,
+	name::Name,
+	Expression,
+};
 use crate::{
 	ast::sugar::{list::LiteralList, string::CabinString},
 	comptime::{
@@ -26,6 +34,7 @@ pub enum Literal {
 	Group(EvaluatedGroupDeclaration),
 	Extend(EvaluatedExtend),
 	Either(Either),
+	ErrorLiteral(Span),
 }
 
 impl Literal {
@@ -39,6 +48,7 @@ impl Literal {
 			Self::String(_) => "String",
 			Self::Number(_) => "Number",
 			Self::Either(_) => "Either",
+			Self::ErrorLiteral(_) => "Error",
 		}
 	}
 }
@@ -47,6 +57,7 @@ impl Typed for Literal {
 	fn get_type(&self, context: &mut Context) -> Type {
 		match self {
 			Self::String(_) => Type::Literal(context.scope_tree.get_builtin("Text").unwrap().as_literal(context)),
+			Self::Number(_) => Type::Literal(context.scope_tree.get_builtin("Number").unwrap().as_literal(context)),
 			literal => todo!("{literal:?}"),
 		}
 	}
@@ -57,6 +68,7 @@ impl Dot for Literal {
 		match self {
 			Literal::Object(object) => object.dot(name, context),
 			Literal::Either(either) => either.dot(name, context),
+			Literal::ErrorLiteral(_) => Expression::Literal(self.to_owned()).store_in_memory(context),
 			value => todo!("{value:?}"),
 		}
 	}
@@ -64,6 +76,7 @@ impl Dot for Literal {
 
 #[derive(Debug, Clone)]
 pub struct Object {
+	pub(crate) span: Span,
 	pub(crate) type_name: Name,
 	pub(crate) fields: HashMap<Name, LiteralPointer>,
 }
@@ -73,6 +86,7 @@ impl Object {
 		Self {
 			type_name: Name::hardcoded("Object"),
 			fields: HashMap::new(),
+			span: Span::unknown(),
 		}
 	}
 
@@ -96,7 +110,7 @@ impl Dot for Object {
 				context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
 					info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::NoSuchField(name.unmangled_name().to_owned()))),
-					span: Span::unknown(),
+					span: self.span,
 				});
 				&LiteralPointer::ERROR
 			})

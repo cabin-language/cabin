@@ -9,6 +9,7 @@ use crate::{
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 	scope::ScopeId,
 	transpiler::{TranspileError, TranspileToC},
+	typechecker::{Type, Typed},
 	Span,
 	Spanned,
 };
@@ -32,6 +33,12 @@ pub struct Name {
 	should_mangle: bool,
 
 	scope_id: ScopeId,
+}
+
+impl Typed for Name {
+	fn get_type(&self, context: &mut Context) -> Type {
+		self.value(context).unwrap_or(ExpressionPointer::ERROR).get_type(context)
+	}
 }
 
 impl Name {

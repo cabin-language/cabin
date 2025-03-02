@@ -7,7 +7,11 @@ use crate::{
 		expressions::{name::Name, parameter::Parameter, Expression, Spanned},
 		misc::tag::TagList,
 	},
-	comptime::{memory::ExpressionPointer, CompileTime},
+	comptime::{
+		memory::{ExpressionPointer, LiteralPointer},
+		CompileTime,
+		CompileTimeError,
+	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	if_then_some,
@@ -15,6 +19,7 @@ use crate::{
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
+	typechecker::{Type, Typed},
 	Span,
 };
 
@@ -96,11 +101,64 @@ impl CompileTime for ObjectConstructor {
 			_ = self.fields.insert(name, field_value);
 		}
 
+		// Validate fields
+		if self.type_name != "Object".into() {
+			let object_type = self.get_type(context);
+			let Type::Literal(type_literal) = object_type;
+			if let Literal::Group(group) = type_literal.literal(context).to_owned() {
+				for (field_name, field) in &group.fields {
+					// Wrong field type
+					if let Some(field_value) = self.fields.get(field_name) {
+						let expected_type = field_value.get_type(context);
+						if !field_value.get_type(context).is_assignable_to(&field.field_type, context) {
+							context.add_diagnostic(Diagnostic {
+								span: field_value.span(context),
+								info: CompileTimeError::TypeMismatch(expected_type, field.field_type.clone()).into(),
+								file: context.file.clone(),
+							})
+						}
+					}
+					// Missing field
+					else {
+						context.add_diagnostic(Diagnostic {
+							span: self.span,
+							info: CompileTimeError::MissingField(field_name.unmangled_name().to_owned()).into(),
+							file: context.file.clone(),
+						});
+					}
+				}
+
+				// Extra fields
+				for (field_name, field_value) in &self.fields {
+					if !group.fields.contains_key(field_name) {
+						context.add_diagnostic(Diagnostic {
+							span: field_name.span(context).to(field_value.span(context)),
+							info: CompileTimeError::ExtraField(field_name.unmangled_name().to_owned()).into(),
+							file: context.file.clone(),
+						});
+					}
+				}
+			}
+		}
+
 		if let Ok(literal) = self.try_into_literal(context) {
 			Expression::Literal(Literal::Object(literal))
 		} else {
 			Expression::ObjectConstructor(self)
 		}
+	}
+}
+
+impl Typed for ObjectConstructor {
+	fn get_type(&self, context: &mut Context) -> Type {
+		Type::Literal(self.type_name.value(context).map(|value| value.as_literal(context)).unwrap_or_else(|| {
+			context.add_diagnostic(Diagnostic {
+				span: self.type_name.span(context),
+				info: CompileTimeError::UnknownVariable(self.type_name.unmangled_name().to_owned()).into(),
+				file: context.file.clone(),
+			});
+			LiteralPointer::ERROR
+		}))
 	}
 }
 
@@ -138,6 +196,7 @@ impl ObjectConstructor {
 		}
 
 		Ok(Object {
+			span: self.span,
 			type_name: self.type_name.clone(),
 			fields,
 		})

@@ -20,29 +20,35 @@ pub(crate) trait CompileTime {
 
 #[derive(thiserror::Error, Debug, Clone)]
 pub enum CompileTimeError {
-	#[error("This expression can't be fully evaluated at compile-time; Default values for group fields must be known at compile-time.")]
+	#[error("Unresolvable Type: This expression can't be fully evaluated at compile-time; Default values for group fields must be known at compile-time.")]
 	GroupValueNotKnownAtCompileTime,
 
-	#[error("run has no effect on this type of expression")]
+	#[error("Invalid run expression: run has no effect on this type of expression")]
 	RunNonFunctionCall,
 
-	#[error("This type of value can't be iterated over")]
+	#[error("Iterate over non-iterable: This type of value can't be iterated over")]
 	IterateOverNonList,
 
-	#[error("This type of value can't be called")]
+	#[error("Call non-callable: This type of value can't be called")]
 	CallNonFunction,
 
-	#[error("Unknown variable \"{0}\"")]
+	#[error("Unknown variable: \"{0}\"")]
 	UnknownVariable(String),
 
-	#[error("This expression is being used as a type, but it can't be fully evaluated at compile-time")]
+	#[error("Unresolvable Type: This expression is being used as a type, but it can't be fully evaluated at compile-time")]
 	ExpressionUsedAsType,
 
-	#[error("No property \"{0}\" exists on this value")]
+	#[error("Unknown property: No property \"{0}\" exists on this value")]
 	NoSuchField(String),
 
 	#[error("Type mismatch: This value cannot be assigned to this type")]
 	TypeMismatch(Type, Type),
+
+	#[error("Missing property: Missing property \"{0}\"")]
+	MissingField(String),
+
+	#[error("Unknown property: This type has no property called \"{0}\"")]
+	ExtraField(String),
 }
 
 impl From<CompileTimeError> for DiagnosticInfo {

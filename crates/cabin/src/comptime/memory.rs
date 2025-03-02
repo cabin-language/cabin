@@ -95,8 +95,10 @@ impl LiteralPointer {
 	pub const ERROR: LiteralPointer = LiteralPointer(ExpressionPointer::ERROR);
 
 	pub fn literal<'ctx>(&self, context: &'ctx Context) -> &'ctx Literal {
-		let Expression::Literal(literal) = self.0.expression(context) else { unreachable!() };
-		literal
+		match self.0.expression(context) {
+			Expression::Literal(literal) => literal,
+			_ => unreachable!(),
+		}
 	}
 }
 
@@ -182,7 +184,7 @@ impl VirtualMemory {
 	/// The created empty virtual memory.
 	pub fn empty() -> VirtualMemory {
 		VirtualMemory {
-			memory: HashMap::from([(0, Expression::ErrorExpression(Span::unknown()))]),
+			memory: HashMap::from([(0, Expression::Literal(Literal::ErrorLiteral(Span::unknown())))]),
 		}
 	}
 

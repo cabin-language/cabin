@@ -19,6 +19,7 @@ use crate::{
 	lexer::{Token, TokenType},
 	parse_list,
 	parser::{ListType, Parse as _, ParseError, TokenQueueFunctionality as _, TryParse},
+	typechecker::Type,
 	Span,
 	Spanned,
 };
@@ -34,7 +35,7 @@ pub struct GroupField {
 pub struct GroupFieldLiteral {
 	name: Name,
 	default_value: Option<LiteralPointer>,
-	field_type: Option<LiteralPointer>,
+	pub(crate) field_type: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -152,9 +153,9 @@ impl CompileTime for GroupDeclaration {
 
 			// Field type
 			let field_type = if let Some(field_type) = field.field_type {
-				Some(field_type.evaluate_at_compile_time(context).as_literal(context))
+				Type::Literal(field_type.evaluate_at_compile_time(context).as_literal(context))
 			} else {
-				None
+				Type::Literal(LiteralPointer::ERROR)
 			};
 
 			// Add the field
@@ -178,6 +179,6 @@ impl Spanned for GroupDeclaration {
 
 #[derive(Debug, Clone)]
 pub struct EvaluatedGroupDeclaration {
-	fields: HashMap<Name, GroupFieldLiteral>,
+	pub(crate) fields: HashMap<Name, GroupFieldLiteral>,
 	span: Span,
 }

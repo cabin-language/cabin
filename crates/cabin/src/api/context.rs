@@ -35,7 +35,7 @@ impl Default for Context {
 			diagnostics: Diagnostics::empty(),
 			libraries: HashMap::new(),
 			side_effects: true,
-			file: "builtin.cabin".into(),
+			file: "stdlib".into(),
 		};
 
 		// Add stdlib
