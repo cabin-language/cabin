@@ -43,7 +43,6 @@ impl Block {
 	pub fn parse_with_scope_type(tokens: &mut TokenQueue, context: &mut Context, scope_type: ScopeType) -> Result<Block, Diagnostic> {
 		context.scope_tree.enter_new_scope(scope_type);
 		let scope_id = context.scope_tree.unique_id();
-
 		let start = tokens.pop(TokenType::LeftBrace, context)?.span;
 
 		let mut statements = Vec::new();

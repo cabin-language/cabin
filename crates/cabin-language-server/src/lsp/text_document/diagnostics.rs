@@ -29,12 +29,14 @@ pub fn get_diagnostics(state: &State, logger: &mut Logger, uri: &str) -> anyhow:
 
 	let code = state.files.get(uri).unwrap();
 
-	let mut project = match cabin::Project::from_child(std::env::current_dir().unwrap()) {
+	let path = url::Url::parse(uri).unwrap().to_file_path().unwrap();
+	logger.log(format!("\n*Checking project for* `{}`", path.display()))?;
+	let mut project = match cabin::Project::from_child(path) {
 		Ok(project) => project,
 		Err(error) => anyhow::bail!(error),
 	};
 
-	let diagnostics = project.run_compile_time_code();
+	let diagnostics = project.check();
 
 	logger.log("\n*Done checking. Reporting diagnostics.*")?;
 

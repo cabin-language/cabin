@@ -24,7 +24,7 @@ use crate::{
 /// it is just called `Dot`. The names of the tokens should be written parser-agnostic, meaning they should have no "knowledge" of the actual use cases of the
 /// token in the language. This helps make parser changes easier, as we can repurpose token types without having to rename them and without causing confusion
 /// or ambiguity in what they refer to.
-#[derive(strum_macros::EnumIter, PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(strum_macros::EnumIter, PartialEq, Eq, Debug, Clone, Copy, Hash, PartialOrd, Ord)]
 pub enum TokenType {
 	/// The "tag opening" token type. This marks the start of a list of tags on a variable declaration. Please note that this only notes the *start* of such
 	/// a list, not the entire list. To be specific, this *only* matches the character sequence `#[`. All tokens after that sequenced are tokenized as normal, including
@@ -535,7 +535,7 @@ pub(crate) fn tokenize_string(string: &str) -> VecDeque<Token> {
 	VecDeque::from(tokens)
 }
 
-#[derive(Clone, thiserror::Error, Debug)]
+#[derive(Clone, thiserror::Error, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TokenizeError {
 	#[error("Unrecognized token: {0}")]
 	UnrecognizedToken(String),

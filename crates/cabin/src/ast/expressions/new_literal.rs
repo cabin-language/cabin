@@ -2,22 +2,24 @@ use std::collections::HashMap;
 
 use try_as::traits as try_as_traits;
 
-use super::{
-	either::Either,
-	extend::EvaluatedExtend,
-	field_access::Dot,
-	function_declaration::EvaluatedFunctionDeclaration,
-	group::EvaluatedGroupDeclaration,
-	name::Name,
-	Expression,
-};
 use crate::{
-	ast::sugar::{list::LiteralList, string::CabinString},
+	ast::{
+		expressions::{
+			either::Either,
+			extend::EvaluatedExtend,
+			field_access::Dot,
+			function_declaration::EvaluatedFunctionDeclaration,
+			group::EvaluatedGroupDeclaration,
+			name::Name,
+			Expression,
+		},
+		sugar::{list::LiteralList, string::CabinString},
+	},
 	comptime::{
 		memory::{ExpressionPointer, LiteralPointer},
 		CompileTimeError,
 	},
-	diagnostics::{Diagnostic, DiagnosticInfo},
+	diagnostics::Diagnostic,
 	typechecker::{Type, Typed},
 	Context,
 	Span,
@@ -95,7 +97,7 @@ impl Object {
 		&self.type_name
 	}
 
-	pub(crate) fn get_field<S: AsRef<str>>(&self, name: S) -> Option<LiteralPointer> {
+	pub(crate) fn get_field<StringLike: AsRef<str>>(&self, name: StringLike) -> Option<LiteralPointer> {
 		let name = name.as_ref();
 		self.fields
 			.iter()
@@ -110,7 +112,7 @@ impl Dot for Object {
 			.unwrap_or_else(|| {
 				context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
-					info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::NoSuchField(name.unmangled_name().to_owned()))),
+					info: CompileTimeError::NoSuchField(name.unmangled_name().to_owned()).into(),
 					span: self.span,
 				});
 				&LiteralPointer::ERROR

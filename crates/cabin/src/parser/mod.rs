@@ -8,7 +8,7 @@ use crate::{
 	Span,
 };
 
-#[derive(Clone, Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ParseError {
 	#[error("Unexpected token: Expected {expected} but found {actual}")]
 	UnexpectedToken { expected: TokenType, actual: TokenType },

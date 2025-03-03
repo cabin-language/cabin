@@ -105,7 +105,7 @@ impl CompileTime for ObjectConstructor {
 		if self.type_name != "Object".into() {
 			let object_type = self.get_type(context);
 			let Type::Literal(type_literal) = object_type;
-			if let Literal::Group(group) = type_literal.literal(context).to_owned() {
+			if let Literal::Group(group) = type_literal.get_literal(context).to_owned() {
 				for (field_name, field) in &group.fields {
 					// Wrong field type
 					if let Some(field_value) = self.fields.get(field_name) {

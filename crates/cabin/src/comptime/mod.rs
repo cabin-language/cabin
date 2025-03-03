@@ -18,7 +18,7 @@ pub(crate) trait CompileTime {
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output;
 }
 
-#[derive(thiserror::Error, Debug, Clone)]
+#[derive(thiserror::Error, Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CompileTimeError {
 	#[error("Unresolvable Type: This expression can't be fully evaluated at compile-time; Default values for group fields must be known at compile-time.")]
 	GroupValueNotKnownAtCompileTime,

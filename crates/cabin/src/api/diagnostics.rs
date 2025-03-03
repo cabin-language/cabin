@@ -1,10 +1,10 @@
-use std::{fmt::Display, path::PathBuf};
+use std::{collections::BTreeSet, fmt::Display, path::PathBuf};
 
 use convert_case::{Case, Casing as _};
 
 use crate::{comptime::CompileTimeError, lexer::TokenizeError, parser::ParseError, Context, Span, Spanned, STDLIB};
 
-#[derive(Clone, Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error, Hash, PartialOrd, Ord, PartialEq, Eq)]
 pub enum Warning {
 	#[error("{type_name} names should be in PascalCase: Change \"{original_name}\" to \"{}\"", .original_name.to_case(Case::Pascal))]
 	NonPascalCaseGroup { type_name: String, original_name: String },
@@ -16,7 +16,7 @@ pub enum Warning {
 	EmptyEither,
 }
 
-#[derive(Clone, thiserror::Error, Debug)]
+#[derive(Clone, thiserror::Error, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Error {
 	#[error("{0}")]
 	Tokenize(TokenizeError),
@@ -28,7 +28,7 @@ pub enum Error {
 	CompileTime(CompileTimeError),
 }
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum DiagnosticInfo {
 	#[error("{0}")]
 	Error(Error),
@@ -37,7 +37,7 @@ pub enum DiagnosticInfo {
 	Warning(Warning),
 }
 
-#[derive(Clone, Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Diagnostic {
 	pub span: Span,
 	pub info: DiagnosticInfo,
@@ -61,7 +61,7 @@ impl Spanned for Diagnostic {
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
-pub struct Diagnostics(Vec<Diagnostic>);
+pub struct Diagnostics(BTreeSet<Diagnostic>);
 
 impl Display for Diagnostics {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -75,7 +75,7 @@ impl Display for Diagnostics {
 
 impl Diagnostics {
 	pub fn empty() -> Self {
-		Self(Vec::new())
+		Self(BTreeSet::new())
 	}
 
 	pub fn warnings(&self) -> Vec<(&Warning, Span)> {
@@ -105,7 +105,7 @@ impl Diagnostics {
 	}
 
 	pub fn push(&mut self, error: Diagnostic) {
-		self.0.push(error);
+		let _ = self.0.insert(error);
 	}
 
 	pub fn is_empty(&self) -> bool {
@@ -113,11 +113,12 @@ impl Diagnostics {
 	}
 }
 
-impl Iterator for Diagnostics {
+impl IntoIterator for Diagnostics {
+	type IntoIter = <BTreeSet<Diagnostic> as IntoIterator>::IntoIter;
 	type Item = Diagnostic;
 
-	fn next(&mut self) -> Option<Self::Item> {
-		self.0.pop()
+	fn into_iter(self) -> Self::IntoIter {
+		self.0.into_iter()
 	}
 }
 

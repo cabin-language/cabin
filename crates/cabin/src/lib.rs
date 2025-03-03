@@ -24,11 +24,6 @@ pub(crate) mod api;
 /// `Text`, `Number`, `terminal`, etc. See `/std/stdlib.cabin` for its contents.
 pub const STDLIB: &str = include_str!("../std/stdlib.cabin");
 
-/// The Cabin prelude. This is a Cabin file that's automatically prepended to all Cabin files
-/// written by the user. It just brings some useful items into scope from the standard library.
-/// See `/std/prelude.cabin` for its contents.
-pub(crate) const PRELUDE: &str = include_str!("../std/prelude.cabin");
-
 pub fn parse_module(code: &str, context: &mut Context) -> (Module, Diagnostics) {
 	let mut tokens = lexer::tokenize(code, context);
 	(Module::parse(&mut tokens, context), context.diagnostics().to_owned())

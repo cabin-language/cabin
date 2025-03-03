@@ -4,6 +4,7 @@ use super::traits::TryAs as _;
 use crate::{
 	api::{diagnostics::Diagnostic, scope::ScopeTree},
 	ast::expressions::{
+		name::Name,
 		new_literal::{Literal, Object},
 		Expression,
 	},
@@ -52,6 +53,9 @@ pub struct Context {
 
 	/// Diagnostic information about the user's code, such as warnings, errors, hints, etc.
 	diagnostics: Diagnostics,
+
+	pub(crate) name_query_result: Option<Name>,
+	pub(crate) name_query: Option<usize>,
 }
 
 impl Default for Context {
@@ -63,6 +67,8 @@ impl Default for Context {
 			side_effects: true,
 			has_printed: false,
 			file: "stdlib".into(),
+			name_query: None,
+			name_query_result: None,
 		};
 
 		// Add stdlib
@@ -70,6 +76,7 @@ impl Default for Context {
 		context.scope_tree.declare_new_variable("builtin", stdlib_pointer).unwrap();
 		let Expression::Literal(Literal::Object(stdlib)) = stdlib_pointer.expression(&context).to_owned() else { unreachable!() };
 
+		// Bring some stdib items into scope
 		context.scope_tree.declare_new_variable("Text", stdlib.get_field("Text").unwrap().into()).unwrap();
 		context.scope_tree.declare_new_variable("Number", stdlib.get_field("Number").unwrap().into()).unwrap();
 		context
@@ -79,12 +86,12 @@ impl Default for Context {
 				stdlib
 					.get_field("system")
 					.unwrap()
-					.literal(&context)
+					.get_literal(&context)
 					.try_as::<Object>()
 					.unwrap()
 					.get_field("terminal")
 					.unwrap()
-					.literal(&context)
+					.get_literal(&context)
 					.try_as::<Object>()
 					.unwrap()
 					.get_field("print")
@@ -99,12 +106,12 @@ impl Default for Context {
 				stdlib
 					.get_field("system")
 					.unwrap()
-					.literal(&context)
+					.get_literal(&context)
 					.try_as::<Object>()
 					.unwrap()
 					.get_field("terminal")
 					.unwrap()
-					.literal(&context)
+					.get_literal(&context)
 					.try_as::<Object>()
 					.unwrap()
 					.get_field("input")
@@ -137,5 +144,9 @@ impl Context {
 	/// - `diagnostic` - The diagnostic to add
 	pub fn add_diagnostic(&mut self, diagnostic: Diagnostic) {
 		self.diagnostics.push(diagnostic);
+	}
+
+	pub fn scope_tree(&self) -> &ScopeTree {
+		&self.scope_tree
 	}
 }

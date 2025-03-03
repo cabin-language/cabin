@@ -16,7 +16,7 @@ use crate::{
 pub mod declaration;
 pub mod tail;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Statement {
 	Declaration(Declaration),
 	Tail(TailStatement),

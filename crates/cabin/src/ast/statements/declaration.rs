@@ -17,7 +17,7 @@ use crate::{
 	Spanned,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialOrd, Ord, PartialEq, Eq)]
 pub struct Declaration {
 	name: Name,
 	scope_id: ScopeId,
@@ -57,36 +57,56 @@ impl TryParse for Declaration {
 		let value = Expression::parse(tokens, context);
 		let end = value.span(context);
 
-		if let Ok(literal) = value.try_as_literal(context) {
-			let literal = literal.literal(context);
-			if matches!(literal, Literal::Group(_) | Literal::Either(_)) {
+		let expression = value.expression_mut(context);
+		expression.set_name(name.clone());
+		let expression = value.expression(context);
+
+		match expression {
+			Expression::Group(_) | Expression::Either(_) | Expression::Extend(_) => {
 				if !name.unmangled_name().is_case(Case::Pascal) {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span: name.span(context),
 						info: DiagnosticInfo::Warning(Warning::NonPascalCaseGroup {
 							original_name: name.unmangled_name().to_owned(),
-							type_name: literal.kind_name().to_owned(),
+							type_name: expression.kind_name().to_owned(),
 						}),
 					});
 				}
-			} else if !name.unmangled_name().is_case(Case::Snake) {
-				context.add_diagnostic(Diagnostic {
-					file: context.file.clone(),
-					span: name.span(context),
-					info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
-						original_name: name.unmangled_name().to_owned(),
-					}),
-				});
-			}
-		} else if !name.unmangled_name().is_case(Case::Snake) {
-			context.add_diagnostic(Diagnostic {
-				file: context.file.clone(),
-				span: name.span(context),
-				info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
-					original_name: name.unmangled_name().to_owned(),
-				}),
-			});
+			},
+			Expression::Literal(literal) => {
+				if matches!(literal, Literal::Group(_) | Literal::Either(_) | Literal::Extend(_)) {
+					if !name.unmangled_name().is_case(Case::Pascal) {
+						context.add_diagnostic(Diagnostic {
+							file: context.file.clone(),
+							span: name.span(context),
+							info: DiagnosticInfo::Warning(Warning::NonPascalCaseGroup {
+								original_name: name.unmangled_name().to_owned(),
+								type_name: literal.kind_name().to_owned(),
+							}),
+						});
+					}
+				} else if !name.unmangled_name().is_case(Case::Snake) {
+					context.add_diagnostic(Diagnostic {
+						file: context.file.clone(),
+						span: name.span(context),
+						info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
+							original_name: name.unmangled_name().to_owned(),
+						}),
+					});
+				}
+			},
+			_ => {
+				if !name.unmangled_name().is_case(Case::Snake) {
+					context.add_diagnostic(Diagnostic {
+						file: context.file.clone(),
+						span: name.span(context),
+						info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
+							original_name: name.unmangled_name().to_owned(),
+						}),
+					});
+				}
+			},
 		}
 
 		// Add the name declaration to the scope

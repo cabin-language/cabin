@@ -35,12 +35,10 @@ impl CompileTime for Program {
 	type Output = Program;
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		let scope_reverter = context.scope_tree.set_current_scope(self.inner_scope_id);
 		let evaluated = Self {
 			statements: self.statements.into_iter().map(|statement| statement.evaluate_at_compile_time(context)).collect(),
 			inner_scope_id: self.inner_scope_id,
 		};
-		scope_reverter.revert(context);
 		evaluated
 	}
 }

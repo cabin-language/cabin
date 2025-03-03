@@ -27,7 +27,7 @@ use crate::{
 /// and when to use which. Also see the documentation for `VirtualMemory` for more information about virtual memory.
 ///
 /// This internally just wraps a `usize`, so cloning and copying is incredibly cheap.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ExpressionPointer(usize);
 
 impl ExpressionPointer {
@@ -88,13 +88,13 @@ impl ExpressionPointer {
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LiteralPointer(ExpressionPointer);
 
 impl LiteralPointer {
 	pub const ERROR: LiteralPointer = LiteralPointer(ExpressionPointer::ERROR);
 
-	pub fn literal<'ctx>(&self, context: &'ctx Context) -> &'ctx Literal {
+	pub fn get_literal<'ctx>(&self, context: &'ctx Context) -> &'ctx Literal {
 		match self.0.expression(context) {
 			Expression::Literal(literal) => literal,
 			_ => unreachable!(),

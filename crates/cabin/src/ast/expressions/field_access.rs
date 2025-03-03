@@ -50,7 +50,7 @@ impl CompileTime for FieldAccess {
 
 		// Resolvable at compile-time
 		if let Ok(pointer) = left_evaluated.try_as_literal(context) {
-			let literal = pointer.literal(context).to_owned();
+			let literal = pointer.get_literal(context).to_owned();
 			let field_value = literal.dot(&self.right, context);
 			ExpressionOrPointer::Pointer(field_value)
 		}

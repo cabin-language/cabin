@@ -78,7 +78,7 @@ impl CompileTime for ForEachLoop {
 
 		let literal = self.iterable.try_as_literal(context);
 		if let Ok(pointer) = literal {
-			if !pointer.literal(context).is::<LiteralList>() {
+			if !pointer.get_literal(context).is::<LiteralList>() {
 				context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
 					span: self.iterable.span(context),
@@ -87,7 +87,7 @@ impl CompileTime for ForEachLoop {
 				return ExpressionOrPointer::Expression(Expression::ForEachLoop(self));
 			}
 
-			let elements = pointer.literal(context).try_as::<LiteralList>().cloned().unwrap_or_else(|_| LiteralList::empty());
+			let elements = pointer.get_literal(context).try_as::<LiteralList>().cloned().unwrap_or_else(|_| LiteralList::empty());
 
 			for element in &*elements {
 				context

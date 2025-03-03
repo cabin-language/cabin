@@ -1,8 +1,9 @@
 let This = group {};
 let Object = group {};
-let Number = group {}; 
 let List = group {};
 let Text = group {};
+
+let Number = group {}; 
 
 let Optional = either {
 	data,
@@ -74,7 +75,7 @@ let system = new Object {
 	terminal = new Object {
 
 		#[system_side_effects, new BuiltinTag { internal_name = "terminal.print" }]
-		print = action(object: Text): Optional.nothing,
+		print = action(object: Anything): Optional.nothing,
 
 		#[system_side_effects, new BuiltinTag { internal_name = "terminal.input" }] 
 		input = action(): Text,

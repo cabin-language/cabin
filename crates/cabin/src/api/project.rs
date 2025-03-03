@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
 	api::{config::Config, diagnostics::Diagnostics},
-	ast::misc::program::Program,
+	ast::{expressions::name::Name, misc::program::Program},
 	comptime::CompileTime,
 	transpiler::TranspileToC,
 	Context,
@@ -84,6 +84,14 @@ impl Project {
 		&self.config
 	}
 
+	pub fn context(&self) -> &Context {
+		&self.context
+	}
+
+	pub fn context_mut(&mut self) -> &mut Context {
+		&mut self.context
+	}
+
 	pub fn run_compile_time_code(&mut self) -> &Diagnostics {
 		let program = crate::parse_program(&self.main_file_contents, &mut self.context);
 
@@ -94,11 +102,31 @@ impl Project {
 
 	pub fn check(&mut self) -> &Diagnostics {
 		self.context.side_effects = false;
+
 		let program = crate::parse_program(&self.main_file_contents, &mut self.context);
+		if !self.context.diagnostics().is_empty() {
+			return self.context.diagnostics();
+		}
+
 		self.program = Some(program.evaluate_at_compile_time(&mut self.context));
 		self.context.side_effects = true;
 
 		self.context.diagnostics()
+	}
+
+	pub fn name_at(&mut self, name_position: usize) -> Option<Name> {
+		self.context.side_effects = false;
+
+		self.context.name_query = Some(name_position);
+		let program = crate::parse_program(&self.main_file_contents, &mut self.context);
+		if !self.context.diagnostics().is_empty() {
+			return None;
+		}
+
+		self.program = Some(program.evaluate_at_compile_time(&mut self.context));
+		self.context.side_effects = true;
+
+		self.context().name_query_result.clone()
 	}
 
 	pub fn printed(&self) -> bool {

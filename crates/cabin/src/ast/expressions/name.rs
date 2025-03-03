@@ -13,7 +13,7 @@ use crate::{
 	Spanned,
 };
 
-#[derive(Clone, Eq)]
+#[derive(Clone, Eq, PartialOrd, Ord)]
 pub struct Name {
 	/// The internal string value of this name. This is the value as it appears in the Cabin source code; In other words,
 	/// it's unmangled.
@@ -36,6 +36,43 @@ pub struct Name {
 	scope_id: ScopeId,
 }
 
+impl TryParse for Name {
+	type Output = Self;
+
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> anyhow::Result<Self::Output, Diagnostic> {
+		let token = tokens.pop(TokenType::Identifier, context)?;
+
+		let name = Name {
+			name: token.value,
+			span: token.span,
+			should_mangle: true,
+			scope_id: context.scope_tree.unique_id(),
+		};
+
+		if let Some(name_query) = context.name_query {
+			if token.span.contains(name_query) {
+				context.name_query_result = Some(name.clone());
+			}
+		}
+
+		Ok(name)
+	}
+}
+
+impl CompileTime for Name {
+	type Output = Name;
+
+	fn evaluate_at_compile_time(self, _context: &mut Context) -> Self::Output {
+		self
+	}
+}
+
+impl TranspileToC for Name {
+	fn to_c(&self, _context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
+		Ok(self.mangled_name())
+	}
+}
+
 impl Typed for Name {
 	fn get_type(&self, context: &mut Context) -> Type {
 		self.value(context).unwrap_or(ExpressionPointer::ERROR).get_type(context)
@@ -55,35 +92,6 @@ impl Name {
 				});
 			})
 			.ok()
-	}
-}
-
-impl TryParse for Name {
-	type Output = Self;
-
-	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> anyhow::Result<Self::Output, Diagnostic> {
-		let token = tokens.pop(TokenType::Identifier, context)?;
-
-		Ok(Name {
-			name: token.value,
-			span: token.span,
-			should_mangle: true,
-			scope_id: context.scope_tree.unique_id(),
-		})
-	}
-}
-
-impl CompileTime for Name {
-	type Output = Name;
-
-	fn evaluate_at_compile_time(self, _context: &mut Context) -> Self::Output {
-		self
-	}
-}
-
-impl TranspileToC for Name {
-	fn to_c(&self, _context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
-		Ok(self.mangled_name())
 	}
 }
 
@@ -144,7 +152,7 @@ impl Name {
 		}
 	}
 
-	pub(crate) fn unmangled_name(&self) -> &str {
+	pub fn unmangled_name(&self) -> &str {
 		&self.name
 	}
 

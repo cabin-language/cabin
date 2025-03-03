@@ -163,6 +163,34 @@ impl Expression {
 			_ => {},
 		}
 	}
+
+	pub(crate) fn set_name(&mut self, name: Name) {
+		match self {
+			Self::Group(group) => group.name = Some(name),
+			_ => {},
+		}
+	}
+
+	pub(crate) fn kind_name(&self) -> &'static str {
+		match self {
+			Expression::Block(_) => "block",
+			Expression::FieldAccess(_) => "field access",
+			Expression::FunctionCall(_) => "function call",
+			Expression::If(_) => "if expression",
+			Expression::Name(_) => "name",
+			Expression::ObjectConstructor(_) => "object constructor",
+			Expression::ForEachLoop(_) => "for loop",
+			Expression::Run(_) => "run expression",
+			Expression::Unary(_) => "unary operation",
+			Expression::Parameter(_) => "parameter",
+			Expression::Extend(_) => "extend",
+			Expression::Group(_) => "group",
+			Expression::FunctionDeclaration(_) => "function declaration",
+			Expression::Either(_) => "either",
+			Expression::Literal(_) => "literal",
+			Expression::List(_) => "list",
+		}
+	}
 }
 
 impl Spanned for Expression {

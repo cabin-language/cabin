@@ -21,7 +21,7 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 			let mut arguments = VecDeque::from(arguments);
 			let pointer = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
 			let returned_object = call_builtin_at_compile_time("Anything.to_string", context, caller_scope_id, vec![pointer], span);
-			let string_value = returned_object.as_literal(context).literal(context).try_as::<CabinString>().unwrap().value.to_owned();
+			let string_value = returned_object.as_literal(context).get_literal(context).try_as::<CabinString>().unwrap().value.to_owned();
 
 			if !context.has_printed {
 				context.has_printed = true;
@@ -44,7 +44,7 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 
 	"Anything.to_string" => BuiltinFunction {
 		evaluate_at_compile_time: |context, _caller_scope_id, arguments,span| {
-			let this = arguments.first().unwrap_or(&Expression::error(span, context)).as_literal(context).literal(context);
+			let this = arguments.first().unwrap_or(&Expression::error(span, context)).as_literal(context).get_literal(context);
 
 			Expression::Literal(Literal::String(CabinString { span: Span::unknown(), value: match this {
 				Literal::Number(number) => number.to_string(),

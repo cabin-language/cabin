@@ -42,6 +42,7 @@ pub struct GroupFieldLiteral {
 pub struct GroupDeclaration {
 	fields: HashMap<Name, GroupField>,
 	span: Span,
+	pub(crate) name: Option<Name>,
 }
 
 impl TryParse for GroupDeclaration {
@@ -122,7 +123,11 @@ impl TryParse for GroupDeclaration {
 		.span;
 		context.scope_tree.exit_scope().unwrap();
 
-		Ok(GroupDeclaration { fields, span: start.to(end) })
+		Ok(GroupDeclaration {
+			fields,
+			span: start.to(end),
+			name: None,
+		})
 	}
 }
 
@@ -167,7 +172,11 @@ impl CompileTime for GroupDeclaration {
 		}
 
 		// Store in memory and return a pointer
-		EvaluatedGroupDeclaration { fields, span: self.span }
+		EvaluatedGroupDeclaration {
+			fields,
+			span: self.span,
+			name: self.name,
+		}
 	}
 }
 
@@ -181,4 +190,5 @@ impl Spanned for GroupDeclaration {
 pub struct EvaluatedGroupDeclaration {
 	pub(crate) fields: HashMap<Name, GroupFieldLiteral>,
 	span: Span,
+	pub(crate) name: Option<Name>,
 }

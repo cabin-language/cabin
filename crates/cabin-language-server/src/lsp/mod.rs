@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ops::Not};
 
-use cabin::lexer::TokenType;
+use cabin::{lexer::TokenType, typechecker::Typed as _};
 use indoc::indoc;
 
 use crate::{
@@ -130,6 +130,23 @@ impl Request {
 				let token = tokens.iter().find(|token| token.span.contains(span.start()));
 				let hover_text = token
 					.map(|token| match token.token_type {
+						TokenType::Identifier => {
+							let path = url::Url::parse(&text_document.uri).unwrap().to_file_path().unwrap();
+							if let Ok(mut project) = cabin::Project::from_child(path) {
+								let name = project.name_at(span.start);
+								name.map(|name| {
+									format!(
+										"```cabin\nlet {}: {} = \"<value>\";\n```",
+										name.unmangled_name(),
+										name.get_type(project.context_mut()).name(project.context())
+									)
+								})
+								.unwrap_or("unknown".to_owned())
+								.to_owned()
+							} else {
+								"unknown".to_owned()
+							}
+						},
 						TokenType::KeywordLet => indoc!(
 							r#"
                             let
@@ -165,7 +182,8 @@ impl Request {
                             ```
 
                             "#,
-						),
+						)
+						.to_owned(),
 						TokenType::KeywordGroup => indoc!(
 							r#"
                             group
@@ -199,7 +217,8 @@ impl Request {
                             let x: Point = new Position { x = 10, y = 10 };
                             ```
                             "#,
-						),
+						)
+						.to_owned(),
 						TokenType::KeywordExtend => indoc!(
 							r#"
                             # extend
@@ -303,7 +322,8 @@ impl Request {
 
                             Default extensions cannot be bound to a name.
                             "#,
-						),
+						)
+						.to_owned(),
 						TokenType::KeywordNew => indoc!(
 							r#"
 							new
@@ -323,7 +343,8 @@ impl Request {
                             };
 							```
 							"#
-						),
+						)
+						.to_owned(),
 						TokenType::KeywordAction => indoc!(
 							r#"
                             action
@@ -395,10 +416,11 @@ impl Request {
                             do_something<Text>("Hello");
                             ```
                             "#
-						),
-						_ => "",
+						)
+						.to_owned(),
+						_ => String::new(),
 					})
-					.unwrap_or("");
+					.unwrap_or(String::new());
 				Some(Response {
 					id: self.id,
 					jsonrpc: "2.0",
