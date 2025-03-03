@@ -25,7 +25,7 @@ impl TryParse for FieldAccess {
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let mut expression = PrimaryExpression::try_parse(tokens, context)?;
 		let start = expression.span(context);
-		while tokens.next_is(TokenType::Dot, context) {
+		while tokens.next_is(TokenType::Dot) {
 			let _ = tokens.pop(TokenType::Dot, context)?;
 			let right = Name::try_parse(tokens, context)?;
 			let end = right.span(context);

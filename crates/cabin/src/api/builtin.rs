@@ -7,8 +7,10 @@ use crate::{
 		sugar::string::CabinString,
 	},
 	comptime::memory::ExpressionPointer,
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	Context,
 	Span,
+	Spanned,
 };
 
 pub struct BuiltinFunction {
@@ -28,7 +30,18 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 				println!();
 			}
 
-			println!("{string_value}");
+			if context.side_effects {
+				println!("{string_value}");
+			}
+
+			// Add hint diagnostic
+			if pointer != ExpressionPointer::ERROR {
+				context.add_diagnostic(Diagnostic {
+					span: pointer.span(context),
+					info: DiagnosticInfo::Info(string_value),
+					file: context.file.clone()
+				});
+			}
 
 			Expression::error(Span::unknown(), context)
 		},

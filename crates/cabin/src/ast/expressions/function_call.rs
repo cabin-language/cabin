@@ -70,7 +70,7 @@ impl TryParse for PostfixOperators {
 			],
 			context,
 		) {
-			if tokens.next_is(TokenType::QuestionMark, context) {
+			if tokens.next_is(TokenType::QuestionMark) {
 				end = tokens.pop(TokenType::QuestionMark, context)?.span;
 				return Ok(Expression::Unary(UnaryOperation {
 					expression,
@@ -81,7 +81,7 @@ impl TryParse for PostfixOperators {
 			}
 
 			// Compile-time arguments
-			let compile_time_arguments = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket, context), {
+			let compile_time_arguments = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 				let mut compile_time_arguments = Vec::new();
 				end = parse_list!(tokens, context, ListType::AngleBracketed, {
 					compile_time_arguments.push(Expression::parse(tokens, context));
@@ -91,7 +91,7 @@ impl TryParse for PostfixOperators {
 			});
 
 			// Arguments
-			let arguments = if_then_else_default!(tokens.next_is(TokenType::LeftParenthesis, context), {
+			let arguments = if_then_else_default!(tokens.next_is(TokenType::LeftParenthesis), {
 				let mut arguments = Vec::new();
 				end = parse_list!(tokens, context, ListType::Parenthesized, {
 					arguments.push(Expression::parse(tokens, context));
@@ -299,15 +299,15 @@ impl CompileTime for FunctionCall {
 
 				// Call builtin function
 				if let Some(internal_name) = builtin_name {
-					if !system_side_effects || context.side_effects {
-						if let Some(_runtime_reason) = runtime {
-							// TODO: runtime tag
-						}
+					// if !system_side_effects || context.side_effects {
+					// 	if let Some(_runtime_reason) = runtime {
+					// 		// TODO: runtime tag
+					// 	}
 
-						return ExpressionOrPointer::Pointer(call_builtin_at_compile_time(&internal_name, context, self.scope_id, arguments, self.span));
-					}
+					return ExpressionOrPointer::Pointer(call_builtin_at_compile_time(&internal_name, context, self.scope_id, arguments, self.span));
+					// }
 
-					return ExpressionOrPointer::Pointer(Expression::error(Span::unknown(), context));
+					// return ExpressionOrPointer::Pointer(Expression::error(Span::unknown(), context));
 				}
 
 				return ExpressionOrPointer::Pointer(Expression::error(span, context));

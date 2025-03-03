@@ -46,7 +46,7 @@ impl Block {
 		let start = tokens.pop(TokenType::LeftBrace, context)?.span;
 
 		let mut statements = Vec::new();
-		while !tokens.next_is(TokenType::RightBrace, context) {
+		while !tokens.next_is(TokenType::RightBrace) {
 			statements.push(Statement::parse(tokens, context));
 		}
 

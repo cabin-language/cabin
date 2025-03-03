@@ -53,9 +53,7 @@ pub(crate) trait TokenQueueFunctionality {
 	fn peek_type2(&self, context: &Context) -> Result<TokenType, Diagnostic>;
 
 	/// Returns whether the next token in the queue matches the given token type.
-	fn next_is(&self, token_type: TokenType, context: &Context) -> bool {
-		self.peek_type(context).map_or(false, |token| token == token_type)
-	}
+	fn next_is(&self, token_type: TokenType) -> bool;
 
 	/// Returns whether the next next token in the queue matches the given token type.
 	fn next_next_is(&self, token_type: TokenType, context: &Context) -> bool {
@@ -70,7 +68,7 @@ pub(crate) trait TokenQueueFunctionality {
 	/// # Returns
 	/// Whether the next token in the queue matches one of the given token types.
 	fn next_is_one_of(&self, token_types: &[TokenType], context: &Context) -> bool {
-		token_types.iter().any(|token_type| self.next_is(token_type.to_owned(), context))
+		token_types.iter().any(|token_type| self.next_is(token_type.to_owned()))
 	}
 
 	fn current_position(&self) -> Option<Span>;
@@ -95,6 +93,23 @@ impl TokenQueueFunctionality for TokenQueue {
 			})?;
 		}
 		Ok(next.token_type)
+	}
+
+	fn next_is(&self, token_type: TokenType) -> bool {
+		let mut index = 0;
+		let Some(mut next) = self.get(index) else { return false; };
+		while next.token_type.is_whitespace() {
+			if token_type == TokenType::Comment && next.token_type == TokenType::Comment {
+				return true;
+			}
+			index += 1;
+			if let Some(token) = self.get(index) {
+				next = token;
+			} else {
+				return false;
+			}
+		}
+		next.token_type == token_type
 	}
 
 	fn peek_type2(&self, context: &Context) -> Result<TokenType, Diagnostic> {

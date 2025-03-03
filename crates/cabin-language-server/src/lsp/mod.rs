@@ -135,10 +135,21 @@ impl Request {
 							if let Ok(mut project) = cabin::Project::from_child(path) {
 								let name = project.name_at(span.start);
 								name.map(|name| {
+									let documentation = name
+										.value(project.context_mut())
+										.map(|expr| {
+											expr.expression(project.context())
+												.get_documentation()
+												.map(|documentation| format!("\n---\n{}", documentation.trim_start_matches("# ")))
+										})
+										.flatten()
+										.map(|str| str.to_owned())
+										.unwrap_or(String::new());
 									format!(
-										"```cabin\nlet {}: {}\n```",
+										"```cabin\n{}: {}\n```{}",
 										name.unmangled_name(),
-										name.get_type(project.context_mut()).name(project.context())
+										name.get_type(project.context_mut()).name(project.context()),
+										documentation
 									)
 								})
 								.unwrap_or("unknown".to_owned())
@@ -432,9 +443,6 @@ impl Request {
 
 			RequestData::Initialized {} => None,
 			RequestData::DidSave {} => None,
-
-			// Unimplemented
-			_ => None,
 		})
 	}
 }

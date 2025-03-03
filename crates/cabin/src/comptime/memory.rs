@@ -44,7 +44,7 @@ impl ExpressionPointer {
 	/// # Returns
 	///
 	/// A reference to the `LiteralObject` that this `VirtualPointer` points to.
-	pub(crate) fn expression<'a>(&self, context: &'a Context) -> &'a Expression {
+	pub fn expression<'a>(&self, context: &'a Context) -> &'a Expression {
 		context.virtual_memory.get(self)
 	}
 

@@ -1,3 +1,7 @@
-foreach number in [1, 2, 3] {
-	print(number);
+let fruits = ["apple", "banana", "orange"];
+
+foreach fruit in fruits {
+	print(fruit);
 };
+
+print("Hello world");

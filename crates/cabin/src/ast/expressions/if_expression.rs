@@ -27,7 +27,7 @@ impl TryParse for IfExpression {
 		let condition = Expression::parse(tokens, context);
 		let body = Block::try_parse(tokens, context)?;
 		let mut end = body.span(context);
-		let else_body = if tokens.next_is(TokenType::KeywordOtherwise, context) {
+		let else_body = if tokens.next_is(TokenType::KeywordOtherwise) {
 			let _ = tokens.pop(TokenType::KeywordOtherwise, context).unwrap();
 			let else_body = Block::try_parse(tokens, context)?;
 			end = else_body.span(context);

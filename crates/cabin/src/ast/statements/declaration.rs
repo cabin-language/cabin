@@ -39,9 +39,9 @@ impl TryParse for Declaration {
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		// Tags
-		let tags = if_then_some!(tokens.next_is(TokenType::TagOpening, context), TagList::try_parse(tokens, context)?);
+		let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
 
-		if tags.is_some() && !tokens.next_is(TokenType::KeywordLet, context) {
+		if tags.is_some() && !tokens.next_is(TokenType::KeywordLet) {
 			let expression = Expression::parse(tokens, context);
 			let _ = tokens.pop(TokenType::Semicolon, context)?;
 			return Ok(Statement::Expression(expression));

@@ -21,6 +21,7 @@ fn diagnostic_code(diagnostic: &cabin::diagnostics::Diagnostic) -> u8 {
 	match diagnostic.info() {
 		DiagnosticInfo::Error(_) => 1,
 		DiagnosticInfo::Warning(_) => 2,
+		DiagnosticInfo::Info(_) => 3,
 	}
 }
 

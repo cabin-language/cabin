@@ -35,6 +35,9 @@ pub enum DiagnosticInfo {
 
 	#[error("{0}")]
 	Warning(Warning),
+
+	#[error("{0}")]
+	Info(String),
 }
 
 #[derive(Clone, Debug, thiserror::Error, PartialEq, Eq, Hash, PartialOrd, Ord)]

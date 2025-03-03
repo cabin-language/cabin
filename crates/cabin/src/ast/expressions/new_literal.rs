@@ -61,6 +61,7 @@ impl Typed for Literal {
 			Self::String(_) => Type::Literal(context.scope_tree.get_builtin("Text").unwrap().as_literal(context)),
 			Self::Number(_) => Type::Literal(context.scope_tree.get_builtin("Number").unwrap().as_literal(context)),
 			Self::ErrorLiteral(_) => Type::Literal(LiteralPointer::ERROR),
+			Literal::FunctionDeclaration(_) => Type::Literal(Expression::Literal(self.to_owned()).store_in_memory(context).as_literal(context)),
 			literal => todo!("{literal:?}"),
 		}
 	}

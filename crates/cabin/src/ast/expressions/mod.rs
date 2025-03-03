@@ -171,6 +171,24 @@ impl Expression {
 		}
 	}
 
+	pub(crate) fn set_documentation(&mut self, documentation: &str) {
+		match self {
+			Self::FunctionDeclaration(function) => function.documentation = Some(documentation.to_owned()),
+			_ => {},
+		}
+	}
+
+	pub fn get_documentation(&self) -> Option<&str> {
+		match self {
+			Self::FunctionDeclaration(function) => function.documentation.as_ref().map(|doc| doc.as_str()),
+			Self::Literal(literal) => match literal {
+				Literal::FunctionDeclaration(function) => function.documentation.as_ref().map(|doc| doc.as_str()),
+				_ => None,
+			},
+			_ => None,
+		}
+	}
+
 	pub(crate) fn kind_name(&self) -> &'static str {
 		match self {
 			Expression::Block(_) => "block",

@@ -7,16 +7,14 @@ use crate::{
 		expressions::{block::Block, parameter::Parameter, Expression},
 		misc::tag::TagList,
 	},
-	comptime::{
-		memory::{ExpressionPointer, LiteralPointer},
-		CompileTime,
-	},
+	comptime::{memory::ExpressionPointer, CompileTime},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	if_then_some,
 	lexer::TokenType,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	typechecker::Type,
 	Span,
 	Spanned,
 };
@@ -30,6 +28,7 @@ pub struct FunctionDeclaration {
 	body: Option<Block>,
 	this_object: Option<ExpressionPointer>,
 	span: Span,
+	pub(crate) documentation: Option<String>,
 }
 
 impl TryParse for FunctionDeclaration {
@@ -41,7 +40,7 @@ impl TryParse for FunctionDeclaration {
 		let mut end = start;
 
 		// Compile-time parameters
-		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket, context), {
+		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
 			end = parse_list!(tokens, context, ListType::AngleBracketed, {
 				let parameter = Parameter::try_parse(tokens, context)?;
@@ -52,7 +51,7 @@ impl TryParse for FunctionDeclaration {
 		});
 
 		// Parameters
-		let parameters = if_then_else_default!(tokens.next_is(TokenType::LeftParenthesis, context), {
+		let parameters = if_then_else_default!(tokens.next_is(TokenType::LeftParenthesis), {
 			let mut parameters = Vec::new();
 			end = parse_list!(tokens, context, ListType::Parenthesized, {
 				let parameter = Parameter::try_parse(tokens, context)?;
@@ -63,7 +62,7 @@ impl TryParse for FunctionDeclaration {
 		});
 
 		// Return Type
-		let return_type = if_then_some!(tokens.next_is(TokenType::Colon, context), {
+		let return_type = if_then_some!(tokens.next_is(TokenType::Colon), {
 			let _ = tokens.pop(TokenType::Colon, context)?;
 			let expression = Expression::parse(tokens, context);
 			end = expression.span(context);
@@ -71,7 +70,7 @@ impl TryParse for FunctionDeclaration {
 		});
 
 		// Body
-		let body = if_then_some!(tokens.next_is(TokenType::LeftBrace, context), {
+		let body = if_then_some!(tokens.next_is(TokenType::LeftBrace), {
 			let block = Block::parse_with_scope_type(tokens, context, ScopeType::Function)?;
 			let error = Expression::error(Span::unknown(), context);
 			for parameter in &compile_time_parameters {
@@ -105,6 +104,7 @@ impl TryParse for FunctionDeclaration {
 			return_type,
 			body,
 			this_object: None,
+			documentation: None,
 			span: start.to(end),
 		})
 	}
@@ -133,7 +133,7 @@ impl CompileTime for FunctionDeclaration {
 		};
 
 		// Return type
-		let return_type = self.return_type.map(|return_type| return_type.evaluate_to_literal(context));
+		let return_type = self.return_type.map(|return_type| Type::Literal(return_type.evaluate_to_literal(context)));
 
 		let tags = self.tags.evaluate_at_compile_time(context);
 
@@ -147,6 +147,7 @@ impl CompileTime for FunctionDeclaration {
 			return_type,
 			tags,
 			span: self.span,
+			documentation: self.documentation,
 		};
 
 		function
@@ -170,9 +171,10 @@ pub struct EvaluatedFunctionDeclaration {
 	tags: TagList,
 	compile_time_parameters: Vec<EvaluatedParameter>,
 	parameters: Vec<EvaluatedParameter>,
-	return_type: Option<LiteralPointer>,
+	return_type: Option<Type>,
 	body: Option<Block>,
 	span: Span,
+	pub(crate) documentation: Option<String>,
 }
 
 static FUNCTION_DECLARATION_ERROR: EvaluatedFunctionDeclaration = EvaluatedFunctionDeclaration {
@@ -182,6 +184,7 @@ static FUNCTION_DECLARATION_ERROR: EvaluatedFunctionDeclaration = EvaluatedFunct
 	return_type: None,
 	body: None,
 	span: Span::unknown(),
+	documentation: None,
 };
 
 impl EvaluatedFunctionDeclaration {
@@ -195,6 +198,10 @@ impl EvaluatedFunctionDeclaration {
 
 	pub(crate) fn body(&self) -> Option<&Block> {
 		self.body.as_ref()
+	}
+
+	pub(crate) fn return_type(&self) -> Option<&Type> {
+		self.return_type.as_ref()
 	}
 
 	pub(crate) fn tags(&self) -> &TagList {

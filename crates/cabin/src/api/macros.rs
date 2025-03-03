@@ -61,9 +61,9 @@ macro_rules! parse_list {
 		use $crate::parser::TokenQueueFunctionality as _;
 
 		let _ = $tokens.pop($list_type.opening(), $context)?;
-		while !$tokens.next_is($list_type.closing(), $context) {
+		while !$tokens.next_is($list_type.closing()) {
 			$body
-			if $tokens.next_is($crate::lexer::TokenType::Comma, $context) {
+			if $tokens.next_is($crate::lexer::TokenType::Comma) {
 				let _ = $tokens.pop($crate::lexer::TokenType::Comma, $context)?;
 			} else {
 				break;

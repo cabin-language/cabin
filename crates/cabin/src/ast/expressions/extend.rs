@@ -62,7 +62,7 @@ impl TryParse for Extend {
 
 		context.scope_tree.enter_new_scope(ScopeType::Extend);
 
-		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket, context), {
+		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut parameters = Vec::new();
 			let _ = parse_list!(tokens, context, ListType::AngleBracketed, {
 				let parameter = Parameter::try_parse(tokens, context)?;
@@ -82,7 +82,7 @@ impl TryParse for Extend {
 
 		let type_to_extend = Expression::parse(tokens, context);
 
-		let type_to_be = if_then_some!(tokens.next_is(TokenType::KeywordToBe, context), {
+		let type_to_be = if_then_some!(tokens.next_is(TokenType::KeywordToBe), {
 			let _ = tokens.pop(TokenType::KeywordToBe, context)?;
 			Expression::parse(tokens, context)
 		});
@@ -90,7 +90,7 @@ impl TryParse for Extend {
 		let mut fields = HashMap::new();
 		let end = parse_list!(tokens, context, ListType::Braced, {
 			// Parse tags
-			let _tags = if_then_some!(tokens.next_is(TokenType::TagOpening, context), TagList::try_parse(tokens, context)?);
+			let _tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
 
 			// Name
 			let name = Name::try_parse(tokens, context)?;

@@ -34,6 +34,8 @@ pub struct Name {
 	/// The unique ID of the scope that this name is used in. This is used to get the value
 	/// that the name points to, because it needs to get the value from the scope it's used.
 	scope_id: ScopeId,
+
+	pub(crate) documentation: Option<String>,
 }
 
 impl TryParse for Name {
@@ -47,6 +49,7 @@ impl TryParse for Name {
 			span: token.span,
 			should_mangle: true,
 			scope_id: context.scope_tree.unique_id(),
+			documentation: None,
 		};
 
 		if let Some(name_query) = context.name_query {
@@ -80,7 +83,7 @@ impl Typed for Name {
 }
 
 impl Name {
-	pub(crate) fn value(&self, context: &mut Context) -> Option<ExpressionPointer> {
+	pub fn value(&self, context: &mut Context) -> Option<ExpressionPointer> {
 		context
 			.scope_tree
 			.get_variable_from_id(self, self.scope_id)
@@ -102,6 +105,7 @@ impl<T: AsRef<str>> From<T> for Name {
 			span: Span::unknown(),
 			scope_id: ScopeId::global(),
 			should_mangle: true,
+			documentation: None,
 		}
 	}
 }
@@ -149,6 +153,7 @@ impl Name {
 			span: Span::unknown(),
 			scope_id: ScopeId::global(),
 			should_mangle: true,
+			documentation: None,
 		}
 	}
 

@@ -52,7 +52,7 @@ impl TryParse for GroupDeclaration {
 		let start = tokens.pop(TokenType::KeywordGroup, context)?.span;
 		context.scope_tree.enter_new_scope(ScopeType::Group);
 
-		let _compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket, context), {
+		let _compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, context, ListType::AngleBracketed, {
 				let parameter = Parameter::try_parse(tokens, context)?;
@@ -73,8 +73,14 @@ impl TryParse for GroupDeclaration {
 		// Fields
 		let mut fields = HashMap::new();
 		let end = parse_list!(tokens, context, ListType::Braced, {
+			let mut documentation = if_then_some!(tokens.next_is(TokenType::Comment), tokens.pop(TokenType::Comment, context).unwrap().value);
+
 			//  Group field tags
-			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening, context), TagList::try_parse(tokens, context)?);
+			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
+
+			if documentation.is_none() && tokens.next_is(TokenType::Comment) {
+				documentation = Some(tokens.pop(TokenType::Comment, context).unwrap().value);
+			}
 
 			// Group field name
 			let name = Name::try_parse(tokens, context)?;
@@ -97,13 +103,13 @@ impl TryParse for GroupDeclaration {
 			}
 
 			// Group field type
-			let field_type = if_then_some!(tokens.next_is(TokenType::Colon, context), {
+			let field_type = if_then_some!(tokens.next_is(TokenType::Colon), {
 				let _ = tokens.pop(TokenType::Colon, context)?;
 				Expression::parse(tokens, context)
 			});
 
 			// Group field value
-			let value = if_then_some!(tokens.next_is(TokenType::Equal, context), {
+			let value = if_then_some!(tokens.next_is(TokenType::Equal), {
 				let _ = tokens.pop(TokenType::Equal, context)?;
 				let value = Expression::parse(tokens, context);
 				if let Some(tags) = tags {

@@ -40,7 +40,7 @@ impl TryParse for ObjectConstructor {
 		// Name
 		let name = Name::try_parse(tokens, context)?;
 
-		let _compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket, context), {
+		let _compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, context, ListType::AngleBracketed, {
 				let parameter = Parameter::try_parse(tokens, context)?;
@@ -61,17 +61,28 @@ impl TryParse for ObjectConstructor {
 		// Fields
 		let mut fields = HashMap::new();
 		let end = parse_list!(tokens, context, ListType::Braced, {
+			let mut documentation = if_then_some!(tokens.next_is(TokenType::Comment), tokens.pop(TokenType::Comment, context).unwrap().value);
+
 			// Parse tags
-			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening, context), TagList::try_parse(tokens, context)?);
+			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
+
+			if documentation.is_none() && tokens.next_is(TokenType::Comment) {
+				documentation = Some(tokens.pop(TokenType::Comment, context).unwrap().value);
+			}
 
 			// Name
-			let field_name = Name::try_parse(tokens, context)?;
+			let mut field_name = Name::try_parse(tokens, context)?;
+			field_name.documentation = documentation.clone();
 
 			// Value
 			let _ = tokens.pop(TokenType::Equal, context)?;
 			let value = Expression::parse(tokens, context);
 			if let Some(tags) = tags {
 				value.expression_mut(context).set_tags(tags);
+			}
+
+			if let Some(documentation) = documentation {
+				value.expression_mut(context).set_documentation(&documentation);
 			}
 
 			// Add field
