@@ -1,0 +1,8 @@
+#!/usr/bin/bash
+
+set -e
+
+tree-sitter generate
+rm -rf ~/.local/share/nvim/lazy/nvim-treesitter/queries/cabin
+mkdir -p ~/.local/share/nvim/lazy/nvim-treesitter/queries
+cp -r queries ~/.local/share/nvim/lazy/nvim-treesitter/queries/cabin
