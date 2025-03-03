@@ -144,8 +144,7 @@ module.exports = grammar({
 			"let",
 			field("name", $.identifier),
 			optional(seq(":", field("type", $.expression))),
-			"=",
-			field("value", $.expression)
+			optional(seq("=", field("value", $.expression))),
 		),
 
 		goto: $ => seq(

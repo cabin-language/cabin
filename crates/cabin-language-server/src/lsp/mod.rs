@@ -136,7 +136,7 @@ impl Request {
 								let name = project.name_at(span.start);
 								name.map(|name| {
 									format!(
-										"```cabin\nlet {}: {} = \"<value>\";\n```",
+										"```cabin\nlet {}: {}\n```",
 										name.unmangled_name(),
 										name.get_type(project.context_mut()).name(project.context())
 									)
