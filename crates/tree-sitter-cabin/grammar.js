@@ -143,7 +143,7 @@ module.exports = grammar({
 			optional(field("tags", $.tag)),
 			"let",
 			field("name", $.identifier),
-			optional(seq(":", $.expression)),
+			optional(seq(":", field("type", $.expression))),
 			"=",
 			field("value", $.expression)
 		),
