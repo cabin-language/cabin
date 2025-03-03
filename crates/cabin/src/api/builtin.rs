@@ -1,12 +1,9 @@
-use std::{collections::VecDeque, io::Write};
+use std::collections::VecDeque;
 
 use crate::{
 	api::{scope::ScopeId, traits::TryAs as _},
 	ast::{
-		expressions::{
-			new_literal::{Literal, Object},
-			Expression,
-		},
+		expressions::{new_literal::Literal, Expression},
 		sugar::string::CabinString,
 	},
 	comptime::memory::ExpressionPointer,
@@ -26,19 +23,18 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 			let returned_object = call_builtin_at_compile_time("Anything.to_string", context, caller_scope_id, vec![pointer], span);
 			let string_value = returned_object.as_literal(context).literal(context).try_as::<CabinString>().unwrap().value.to_owned();
 
+			if !context.has_printed {
+				context.has_printed = true;
+				println!();
+			}
+
 			println!("{string_value}");
 
 			Expression::error(Span::unknown(), context)
 		},
 	},
 	"terminal.input" => BuiltinFunction {
-		evaluate_at_compile_time: |context, _caller_scope_id, arguments, _span| {
-			let mut arguments = VecDeque::from(arguments);
-			let options = arguments.pop_front().unwrap().as_literal(context).literal(context).try_as::<Object>().unwrap();
-			let prompt = options.get_field("prompt").unwrap().literal(context).try_as::<CabinString>().unwrap().value.to_owned();
-
-			print!("{prompt}");
-			std::io::stdout().flush().unwrap();
+		evaluate_at_compile_time: |context, _caller_scope_id, _arguments, _span| {
 			let mut line = String::new();
 			let _ = std::io::stdin().read_line(&mut line).unwrap();
 			line = line.get(0..line.len() - 1).unwrap().to_owned();

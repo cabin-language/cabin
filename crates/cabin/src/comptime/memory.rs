@@ -71,7 +71,7 @@ impl ExpressionPointer {
 	pub(crate) fn try_as_literal(self, context: &mut Context) -> Result<LiteralPointer, ()> {
 		match self.expression(context).to_owned() {
 			Expression::Literal(_) => Ok(LiteralPointer(self)),
-			Expression::Name(name) => name.value(context).ok_or(())?.try_as_literal(context),
+			Expression::Name(name) => name.value(context).unwrap_or(ExpressionPointer::ERROR).try_as_literal(context),
 			_ => Err(()),
 		}
 	}
@@ -81,7 +81,7 @@ impl ExpressionPointer {
 			context.add_diagnostic(Diagnostic {
 				file: context.file.clone(),
 				span: self.span(context),
-				info: CompileTimeError::GroupValueNotKnownAtCompileTime.into(),
+				info: CompileTimeError::ExpressionUsedAsType.into(),
 			});
 			LiteralPointer::ERROR
 		})

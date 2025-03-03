@@ -3,12 +3,6 @@
 
 int main(int argc, char* argv[]) {
 
-
-	// Library "builtin" type definitions --------------------------------------------------------------------------------
-
-
-	// Library "builtin" value definitions --------------------------------------------------------------------------------
-
 	
 	
 	
@@ -19,28 +13,14 @@ int main(int argc, char* argv[]) {
 	
 	
 	
+	&literal_138
+	void* u_name;
+	u_name = &literal_139;
+	label_end_u_name:;
 	
 	
-	&literal_133
-	void* u_a;
-	u_a = &literal_127;
-	label_end_u_a:;
-	
-	
-	void* u_b;
-	u_b = &literal_128;
-	label_end_u_b:;
-	
-	
-	void* u_c;
-	u_c = &literal_129;
-	label_end_u_c:;
-	
-	
-	void* u_d;
-	u_d = &literal_130;
-	label_end_u_d:;
-	
+	&literal_142
+	&literal_145
 
 
 	return 0;

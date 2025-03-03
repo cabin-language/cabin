@@ -24,7 +24,7 @@ fn check_errors(diagnostics: Diagnostics, project: &mut cabin::Project) -> bool 
 				} else {
 					format!("{}", pathdiff::diff_paths(diagnostic.file, project.root_directory()).unwrap().display())
 				};
-				eprintln!("In {} on line {}\n", path.bold().cyan(), line.to_string().bold().cyan());
+				eprintln!("In {} on line {}\n", path.bold().cyan(), (line + 1).to_string().bold().cyan());
 				eprintln!("{}\n", "-".repeat(80));
 			}
 		}
@@ -48,7 +48,7 @@ impl CabinCommand for RunCommand {
 
 		println!("{} {}...", "\nRunning".bold().green(), project.config().information().name().bold());
 
-		// checking
+		// Checking
 		println!("{} syntax and types...", "\tChecking".bold().green());
 		if !check_errors(project.check().to_owned(), &mut project) {
 			return;
@@ -58,6 +58,9 @@ impl CabinCommand for RunCommand {
 		println!("    {} compile-time code...", "Running".bold().green());
 		if !check_errors(project.run_compile_time_code().to_owned(), &mut project) {
 			return;
+		}
+		if project.printed() {
+			println!();
 		}
 
 		// Compilation

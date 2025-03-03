@@ -2,7 +2,6 @@ use std::{fmt::Debug, hash::Hash};
 
 use crate::{
 	api::context::Context,
-	ast::expressions::Expression,
 	comptime::{memory::ExpressionPointer, CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::TokenType,
@@ -32,6 +31,8 @@ pub struct Name {
 	/// compiler needs to insert names into the program.
 	should_mangle: bool,
 
+	/// The unique ID of the scope that this name is used in. This is used to get the value
+	/// that the name points to, because it needs to get the value from the scope it's used.
 	scope_id: ScopeId,
 }
 
@@ -75,7 +76,7 @@ impl TryParse for Name {
 impl CompileTime for Name {
 	type Output = Name;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+	fn evaluate_at_compile_time(self, _context: &mut Context) -> Self::Output {
 		self
 	}
 }

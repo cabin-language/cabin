@@ -151,14 +151,7 @@ impl CompileTime for ObjectConstructor {
 
 impl Typed for ObjectConstructor {
 	fn get_type(&self, context: &mut Context) -> Type {
-		Type::Literal(self.type_name.value(context).map(|value| value.as_literal(context)).unwrap_or_else(|| {
-			context.add_diagnostic(Diagnostic {
-				span: self.type_name.span(context),
-				info: CompileTimeError::UnknownVariable(self.type_name.unmangled_name().to_owned()).into(),
-				file: context.file.clone(),
-			});
-			LiteralPointer::ERROR
-		}))
+		Type::Literal(self.type_name.value(context).map(|value| value.as_literal(context)).unwrap_or(LiteralPointer::ERROR))
 	}
 }
 

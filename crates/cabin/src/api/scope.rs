@@ -4,11 +4,7 @@ use std::{
 	ops::{Deref, DerefMut},
 };
 
-use crate::{
-	api::context::Context,
-	ast::expressions::name::Name,
-	comptime::memory::{ExpressionPointer, LiteralPointer},
-};
+use crate::{api::context::Context, ast::expressions::name::Name, comptime::memory::ExpressionPointer};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScopeId(usize);
 

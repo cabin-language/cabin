@@ -58,6 +58,7 @@ impl Typed for Literal {
 		match self {
 			Self::String(_) => Type::Literal(context.scope_tree.get_builtin("Text").unwrap().as_literal(context)),
 			Self::Number(_) => Type::Literal(context.scope_tree.get_builtin("Number").unwrap().as_literal(context)),
+			Self::ErrorLiteral(_) => Type::Literal(LiteralPointer::ERROR),
 			literal => todo!("{literal:?}"),
 		}
 	}

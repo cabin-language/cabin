@@ -105,7 +105,7 @@ impl Spanned for Either {
 }
 
 impl Dot for Either {
-	fn dot(&self, name: &Name, context: &mut Context) -> ExpressionPointer {
+	fn dot(&self, name: &Name, _context: &mut Context) -> ExpressionPointer {
 		self.variants
 			.iter()
 			.find_map(|(variant_name, value)| (name == variant_name).then_some(value))

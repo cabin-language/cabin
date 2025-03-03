@@ -101,6 +101,10 @@ impl Project {
 		self.context.diagnostics()
 	}
 
+	pub fn printed(&self) -> bool {
+		self.context.has_printed
+	}
+
 	pub fn transpile(&mut self) -> Result<String, Diagnostics> {
 		if self.program.is_none() {
 			let diagnostics = self.run_compile_time_code();
@@ -110,22 +114,6 @@ impl Project {
 		}
 
 		let mut c_code = "#include <stdio.h>\n#include<stdlib.h>\n\nint main(int argc, char* argv[]) {\n\n".to_owned();
-
-		for (library_name, library_value) in self.context.libraries.clone() {
-			c_code += &format!("\n\t// Library \"{}\" type definitions {}\n\n", library_name.unmangled_name(), "-".repeat(80));
-			library_value
-				.c_type_prelude(&mut self.context)
-				.unwrap()
-				.lines()
-				.for_each(|line| c_code += &format!("\t{line}\n"));
-
-			c_code += &format!("\n\t// Library \"{}\" value definitions {}\n\n", library_name.unmangled_name(), "-".repeat(80));
-			library_value
-				.c_prelude(&mut self.context)
-				.unwrap()
-				.lines()
-				.for_each(|line| c_code += &format!("\t{line}\n"));
-		}
 
 		let body = self.program.as_ref().unwrap().to_c(&mut self.context, None).unwrap();
 		body.lines().for_each(|line| c_code += &format!("\t{line}\n"));

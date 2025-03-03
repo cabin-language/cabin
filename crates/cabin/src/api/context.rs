@@ -1,29 +1,56 @@
-use std::{
-	collections::HashMap,
-	path::{Path, PathBuf},
-};
+use std::path::PathBuf;
 
+use super::traits::TryAs as _;
 use crate::{
-	api::{
-		diagnostics::{Diagnostic, DiagnosticInfo},
-		scope::ScopeTree,
+	api::{diagnostics::Diagnostic, scope::ScopeTree},
+	ast::expressions::{
+		new_literal::{Literal, Object},
+		Expression,
 	},
-	ast::expressions::{name::Name, new_literal::Literal, Expression},
-	comptime::memory::{ExpressionPointer, VirtualMemory},
+	comptime::memory::VirtualMemory,
 	Diagnostics,
-	Span,
 	STDLIB,
 };
 
+/// Global(ish) data about the state of the compiler. The context holds the program's scope data,
+/// as well as memory where expressions are stored, among some other metadata like the file path
+/// being evaluated.
 pub struct Context {
-	// Publicly mutable
+	/// Scope information about the program. Scopes are stored in this tree, with each scope
+	/// containing a map between variable names and their values (as `ExpressionPointers`)
+	///
+	/// This should never be reassigned, only mutated with the methods on it for declaring and
+	/// reassigning variables.
 	pub(crate) scope_tree: ScopeTree,
+
+	/// Storage for expressions. All expressions are stored in `VirtualMemory`, and can be accessed
+	/// with an `ExpressionPointer`, allowing one expression to be reused and mutated globally from
+	/// different places in the user's code.
 	pub(crate) virtual_memory: VirtualMemory,
-	pub(crate) libraries: HashMap<Name, ExpressionPointer>,
+
+	/// Whether the AST is currently being evaluated "with side effects".
+	///
+	/// For example, when checking for type errors, we dont want to actually run any code that
+	/// the user can see the effects of, so this is `false`.
+	///
+	/// Another example is branch constructs, i.e., if the condition in an `if` expression is
+	/// `true`, a corresponding `otherwise` block will still be evaluated, just without side
+	/// effects. This allows checking parts of code for validity without running it.
+	///
+	/// Certain builtin functions, such as `print`, will simply not run (or have their behavior
+	/// affected) when this is `false`.
 	pub(crate) side_effects: bool,
+
+	/// The path to the file currently being acted upon (tokenized/parsed/evaluated/transpiled etc.)
 	pub(crate) file: PathBuf,
 
-	// Privately mutable
+	/// Whether the user has printed to stdout or stderr at compile-time. This is stored because
+	/// when the first line is printed (and the first line only), an additional empty line should
+	/// be printed before it. Additionally, if any lines are printed, an additional newline is
+	/// printed after compile-time evaluation.
+	pub(crate) has_printed: bool,
+
+	/// Diagnostic information about the user's code, such as warnings, errors, hints, etc.
 	diagnostics: Diagnostics,
 }
 
@@ -33,26 +60,82 @@ impl Default for Context {
 			scope_tree: ScopeTree::global(),
 			virtual_memory: VirtualMemory::empty(),
 			diagnostics: Diagnostics::empty(),
-			libraries: HashMap::new(),
 			side_effects: true,
+			has_printed: false,
 			file: "stdlib".into(),
 		};
 
 		// Add stdlib
-		let library = Expression::Literal(Literal::Object(crate::parse_library(STDLIB, &mut context).into_object(&mut context))).store_in_memory(&mut context);
-		let _ = context.libraries.insert("builtin".into(), library);
-		context.scope_tree.declare_new_variable("builtin", library).unwrap();
+		let stdlib_pointer = Expression::Literal(Literal::Object(crate::parse_library(STDLIB, &mut context).into_object(&mut context))).store_in_memory(&mut context);
+		context.scope_tree.declare_new_variable("builtin", stdlib_pointer).unwrap();
+		let Expression::Literal(Literal::Object(stdlib)) = stdlib_pointer.expression(&context).to_owned() else { unreachable!() };
+
+		context.scope_tree.declare_new_variable("Text", stdlib.get_field("Text").unwrap().into()).unwrap();
+		context.scope_tree.declare_new_variable("Number", stdlib.get_field("Number").unwrap().into()).unwrap();
+		context
+			.scope_tree
+			.declare_new_variable(
+				"print",
+				stdlib
+					.get_field("system")
+					.unwrap()
+					.literal(&context)
+					.try_as::<Object>()
+					.unwrap()
+					.get_field("terminal")
+					.unwrap()
+					.literal(&context)
+					.try_as::<Object>()
+					.unwrap()
+					.get_field("print")
+					.unwrap()
+					.into(),
+			)
+			.unwrap();
+		context
+			.scope_tree
+			.declare_new_variable(
+				"input",
+				stdlib
+					.get_field("system")
+					.unwrap()
+					.literal(&context)
+					.try_as::<Object>()
+					.unwrap()
+					.get_field("terminal")
+					.unwrap()
+					.literal(&context)
+					.try_as::<Object>()
+					.unwrap()
+					.get_field("input")
+					.unwrap()
+					.into(),
+			)
+			.unwrap();
 
 		context
 	}
 }
 
 impl Context {
+	/// Returns the diagnostics found in the user's code. Note that this only returns diagnostics
+	/// that are already stored; It doesn't perform a new scan for diagnostics. Usually diagnostics
+	/// will be fetched after performing an evaluation step on a `Project`.
+	///
+	/// # Returns
+	///
+	/// The diagnostics in the user's code
 	pub fn diagnostics(&self) -> &Diagnostics {
 		&self.diagnostics
 	}
 
-	pub fn add_diagnostic(&mut self, error: Diagnostic) {
-		self.diagnostics.push(error);
+	/// Adds a new diagnostic to the context. Diagnostics are retrievable via
+	/// `context.diagnostics()`.
+	///
+	/// # Parameter
+	///
+	/// - `diagnostic` - The diagnostic to add
+	pub fn add_diagnostic(&mut self, diagnostic: Diagnostic) {
+		self.diagnostics.push(diagnostic);
 	}
 }

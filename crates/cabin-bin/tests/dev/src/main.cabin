@@ -1,5 +1,3 @@
-builtin.system.terminal.print("Hello world");
-let a = 30;
-let b = 10;
-let c = 20;
-let d = 40;
+foreach number in [1, 2, 3] {
+	print(number);
+};

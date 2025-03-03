@@ -1,11 +1,8 @@
 use std::fmt::Debug;
 
-use function_declaration::FunctionDeclaration;
-use new_literal::Literal;
 // This is required because of a bug in `try_as`
 use try_as::traits::{self as try_as_traits, TryAsMut};
 
-use super::misc::tag::TagList;
 use crate::{
 	api::context::Context,
 	ast::{
@@ -16,22 +13,21 @@ use crate::{
 			field_access::FieldAccess,
 			foreach::ForEachLoop,
 			function_call::FunctionCall,
+			function_declaration::FunctionDeclaration,
 			group::GroupDeclaration,
 			if_expression::IfExpression,
 			name::Name,
+			new_literal::Literal,
 			object::ObjectConstructor,
 			operators::BinaryExpression,
 			parameter::Parameter,
 			run::{RunExpression, RuntimeableExpression},
 			unary::UnaryOperation,
 		},
+		misc::tag::TagList,
 		sugar::list::List,
 	},
-	comptime::{
-		memory::{ExpressionPointer, LiteralPointer},
-		CompileTime,
-		CompileTimeError,
-	},
+	comptime::{memory::ExpressionPointer, CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	parser::{Parse, TokenQueue, TokenQueueFunctionality as _, TryParse as _},
 	transpiler::{TranspileError, TranspileToC},
