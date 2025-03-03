@@ -42,12 +42,10 @@
 	name: (identifier) @function
 	value: (expression (literal (function)))
 )
+(declaration type: (expression (literal (identifier)) @type))
 (declaration
 	name: (identifier) @type
 	value: (expression (literal (group)))
-)
-(declaration
-	type: (expression (literal (identifier)) @type)
 )
 (declaration
 	name: (identifier) @type

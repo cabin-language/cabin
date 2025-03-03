@@ -658,86 +658,86 @@ static const TSMapSlice ts_field_map_slices[PRODUCTION_ID_COUNT] = {
   [37] = {.index = 77, .length = 4},
   [38] = {.index = 81, .length = 4},
   [39] = {.index = 85, .length = 4},
-  [40] = {.index = 89, .length = 2},
-  [41] = {.index = 91, .length = 4},
-  [42] = {.index = 95, .length = 2},
-  [43] = {.index = 97, .length = 4},
-  [44] = {.index = 101, .length = 2},
-  [45] = {.index = 103, .length = 4},
-  [46] = {.index = 107, .length = 4},
-  [47] = {.index = 111, .length = 4},
-  [48] = {.index = 115, .length = 3},
-  [49] = {.index = 118, .length = 5},
-  [50] = {.index = 123, .length = 5},
-  [51] = {.index = 128, .length = 5},
-  [52] = {.index = 133, .length = 5},
-  [53] = {.index = 138, .length = 5},
-  [54] = {.index = 143, .length = 3},
-  [55] = {.index = 146, .length = 3},
-  [56] = {.index = 149, .length = 3},
-  [57] = {.index = 152, .length = 2},
-  [58] = {.index = 154, .length = 3},
-  [59] = {.index = 157, .length = 5},
-  [60] = {.index = 162, .length = 5},
-  [61] = {.index = 167, .length = 5},
-  [62] = {.index = 172, .length = 5},
-  [63] = {.index = 177, .length = 4},
-  [64] = {.index = 181, .length = 6},
-  [65] = {.index = 187, .length = 6},
-  [66] = {.index = 193, .length = 6},
-  [67] = {.index = 199, .length = 6},
-  [68] = {.index = 205, .length = 6},
-  [69] = {.index = 211, .length = 6},
-  [70] = {.index = 217, .length = 6},
-  [71] = {.index = 223, .length = 4},
-  [72] = {.index = 227, .length = 4},
-  [73] = {.index = 231, .length = 4},
-  [74] = {.index = 235, .length = 3},
-  [75] = {.index = 238, .length = 4},
-  [76] = {.index = 242, .length = 6},
-  [77] = {.index = 248, .length = 6},
-  [78] = {.index = 254, .length = 6},
-  [79] = {.index = 260, .length = 7},
-  [80] = {.index = 267, .length = 7},
-  [81] = {.index = 274, .length = 7},
-  [82] = {.index = 281, .length = 7},
-  [83] = {.index = 288, .length = 7},
-  [84] = {.index = 295, .length = 7},
-  [85] = {.index = 302, .length = 7},
-  [86] = {.index = 309, .length = 5},
-  [87] = {.index = 314, .length = 5},
-  [88] = {.index = 319, .length = 5},
-  [89] = {.index = 324, .length = 4},
-  [90] = {.index = 328, .length = 7},
-  [91] = {.index = 335, .length = 7},
-  [92] = {.index = 342, .length = 8},
-  [93] = {.index = 350, .length = 8},
-  [94] = {.index = 358, .length = 8},
-  [95] = {.index = 366, .length = 8},
-  [96] = {.index = 374, .length = 8},
-  [97] = {.index = 382, .length = 8},
-  [98] = {.index = 390, .length = 8},
-  [99] = {.index = 398, .length = 6},
-  [100] = {.index = 404, .length = 6},
-  [101] = {.index = 410, .length = 5},
-  [102] = {.index = 415, .length = 8},
-  [103] = {.index = 423, .length = 9},
-  [104] = {.index = 432, .length = 9},
-  [105] = {.index = 441, .length = 9},
-  [106] = {.index = 450, .length = 9},
-  [107] = {.index = 459, .length = 9},
-  [108] = {.index = 468, .length = 9},
-  [109] = {.index = 477, .length = 9},
-  [110] = {.index = 486, .length = 7},
-  [111] = {.index = 493, .length = 10},
-  [112] = {.index = 503, .length = 10},
-  [113] = {.index = 513, .length = 10},
-  [114] = {.index = 523, .length = 10},
-  [115] = {.index = 533, .length = 10},
-  [116] = {.index = 543, .length = 11},
-  [117] = {.index = 554, .length = 11},
-  [118] = {.index = 565, .length = 11},
-  [119] = {.index = 576, .length = 12},
+  [40] = {.index = 89, .length = 3},
+  [41] = {.index = 92, .length = 4},
+  [42] = {.index = 96, .length = 2},
+  [43] = {.index = 98, .length = 4},
+  [44] = {.index = 102, .length = 2},
+  [45] = {.index = 104, .length = 4},
+  [46] = {.index = 108, .length = 4},
+  [47] = {.index = 112, .length = 4},
+  [48] = {.index = 116, .length = 3},
+  [49] = {.index = 119, .length = 5},
+  [50] = {.index = 124, .length = 5},
+  [51] = {.index = 129, .length = 5},
+  [52] = {.index = 134, .length = 5},
+  [53] = {.index = 139, .length = 5},
+  [54] = {.index = 144, .length = 3},
+  [55] = {.index = 147, .length = 3},
+  [56] = {.index = 150, .length = 4},
+  [57] = {.index = 154, .length = 2},
+  [58] = {.index = 156, .length = 3},
+  [59] = {.index = 159, .length = 5},
+  [60] = {.index = 164, .length = 5},
+  [61] = {.index = 169, .length = 5},
+  [62] = {.index = 174, .length = 5},
+  [63] = {.index = 179, .length = 4},
+  [64] = {.index = 183, .length = 6},
+  [65] = {.index = 189, .length = 6},
+  [66] = {.index = 195, .length = 6},
+  [67] = {.index = 201, .length = 6},
+  [68] = {.index = 207, .length = 6},
+  [69] = {.index = 213, .length = 6},
+  [70] = {.index = 219, .length = 6},
+  [71] = {.index = 225, .length = 4},
+  [72] = {.index = 229, .length = 4},
+  [73] = {.index = 233, .length = 4},
+  [74] = {.index = 237, .length = 3},
+  [75] = {.index = 240, .length = 4},
+  [76] = {.index = 244, .length = 6},
+  [77] = {.index = 250, .length = 6},
+  [78] = {.index = 256, .length = 6},
+  [79] = {.index = 262, .length = 7},
+  [80] = {.index = 269, .length = 7},
+  [81] = {.index = 276, .length = 7},
+  [82] = {.index = 283, .length = 7},
+  [83] = {.index = 290, .length = 7},
+  [84] = {.index = 297, .length = 7},
+  [85] = {.index = 304, .length = 7},
+  [86] = {.index = 311, .length = 5},
+  [87] = {.index = 316, .length = 5},
+  [88] = {.index = 321, .length = 5},
+  [89] = {.index = 326, .length = 4},
+  [90] = {.index = 330, .length = 7},
+  [91] = {.index = 337, .length = 7},
+  [92] = {.index = 344, .length = 8},
+  [93] = {.index = 352, .length = 8},
+  [94] = {.index = 360, .length = 8},
+  [95] = {.index = 368, .length = 8},
+  [96] = {.index = 376, .length = 8},
+  [97] = {.index = 384, .length = 8},
+  [98] = {.index = 392, .length = 8},
+  [99] = {.index = 400, .length = 6},
+  [100] = {.index = 406, .length = 6},
+  [101] = {.index = 412, .length = 5},
+  [102] = {.index = 417, .length = 8},
+  [103] = {.index = 425, .length = 9},
+  [104] = {.index = 434, .length = 9},
+  [105] = {.index = 443, .length = 9},
+  [106] = {.index = 452, .length = 9},
+  [107] = {.index = 461, .length = 9},
+  [108] = {.index = 470, .length = 9},
+  [109] = {.index = 479, .length = 9},
+  [110] = {.index = 488, .length = 7},
+  [111] = {.index = 495, .length = 10},
+  [112] = {.index = 505, .length = 10},
+  [113] = {.index = 515, .length = 10},
+  [114] = {.index = 525, .length = 10},
+  [115] = {.index = 535, .length = 10},
+  [116] = {.index = 545, .length = 11},
+  [117] = {.index = 556, .length = 11},
+  [118] = {.index = 567, .length = 11},
+  [119] = {.index = 578, .length = 12},
 };
 
 static const TSFieldMapEntry ts_field_map_entries[] = {
@@ -871,215 +871,217 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_return_type, 5},
   [89] =
     {field_name, 1},
+    {field_type, 3},
     {field_value, 5},
-  [91] =
+  [92] =
     {field_arguments, 2},
     {field_arguments, 3},
     {field_arguments, 4},
     {field_callee, 0},
-  [95] =
+  [96] =
     {field_arguments, 4},
     {field_callee, 0},
-  [97] =
+  [98] =
     {field_callee, 0},
     {field_compile_time_arguments, 2},
     {field_compile_time_arguments, 3},
     {field_compile_time_arguments, 4},
-  [101] =
+  [102] =
     {field_compile_time_parameters, 2},
     {field_target, 4},
-  [103] =
+  [104] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_fields, 4},
     {field_fields, 5},
-  [107] =
+  [108] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_compile_time_parameters, 4},
-  [111] =
+  [112] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_fields, 5},
-  [115] =
+  [116] =
     {field_name, 0},
     {field_type, 2},
     {field_value, 4},
-  [118] =
+  [119] =
     {field_body, 6},
     {field_parameters, 1},
     {field_parameters, 2},
     {field_parameters, 3},
     {field_return_type, 5},
-  [123] =
+  [124] =
     {field_parameters, 1},
     {field_parameters, 2},
     {field_parameters, 3},
     {field_parameters, 4},
     {field_return_type, 6},
-  [128] =
+  [129] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_parameters, 3},
     {field_parameters, 4},
     {field_return_type, 6},
-  [133] =
+  [134] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_compile_time_parameters, 4},
     {field_return_type, 6},
-  [138] =
+  [139] =
     {field_body, 6},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_return_type, 5},
-  [143] =
+  [144] =
     {field_arguments, 4},
     {field_arguments, 5},
     {field_callee, 0},
-  [146] =
+  [147] =
     {field_arguments, 5},
     {field_callee, 0},
     {field_compile_time_arguments, 2},
-  [149] =
+  [150] =
     {field_name, 2},
     {field_tags, 0},
+    {field_type, 4},
     {field_value, 6},
-  [152] =
+  [154] =
     {field_target, 3},
     {field_tobe, 5},
-  [154] =
+  [156] =
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_target, 5},
-  [157] =
+  [159] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_fields, 4},
     {field_fields, 5},
     {field_fields, 6},
-  [162] =
+  [164] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_compile_time_parameters, 4},
     {field_fields, 6},
-  [167] =
+  [169] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_fields, 5},
     {field_fields, 6},
-  [172] =
+  [174] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_compile_time_parameters, 4},
     {field_compile_time_parameters, 5},
-  [177] =
+  [179] =
     {field_name, 1},
     {field_tags, 0},
     {field_type, 3},
     {field_value, 5},
-  [181] =
+  [183] =
     {field_body, 7},
     {field_parameters, 1},
     {field_parameters, 2},
     {field_parameters, 3},
     {field_parameters, 4},
     {field_return_type, 6},
-  [187] =
+  [189] =
     {field_parameters, 1},
     {field_parameters, 2},
     {field_parameters, 3},
     {field_parameters, 4},
     {field_parameters, 5},
     {field_return_type, 7},
-  [193] =
+  [195] =
     {field_body, 7},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_parameters, 3},
     {field_parameters, 4},
     {field_return_type, 6},
-  [199] =
+  [201] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_parameters, 3},
     {field_parameters, 4},
     {field_parameters, 5},
     {field_return_type, 7},
-  [205] =
+  [207] =
     {field_body, 7},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_compile_time_parameters, 4},
     {field_return_type, 6},
-  [211] =
+  [213] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_parameters, 4},
     {field_parameters, 5},
     {field_return_type, 7},
-  [217] =
+  [219] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_compile_time_parameters, 4},
     {field_compile_time_parameters, 5},
     {field_return_type, 7},
-  [223] =
+  [225] =
     {field_arguments, 4},
     {field_arguments, 5},
     {field_arguments, 6},
     {field_callee, 0},
-  [227] =
+  [229] =
     {field_arguments, 6},
     {field_callee, 0},
     {field_compile_time_arguments, 2},
     {field_compile_time_arguments, 3},
-  [231] =
+  [233] =
     {field_arguments, 5},
     {field_arguments, 6},
     {field_callee, 0},
     {field_compile_time_arguments, 2},
-  [235] =
+  [237] =
     {field_compile_time_parameters, 2},
     {field_target, 4},
     {field_tobe, 6},
-  [238] =
+  [240] =
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_compile_time_parameters, 4},
     {field_target, 6},
-  [242] =
+  [244] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_compile_time_parameters, 4},
     {field_fields, 6},
     {field_fields, 7},
-  [248] =
+  [250] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_fields, 5},
     {field_fields, 6},
     {field_fields, 7},
-  [254] =
+  [256] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_compile_time_parameters, 4},
     {field_compile_time_parameters, 5},
     {field_fields, 7},
-  [260] =
+  [262] =
     {field_body, 8},
     {field_parameters, 1},
     {field_parameters, 2},
@@ -1087,7 +1089,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 4},
     {field_parameters, 5},
     {field_return_type, 7},
-  [267] =
+  [269] =
     {field_body, 8},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
@@ -1095,7 +1097,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 4},
     {field_parameters, 5},
     {field_return_type, 7},
-  [274] =
+  [276] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_parameters, 3},
@@ -1103,7 +1105,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 5},
     {field_parameters, 6},
     {field_return_type, 8},
-  [281] =
+  [283] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
@@ -1111,7 +1113,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 5},
     {field_parameters, 6},
     {field_return_type, 8},
-  [288] =
+  [290] =
     {field_body, 8},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
@@ -1119,7 +1121,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 4},
     {field_parameters, 5},
     {field_return_type, 7},
-  [295] =
+  [297] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
@@ -1127,7 +1129,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 5},
     {field_parameters, 6},
     {field_return_type, 8},
-  [302] =
+  [304] =
     {field_body, 8},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
@@ -1135,30 +1137,30 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_compile_time_parameters, 4},
     {field_compile_time_parameters, 5},
     {field_return_type, 7},
-  [309] =
+  [311] =
     {field_arguments, 6},
     {field_arguments, 7},
     {field_callee, 0},
     {field_compile_time_arguments, 2},
     {field_compile_time_arguments, 3},
-  [314] =
+  [316] =
     {field_arguments, 5},
     {field_arguments, 6},
     {field_arguments, 7},
     {field_callee, 0},
     {field_compile_time_arguments, 2},
-  [319] =
+  [321] =
     {field_arguments, 7},
     {field_callee, 0},
     {field_compile_time_arguments, 2},
     {field_compile_time_arguments, 3},
     {field_compile_time_arguments, 4},
-  [324] =
+  [326] =
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_target, 5},
     {field_tobe, 7},
-  [328] =
+  [330] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
@@ -1166,7 +1168,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_fields, 6},
     {field_fields, 7},
     {field_fields, 8},
-  [335] =
+  [337] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
@@ -1174,7 +1176,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_compile_time_parameters, 5},
     {field_fields, 7},
     {field_fields, 8},
-  [342] =
+  [344] =
     {field_body, 9},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
@@ -1183,7 +1185,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 5},
     {field_parameters, 6},
     {field_return_type, 8},
-  [350] =
+  [352] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_parameters, 3},
@@ -1192,7 +1194,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 6},
     {field_parameters, 7},
     {field_return_type, 9},
-  [358] =
+  [360] =
     {field_body, 9},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
@@ -1201,7 +1203,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 5},
     {field_parameters, 6},
     {field_return_type, 8},
-  [366] =
+  [368] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
@@ -1210,7 +1212,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 6},
     {field_parameters, 7},
     {field_return_type, 9},
-  [374] =
+  [376] =
     {field_body, 9},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
@@ -1219,7 +1221,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 5},
     {field_parameters, 6},
     {field_return_type, 8},
-  [382] =
+  [384] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
@@ -1228,7 +1230,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 6},
     {field_parameters, 7},
     {field_return_type, 9},
-  [390] =
+  [392] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
@@ -1237,27 +1239,27 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 6},
     {field_parameters, 7},
     {field_return_type, 9},
-  [398] =
+  [400] =
     {field_arguments, 6},
     {field_arguments, 7},
     {field_arguments, 8},
     {field_callee, 0},
     {field_compile_time_arguments, 2},
     {field_compile_time_arguments, 3},
-  [404] =
+  [406] =
     {field_arguments, 7},
     {field_arguments, 8},
     {field_callee, 0},
     {field_compile_time_arguments, 2},
     {field_compile_time_arguments, 3},
     {field_compile_time_arguments, 4},
-  [410] =
+  [412] =
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
     {field_compile_time_parameters, 4},
     {field_target, 6},
     {field_tobe, 8},
-  [415] =
+  [417] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
@@ -1266,7 +1268,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_fields, 7},
     {field_fields, 8},
     {field_fields, 9},
-  [423] =
+  [425] =
     {field_body, 10},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
@@ -1276,7 +1278,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 6},
     {field_parameters, 7},
     {field_return_type, 9},
-  [432] =
+  [434] =
     {field_body, 10},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
@@ -1286,7 +1288,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 6},
     {field_parameters, 7},
     {field_return_type, 9},
-  [441] =
+  [443] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
@@ -1296,7 +1298,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 7},
     {field_parameters, 8},
     {field_return_type, 10},
-  [450] =
+  [452] =
     {field_body, 10},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
@@ -1306,7 +1308,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 6},
     {field_parameters, 7},
     {field_return_type, 9},
-  [459] =
+  [461] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
@@ -1316,7 +1318,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 7},
     {field_parameters, 8},
     {field_return_type, 10},
-  [468] =
+  [470] =
     {field_body, 10},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
@@ -1326,7 +1328,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 6},
     {field_parameters, 7},
     {field_return_type, 9},
-  [477] =
+  [479] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
@@ -1336,7 +1338,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 7},
     {field_parameters, 8},
     {field_return_type, 10},
-  [486] =
+  [488] =
     {field_arguments, 7},
     {field_arguments, 8},
     {field_arguments, 9},
@@ -1344,7 +1346,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_compile_time_arguments, 2},
     {field_compile_time_arguments, 3},
     {field_compile_time_arguments, 4},
-  [493] =
+  [495] =
     {field_body, 11},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
@@ -1355,7 +1357,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 7},
     {field_parameters, 8},
     {field_return_type, 10},
-  [503] =
+  [505] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
@@ -1366,7 +1368,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 8},
     {field_parameters, 9},
     {field_return_type, 11},
-  [513] =
+  [515] =
     {field_body, 11},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
@@ -1377,7 +1379,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 7},
     {field_parameters, 8},
     {field_return_type, 10},
-  [523] =
+  [525] =
     {field_body, 11},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
@@ -1388,7 +1390,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 7},
     {field_parameters, 8},
     {field_return_type, 10},
-  [533] =
+  [535] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
@@ -1399,7 +1401,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 8},
     {field_parameters, 9},
     {field_return_type, 11},
-  [543] =
+  [545] =
     {field_body, 12},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
@@ -1411,7 +1413,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 8},
     {field_parameters, 9},
     {field_return_type, 11},
-  [554] =
+  [556] =
     {field_body, 12},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
@@ -1423,7 +1425,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 8},
     {field_parameters, 9},
     {field_return_type, 11},
-  [565] =
+  [567] =
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
     {field_compile_time_parameters, 3},
@@ -1435,7 +1437,7 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
     {field_parameters, 9},
     {field_parameters, 10},
     {field_return_type, 12},
-  [576] =
+  [578] =
     {field_body, 13},
     {field_compile_time_parameters, 1},
     {field_compile_time_parameters, 2},
