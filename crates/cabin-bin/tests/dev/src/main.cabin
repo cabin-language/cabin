@@ -1,5 +1,5 @@
-let x2 = 30;
-let x = 10;
 builtin.system.terminal.print("Hello world");
-let y = 20;
-let z2 = 40;
+let a = 30;
+let b = 10;
+let c = 20;
+let d = 40;

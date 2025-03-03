@@ -21,25 +21,25 @@ int main(int argc, char* argv[]) {
 	
 	
 	
-	void* u_x2;
-	u_x2 = &literal_82;
-	label_end_u_x2:;
+	&literal_133
+	void* u_a;
+	u_a = &literal_127;
+	label_end_u_a:;
 	
 	
-	void* u_x;
-	u_x = &literal_83;
-	label_end_u_x:;
+	void* u_b;
+	u_b = &literal_128;
+	label_end_u_b:;
 	
 	
-	&literal_94
-	void* u_y;
-	u_y = &literal_90;
-	label_end_u_y:;
+	void* u_c;
+	u_c = &literal_129;
+	label_end_u_c:;
 	
 	
-	void* u_z2;
-	u_z2 = &literal_91;
-	label_end_u_z2:;
+	void* u_d;
+	u_d = &literal_130;
+	label_end_u_d:;
 	
 
 

@@ -42,14 +42,6 @@ pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
 		.on_truecolor(bg_r, bg_g, bg_b)
 	);
 
-	if diagnostic_line < 4 {
-		eprint!(
-			"{}\n{}",
-			" ".repeat(80).on_truecolor(bg_r, bg_g, bg_b),
-			" 1  ".truecolor(comment_r, comment_g, comment_b).on_truecolor(bg_r, bg_g, bg_b)
-		);
-	}
-
 	let mut byte_position = 0;
 	let mut line: usize = 0;
 	let mut column = 0;
@@ -111,7 +103,7 @@ pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
 		}
 
 		// Newline
-		if byte_position != code.len() - 2 && characters[byte_position] == '\n' {
+		if characters[byte_position] == '\n' && byte_position != code.len() - 2 {
 			let (error_r, error_g, error_b) = TTheme::error();
 			let mut ending = 0;
 			if line == diagnostic_line {
@@ -153,8 +145,10 @@ pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
 		// Error
 		if line == diagnostic_line && column == diagnostic_column {
 			let (error_r, error_g, error_b) = TTheme::error();
+			let undercurl = "\x1b[4:3m";
+			let normal = "\x1b[0m";
 			eprint!(
-				"\x1b[4:3m{}\x1b[0m",
+				"{undercurl}{}{normal}",
 				code.get(byte_position..byte_position + diagnostic.span.length)
 					.unwrap()
 					.on_truecolor(bg_r, bg_g, bg_b)

@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use super::ExpressionOrPointer;
+use super::{new_literal::Literal, ExpressionOrPointer};
 use crate::{
 	api::{builtin::call_builtin_at_compile_time, context::Context, scope::ScopeId, traits::TryAs as _},
 	ast::{
@@ -120,7 +120,7 @@ impl CompileTime for FunctionCall {
 	type Output = ExpressionOrPointer;
 
 	fn evaluate_at_compile_time(mut self, context: &mut Context) -> Self::Output {
-		let span = self.span(context);
+		let span = self.function.span(context);
 		self.tags = self.tags.evaluate_at_compile_time(context);
 
 		let function = self.function.evaluate_at_compile_time(context);
@@ -161,11 +161,13 @@ impl CompileTime for FunctionCall {
 		if let Ok(pointer) = function.try_as_literal(context) {
 			let literal = pointer.literal(context).to_owned();
 			let function_declaration = literal.try_as::<EvaluatedFunctionDeclaration>().unwrap_or_else(|_error| {
-				context.add_diagnostic(Diagnostic {
-					file: context.file.clone(),
-					span,
-					info: CompileTimeError::CallNonFunction.into(),
-				});
+				if !matches!(literal, Literal::ErrorLiteral(_)) {
+					context.add_diagnostic(Diagnostic {
+						file: context.file.clone(),
+						span,
+						info: CompileTimeError::CallNonFunction.into(),
+					});
+				}
 				EvaluatedFunctionDeclaration::error()
 			});
 
@@ -245,11 +247,17 @@ impl CompileTime for FunctionCall {
 				let system_side_effects_address = context
 					.scope_tree
 					.get_variable_from_id("system_side_effects", ScopeId::stdlib())
-					.unwrap_or(ExpressionPointer::ERROR);
+					.unwrap_or(ExpressionPointer::ERROR)
+					.as_literal(context);
 
 				// Get builtin and side effect tags
 				for tag in &function_declaration.tags().values {
 					if let Ok(literal) = tag.try_as_literal(context) {
+						if literal == system_side_effects_address {
+							system_side_effects = true;
+							continue;
+						}
+
 						let object = literal.literal(context).try_as::<Object>().unwrap();
 						if object.type_name() == &Name::from("BuiltinTag") {
 							builtin_name = Some(
@@ -264,10 +272,6 @@ impl CompileTime for FunctionCall {
 							);
 							continue;
 						}
-					}
-
-					if tag == &system_side_effects_address {
-						system_side_effects = true;
 					}
 
 					if let Ok(pointer) = tag.try_as_literal(context) {

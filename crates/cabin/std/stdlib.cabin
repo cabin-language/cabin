@@ -91,3 +91,16 @@ let Ordering = either {
 	greater,
 	equal
 };
+
+let Compareable = group {
+
+	# Compares this value with the given value, returning the ordering of *this* value.
+	compared_to: action(this: This, other: This): Ordering
+};
+
+#[default]
+let CompareablesAreEqualable = extensionof Compareable tobe Equalable {
+	equals = action(this: This, other: This): Boolean {
+		return is this.compared_to(other) == Ordering.equal;
+	}
+};

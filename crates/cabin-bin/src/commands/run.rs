@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use cabin::diagnostics::DiagnosticInfo;
+use cabin::diagnostics::{DiagnosticInfo, Diagnostics};
 use colored::Colorize as _;
 
 use super::CabinCommand;
@@ -9,6 +9,32 @@ use crate::{snippet::show_snippet, theme::CatppuccinMocha};
 /// Run a cabin file or project.
 #[derive(clap::Parser)]
 pub struct RunCommand {}
+
+fn check_errors(diagnostics: Diagnostics, project: &mut cabin::Project) -> bool {
+	let one_error = diagnostics.errors().len() == 1;
+	if !diagnostics.errors().is_empty() {
+		eprintln!("\n{}\n", "-".repeat(80));
+		for diagnostic in diagnostics.into_iter() {
+			if let DiagnosticInfo::Error(error) = &diagnostic.info {
+				eprintln!("{} {error}\n", "Error:".bold().red());
+				show_snippet::<CatppuccinMocha>(&diagnostic);
+				let (line, _) = diagnostic.start_line_column();
+				let path = if &diagnostic.file == &PathBuf::from("stdlib") {
+					"stdlib".to_owned()
+				} else {
+					format!("{}", pathdiff::diff_paths(diagnostic.file, project.root_directory()).unwrap().display())
+				};
+				eprintln!("In {} on line {}\n", path.bold().cyan(), line.to_string().bold().cyan());
+				eprintln!("{}\n", "-".repeat(80));
+			}
+		}
+
+		eprintln!("{} due to the {} above.\n", "Cancelling".bold().red(), if one_error { "error" } else { "errors" });
+		return false;
+	}
+
+	true
+}
 
 impl CabinCommand for RunCommand {
 	fn execute(self) {
@@ -20,31 +46,17 @@ impl CabinCommand for RunCommand {
 			},
 		};
 
-		// Compile-time evaluation
 		println!("{} {}...", "\nRunning".bold().green(), project.config().information().name().bold());
+
+		// checking
+		println!("{} syntax and types...", "\tChecking".bold().green());
+		if !check_errors(project.check().to_owned(), &mut project) {
+			return;
+		}
+
+		// Compile-time evaluation
 		println!("    {} compile-time code...", "Running".bold().green());
-
-		// Check diagnostics
-		let diagnostics = project.run_compile_time_code().to_owned();
-		let one_error = diagnostics.errors().len() == 1;
-		if !diagnostics.errors().is_empty() {
-			eprintln!("\n{}\n", "-".repeat(80));
-			for diagnostic in diagnostics.into_iter() {
-				if let DiagnosticInfo::Error(error) = &diagnostic.info {
-					eprintln!("{} {error}\n", "Error:".bold().red());
-					show_snippet::<CatppuccinMocha>(&diagnostic);
-					let (line, _) = diagnostic.start_line_column();
-					let path = if &diagnostic.file == &PathBuf::from("stdlib") {
-						"stdlib".to_owned()
-					} else {
-						format!("{}", pathdiff::diff_paths(diagnostic.file, project.root_directory()).unwrap().display())
-					};
-					eprintln!("In {} on line {}\n", path.bold().cyan(), line.to_string().bold().cyan());
-					eprintln!("{}\n", "-".repeat(80));
-				}
-			}
-
-			eprintln!("{} due to the {} above.\n", "Cancelling".bold().red(), if one_error { "error" } else { "errors" });
+		if !check_errors(project.run_compile_time_code().to_owned(), &mut project) {
 			return;
 		}
 

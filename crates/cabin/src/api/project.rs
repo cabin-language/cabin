@@ -92,6 +92,15 @@ impl Project {
 		self.context.diagnostics()
 	}
 
+	pub fn check(&mut self) -> &Diagnostics {
+		self.context.side_effects = false;
+		let program = crate::parse_program(&self.main_file_contents, &mut self.context);
+		self.program = Some(program.evaluate_at_compile_time(&mut self.context));
+		self.context.side_effects = true;
+
+		self.context.diagnostics()
+	}
+
 	pub fn transpile(&mut self) -> Result<String, Diagnostics> {
 		if self.program.is_none() {
 			let diagnostics = self.run_compile_time_code();
