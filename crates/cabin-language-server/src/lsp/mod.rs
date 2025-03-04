@@ -140,7 +140,7 @@ impl Request {
 										.map(|expr| {
 											expr.expression(project.context())
 												.get_documentation()
-												.map(|documentation| format!("\n---\n{}", documentation.trim_start_matches("# ")))
+												.map(|documentation| format!("\n---\n{documentation}"))
 										})
 										.flatten()
 										.map(|str| str.to_owned())

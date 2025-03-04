@@ -379,7 +379,7 @@ impl TokenType {
 
 			// Ignored tokens
 			Self::Whitespace => regex!(r"^\s"),
-			Self::Comment => regex!(r"^#[^\n\r#]*[\n\r#$]"),
+			Self::Comment => regex!(r"^#[^\[]([^\n\r#]|[\r\n]\s*#[^\[])*[\n\r#$]"),
 
 			// Unknown - This token type only appears when using `tokenize_string`, in which case
 			// it is inserted manually into the token stream. That's why this has an unmatachable
@@ -473,7 +473,13 @@ pub(crate) fn tokenize(code: &str, context: &mut Context) -> VecDeque<Token> {
 			});
 		}
 
-		let length = value.len(); // This must be done early so that we aren't trying to get the length of a moved value
+		let length = value.len();
+
+		let value = if token_type == TokenType::Comment {
+			regex_macro::regex!("[\r\n]*\\s*#\\s?").replace_all(&value, "\n").into_owned().trim_start().to_owned()
+		} else {
+			value
+		};
 
 		// Add the token
 		let token = Token {
@@ -518,7 +524,13 @@ pub(crate) fn tokenize_string(string: &str) -> VecDeque<Token> {
 	// This means we can just iterate while code isn't empty.
 	while !code.is_empty() {
 		let (token_type, value) = TokenType::find_match(&code).unwrap_or((TokenType::Unknown, code.chars().next().unwrap().to_string()));
-		let length = value.len(); // This must be done early so that we aren't trying to get the length of a moved value
+		let length = value.len();
+
+		let value = if token_type == TokenType::Comment {
+			regex_macro::regex!("[\r\n]*\\s*#\\s?").replace_all(&value, " ").into_owned().trim_start().to_owned()
+		} else {
+			value
+		};
 
 		// Add the token
 		let token = Token {

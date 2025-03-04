@@ -33,12 +33,12 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct FunctionCall {
-	function: ExpressionPointer,
-	compile_time_arguments: Vec<ExpressionPointer>,
-	arguments: Vec<ExpressionPointer>,
-	scope_id: ScopeId,
-	span: Span,
-	tags: TagList,
+	pub(crate) function: ExpressionPointer,
+	pub(crate) compile_time_arguments: Vec<ExpressionPointer>,
+	pub(crate) arguments: Vec<ExpressionPointer>,
+	pub(crate) scope_id: ScopeId,
+	pub(crate) span: Span,
+	pub(crate) tags: TagList,
 }
 
 pub struct EvaluatedFunctionCall {

@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use clap::Parser as _;
 use commands::{CabinCommand as _, SubCommand};
 
@@ -17,4 +19,20 @@ pub struct CabinCompilerArguments {
 /// subcommands.
 fn main() {
 	CabinCompilerArguments::parse().command.execute();
+}
+
+pub fn wrap(mut text: &str, max_line_length: usize) -> String {
+	let mut result = Vec::new();
+
+	while !text.is_empty() {
+		let splindex = if text.len() <= max_line_length {
+			text.len()
+		} else {
+			max_line_length - text[..max_line_length].chars().rev().position(|c| c == ' ').unwrap()
+		};
+		result.push(text.get(0..splindex).unwrap());
+		text = text.get(splindex..).unwrap();
+	}
+
+	result.join("\n")
 }

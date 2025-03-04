@@ -102,6 +102,26 @@ impl Default for Context {
 		context
 			.scope_tree
 			.declare_new_variable(
+				"debug",
+				stdlib
+					.get_field("system")
+					.unwrap()
+					.get_literal(&context)
+					.try_as::<Object>()
+					.unwrap()
+					.get_field("terminal")
+					.unwrap()
+					.get_literal(&context)
+					.try_as::<Object>()
+					.unwrap()
+					.get_field("debug")
+					.unwrap()
+					.into(),
+			)
+			.unwrap();
+		context
+			.scope_tree
+			.declare_new_variable(
 				"input",
 				stdlib
 					.get_field("system")

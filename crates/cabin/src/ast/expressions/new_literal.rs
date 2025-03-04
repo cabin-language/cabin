@@ -72,6 +72,7 @@ impl Dot for Literal {
 		match self {
 			Literal::Object(object) => object.dot(name, context),
 			Literal::Either(either) => either.dot(name, context),
+			Literal::String(string) => string.dot(name, context),
 			Literal::ErrorLiteral(_) => Expression::Literal(self.to_owned()).store_in_memory(context),
 			value => todo!("{value:?}"),
 		}

@@ -153,7 +153,7 @@ impl CompileTime for GroupDeclaration {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span,
-						info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::GroupValueNotKnownAtCompileTime)),
+						info: CompileTimeError::GroupValueNotKnownAtCompileTime.into(),
 					});
 				}
 

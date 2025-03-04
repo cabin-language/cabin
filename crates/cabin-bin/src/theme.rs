@@ -19,6 +19,7 @@ pub(crate) trait Theme {
 			("type", Self::type_()),
 			("number", Self::number()),
 			("variable.member", Self::field()),
+			("comment", Self::comment()),
 		]);
 		highlight.get(query).cloned()
 	}

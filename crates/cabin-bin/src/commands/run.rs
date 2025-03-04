@@ -4,7 +4,7 @@ use cabin::diagnostics::{DiagnosticInfo, Diagnostics};
 use colored::Colorize as _;
 
 use super::CabinCommand;
-use crate::{snippet::show_snippet, theme::CatppuccinMocha};
+use crate::{snippet::show_snippet, theme::CatppuccinMocha, wrap};
 
 /// Run a cabin file or project.
 #[derive(clap::Parser)]
@@ -12,12 +12,17 @@ pub struct RunCommand {}
 
 fn check_errors(diagnostics: Diagnostics, project: &mut cabin::Project) -> bool {
 	let one_error = diagnostics.errors().len() == 1;
+	let max_columns = 100;
 	if !diagnostics.errors().is_empty() {
-		eprintln!("\n{}\n", "-".repeat(80));
+		eprintln!("\n{}\n", "-".repeat(max_columns));
 		for diagnostic in diagnostics.into_iter() {
 			if let DiagnosticInfo::Error(error) = &diagnostic.info {
-				eprintln!("{} {error}\n", "Error:".bold().red());
-				show_snippet::<CatppuccinMocha>(&diagnostic);
+				eprintln!(
+					"{} {}\n",
+					"Error:".bold().red(),
+					wrap(&format!("Error: {error}"), max_columns).trim_start_matches("Error: ")
+				);
+				show_snippet::<CatppuccinMocha>(&diagnostic, max_columns);
 				let (line, _) = diagnostic.start_line_column();
 				let path = if &diagnostic.file == &PathBuf::from("stdlib") {
 					"stdlib".to_owned()
@@ -25,7 +30,7 @@ fn check_errors(diagnostics: Diagnostics, project: &mut cabin::Project) -> bool 
 					format!("{}", pathdiff::diff_paths(diagnostic.file, project.root_directory()).unwrap().display())
 				};
 				eprintln!("In {} on line {}\n", path.bold().cyan(), (line + 1).to_string().bold().cyan());
-				eprintln!("{}\n", "-".repeat(80));
+				eprintln!("{}\n", "-".repeat(max_columns));
 			}
 		}
 

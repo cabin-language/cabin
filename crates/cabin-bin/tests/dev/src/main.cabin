@@ -1,7 +1,5 @@
-let fruits = ["apple", "banana", "orange"];
+let fruit = "cherry";
 
-foreach fruit in fruits {
-	print(fruit);
-};
+debug(fruit);
 
-print("Hello world");
+

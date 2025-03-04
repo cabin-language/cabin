@@ -24,6 +24,7 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 			let pointer = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
 			let returned_object = call_builtin_at_compile_time("Anything.to_string", context, caller_scope_id, vec![pointer], span);
 			let string_value = returned_object.as_literal(context).get_literal(context).try_as::<CabinString>().unwrap().value.to_owned();
+			dbg!(pointer.expression(context));
 
 			if !context.has_printed {
 				context.has_printed = true;
@@ -44,6 +45,47 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 			}
 
 			Expression::error(Span::unknown(), context)
+		},
+	},
+	"terminal.debug" => BuiltinFunction {
+		evaluate_at_compile_time: |context, caller_scope_id, arguments, span| {
+			let mut arguments = VecDeque::from(arguments);
+			let pointer = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
+			let returned_object = call_builtin_at_compile_time("Anything.to_string", context, caller_scope_id, vec![pointer], span);
+			let string_value = returned_object.as_literal(context).get_literal(context).try_as::<CabinString>().unwrap().value.to_owned();
+			dbg!(pointer.expression(context));
+
+			if !context.has_printed {
+				context.has_printed = true;
+				println!();
+			}
+
+			if context.side_effects {
+				println!("{string_value}");
+			}
+
+			// Add hint diagnostic
+			if pointer != ExpressionPointer::ERROR {
+				context.add_diagnostic(Diagnostic {
+					span: pointer.span(context),
+					info: DiagnosticInfo::Info(string_value),
+					file: context.file.clone()
+				});
+			}
+
+			Expression::error(Span::unknown(), context)
+		},
+	},
+	"Text.plus" => BuiltinFunction {
+		evaluate_at_compile_time: |context, caller_scope_id, arguments, span| {
+			let mut arguments = VecDeque::from(arguments);
+			let this = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
+			let other = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
+
+			let Literal::String(string) = this.as_literal(context).get_literal(context).to_owned() else { unreachable!() };
+			let Literal::String(string2) = other.as_literal(context).get_literal(context) else { unreachable!() };
+
+			Expression::Literal(Literal::String(CabinString { value: string.value + &string2.value, span })).store_in_memory(context)
 		},
 	},
 	"terminal.input" => BuiltinFunction {

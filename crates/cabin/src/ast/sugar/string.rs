@@ -5,7 +5,13 @@ use try_as::traits as try_as_traits;
 
 use crate::{
 	api::{context::Context, traits::TryAs as _},
-	ast::expressions::{field_access::FieldAccess, function_call::FunctionCall, new_literal::Literal, Expression},
+	ast::expressions::{
+		field_access::{Dot, FieldAccess},
+		function_call::FunctionCall,
+		name::Name,
+		new_literal::Literal,
+		Expression,
+	},
 	comptime::memory::ExpressionPointer,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{tokenize_string, Token, TokenType},
@@ -147,5 +153,13 @@ impl TryParse for CabinString {
 impl Spanned for CabinString {
 	fn span(&self, _context: &Context) -> Span {
 		self.span
+	}
+}
+
+impl Dot for CabinString {
+	fn dot(&self, name: &Name, context: &mut Context) -> ExpressionPointer {
+		match name.unmangled_name() {
+			_ => ExpressionPointer::ERROR,
+		}
 	}
 }

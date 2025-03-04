@@ -17,20 +17,17 @@ use crate::theme::Theme;
 /// # Type Parameters
 ///
 /// - `TTheme` - The theme to color the output with
-pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
+pub(crate) fn show_snippet<CurrentTheme: Theme>(diagnostic: &Diagnostic, max_columns: usize) {
 	let code = if diagnostic.file == PathBuf::from("stdlib") {
 		cabin::STDLIB.to_owned()
 	} else {
 		std::fs::read_to_string(&diagnostic.file).expect(&format!("No file {}", diagnostic.file.display()))
 	};
-	let (diagnostic_line, diagnostic_column) = diagnostic.span.start_line_column(&code).unwrap();
-	let mut highlights = VecDeque::from(highlights::<TTheme>(&code));
+	let mut highlights = VecDeque::from(highlights::<CurrentTheme>(&code));
 
-	let (bg_r, bg_g, bg_b) = TTheme::background();
-	let (fg_r, fg_g, fg_b) = TTheme::normal();
-	let (comment_r, comment_g, comment_b) = TTheme::comment();
-
-	let mut diagnostic_line_tabs = 0;
+	let (bg_r, bg_g, bg_b) = CurrentTheme::background();
+	let (fg_r, fg_g, fg_b) = CurrentTheme::normal();
+	let (comment_r, comment_g, comment_b) = CurrentTheme::comment();
 
 	eprintln!(
 		"{}",
@@ -48,8 +45,14 @@ pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
 
 	let characters = code.chars().collect::<Vec<_>>();
 
+	let (start_line, start_column) = diagnostic.span.start_line_column(&code).unwrap();
+	let (end_line, end_column) = diagnostic.span.end_line_column(&code).unwrap();
+	let mut leftmost_column = usize::MAX;
+	let mut rightmost_column = 0;
+	let middle_line = (start_line + end_line) / 2;
+
 	// Line out of range
-	while line.abs_diff(diagnostic_line) > 2 {
+	while line.abs_diff(start_line) > 2 {
 		if byte_position == characters.len() {
 			break;
 		}
@@ -64,13 +67,15 @@ pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
 
 	eprint!(
 		"{}\n{}",
-		" ".repeat(80).on_truecolor(bg_r, bg_g, bg_b),
+		" ".repeat(max_columns).on_truecolor(bg_r, bg_g, bg_b),
 		format!(" {}  ", line + 1).truecolor(comment_r, comment_g, comment_b).on_truecolor(bg_r, bg_g, bg_b)
 	);
 	std::io::stderr().flush().unwrap();
 
+	let mut current_line_tabs = 0;
+
 	while byte_position < code.len() {
-		if line.abs_diff(diagnostic_line) > 2 {
+		if (line as isize - end_line as isize) > 2 {
 			break;
 		}
 
@@ -79,21 +84,21 @@ pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
 			highlights.pop_front().unwrap();
 		}
 
-		if line == diagnostic_line && characters[byte_position] == '\t' {
-			diagnostic_line_tabs += 1;
+		if characters[byte_position] == '\t' {
+			current_line_tabs += 1;
 		}
 
 		// Diagnostic pointer
-		if line == diagnostic_line + 1 && column == 0 {
+		if line == end_line + 1 && column == 0 {
 			eprint!(
 				"{}",
 				format!(
 					"{}\n {}  ",
 					format!(
 						"{}{} here{}",
-						" ".repeat(3 + (diagnostic_column - diagnostic_line_tabs) + (diagnostic_line_tabs * 4) + line.to_string().len()),
-						"^".repeat(diagnostic.span.length),
-						" ".repeat(80 - diagnostic.span.length - diagnostic_column - 9)
+						" ".repeat(leftmost_column),
+						"^".repeat(rightmost_column - leftmost_column + 1),
+						" ".repeat(max_columns - (rightmost_column + 1) - " here".len() - format!(" {}  ", line + 1).len())
 					)
 					.truecolor(comment_r, comment_g, comment_b),
 					(line + 1).to_string().truecolor(comment_r, comment_g, comment_b)
@@ -104,10 +109,10 @@ pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
 
 		// Newline
 		if characters[byte_position] == '\n' && byte_position != code.len() - 2 {
-			let (error_r, error_g, error_b) = TTheme::error();
-			let mut ending = 0;
-			if line == diagnostic_line {
-				let (error_bg_r, error_bg_g, error_bg_b) = TTheme::error_background();
+			let (error_r, error_g, error_b) = CurrentTheme::error();
+			let mut ending = column + 3 * current_line_tabs + format!(" {}  ", line + 1).len();
+			if line == middle_line {
+				let (error_bg_r, error_bg_g, error_bg_b) = CurrentTheme::error_background();
 				let info = format!("{diagnostic}");
 				let info = info.get(..info.find(':').unwrap()).unwrap();
 				eprint!(
@@ -115,16 +120,16 @@ pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
 					" ".repeat(5).on_truecolor(bg_r, bg_g, bg_b),
 					format!(" x {info} ",).on_truecolor(error_bg_r, error_bg_g, error_bg_b).truecolor(error_r, error_g, error_b),
 				);
-				ending = info.len() + 9;
+				ending += info.len() + 9;
 			}
 
-			eprint!(
-				"{}",
-				" ".repeat((80 - (column as isize) - 4 - (ending as isize)).max(0) as usize).on_truecolor(bg_r, bg_g, bg_b)
-			);
+			eprint!("{}", " ".repeat(0.max(max_columns as isize - ending as isize) as usize).on_truecolor(bg_r, bg_g, bg_b));
+
 			eprint!("{}", "\n".on_truecolor(bg_r, bg_g, bg_b));
-			if line != diagnostic_line && byte_position != code.len() - 1 {
-				if diagnostic_line > 0 && line == diagnostic_line - 1 {
+
+			// Line numbers
+			if byte_position != code.len() - 1 && line != end_line + 3 {
+				if start_line > 0 && (start_line..=end_line).contains(&(line + 1)) {
 					eprint!(
 						"{}",
 						format!(" {}  ", (line + 2).to_string().bold().truecolor(error_r, error_g, error_b)).on_truecolor(bg_r, bg_g, bg_b)
@@ -136,27 +141,34 @@ pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
 					);
 				}
 			}
+
 			line += 1;
 			column = 0;
 			byte_position += 1;
+			current_line_tabs = 0;
 			continue;
 		}
 
 		// Error
-		if line == diagnostic_line && column == diagnostic_column {
-			let (error_r, error_g, error_b) = TTheme::error();
+		if diagnostic.span.contains(byte_position) {
+			let (error_r, error_g, error_b) = CurrentTheme::error();
 			let undercurl = "\x1b[4:3m";
 			let normal = "\x1b[0m";
 			eprint!(
 				"{undercurl}{}{normal}",
-				code.get(byte_position..byte_position + diagnostic.span.length)
-					.unwrap()
+				characters[byte_position]
+					.to_string()
+					.replace("\t", "    ")
 					.on_truecolor(bg_r, bg_g, bg_b)
 					.truecolor(error_r, error_g, error_b)
 					.bold()
 			);
-			byte_position += diagnostic.span.length;
-			column += diagnostic.span.length;
+
+			leftmost_column = leftmost_column.min(column + current_line_tabs * 3);
+			rightmost_column = rightmost_column.max(column + current_line_tabs * 3);
+
+			byte_position += 1;
+			column += 1;
 		}
 		// Highlight
 		else if highlights.front().is_some_and(|highlight| highlight.start == byte_position) {
@@ -181,7 +193,7 @@ pub(crate) fn show_snippet<TTheme: Theme>(diagnostic: &Diagnostic) {
 		}
 	}
 
-	eprintln!("{}", " ".repeat(80 - column).on_truecolor(bg_r, bg_g, bg_b));
+	eprintln!("{}", " ".repeat(max_columns - column - format!(" {}  ", line + 1).len()).on_truecolor(bg_r, bg_g, bg_b));
 	eprintln!();
 }
 

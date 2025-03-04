@@ -1,7 +1,17 @@
+# The tag for a built-in function. Functions that are built into the Cabin compiler 
+# and run with native code are marked with this, usually via the `builtin_function<>` function.
+let BuiltinTag = group {
+	internal_name: Text
+};
+
+let Text = group {
+	#[new BuiltinTag { internal_name = "Text.plus" }] 
+	plus = action(this: Text, other: Text): Text
+};
+
 let This = group {};
 let Object = group {};
 let List = group {};
-let Text = group {};
 
 let Number = group {}; 
 
@@ -48,12 +58,6 @@ let Boolean = either {
 	false
 };
 
-# The tag for a built-in function. Functions that are built into the Cabin compiler 
-# and run with native code are marked with this, usually via the `builtin_function<>` function.
-let BuiltinTag = group {
-	internal_name: Text
-};
-
 let Addable = group<Operand: Anything, Result: Anything> {
 	#[no_side_effects]
 	plus: action(this: This, other: Operand): Result
@@ -75,12 +79,20 @@ let system = new Object {
 	terminal = new Object {
 
 		# Prints the given value to the standard output stream.
-		#[system_side_effects, new BuiltinTag { internal_name = "terminal.print" }]
+		#[new BuiltinTag { internal_name = "terminal.print" }]
 		print = action(object: Anything): Optional.nothing,
 
-		#[system_side_effects, new BuiltinTag { internal_name = "terminal.input" }] 
+		#[new BuiltinTag { internal_name = "terminal.input" }] 
 		input = action(): Text,
 
+		# Prints a value to the standard output stream. Unlike `print`, this is meant
+		# to be available at compile-time for debugging and logging purposes.
+		# 
+		# **Parameters**
+		# 
+		# - `object` - The value to print
+		#[new BuiltinTag { internal_name = "terminal.debug" }]
+		debug = action(object: Anything): Optional.nothing
 	},
 };
 
