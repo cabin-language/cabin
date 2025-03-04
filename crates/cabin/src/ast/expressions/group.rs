@@ -19,7 +19,7 @@ use crate::{
 	lexer::{Token, TokenType},
 	parse_list,
 	parser::{ListType, Parse as _, ParseError, TokenQueueFunctionality as _, TryParse},
-	typechecker::Type,
+	typechecker::{Type, Typed},
 	Span,
 	Spanned,
 };
@@ -146,25 +146,16 @@ impl CompileTime for GroupDeclaration {
 		for (name, field) in self.fields {
 			// Field value
 			let value = if let Some(value) = field.default_value {
-				let span = value.span(context);
-				let evaluated = value.evaluate_at_compile_time(context);
-
-				if !evaluated.is_literal(context) && !evaluated.is_error() {
-					context.add_diagnostic(Diagnostic {
-						file: context.file.clone(),
-						span,
-						info: CompileTimeError::GroupValueNotKnownAtCompileTime.into(),
-					});
-				}
-
-				Some(evaluated.as_literal(context))
+				Some(value.evaluate_to_literal(context))
 			} else {
 				None
 			};
 
 			// Field type
 			let field_type = if let Some(field_type) = field.field_type {
-				Type::Literal(field_type.evaluate_at_compile_time(context).as_literal(context))
+				Type::Literal(field_type.evaluate_to_literal(context))
+			} else if let Some(value) = field.default_value {
+				value.get_type(context)
 			} else {
 				Type::Literal(LiteralPointer::ERROR)
 			};

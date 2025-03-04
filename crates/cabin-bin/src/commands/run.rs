@@ -10,37 +10,6 @@ use crate::{snippet::show_snippet, theme::CatppuccinMocha, wrap};
 #[derive(clap::Parser)]
 pub struct RunCommand {}
 
-fn check_errors(diagnostics: Diagnostics, project: &mut cabin::Project) -> bool {
-	let one_error = diagnostics.errors().len() == 1;
-	let max_columns = 100;
-	if !diagnostics.errors().is_empty() {
-		eprintln!("\n{}\n", "-".repeat(max_columns));
-		for diagnostic in diagnostics.into_iter() {
-			if let DiagnosticInfo::Error(error) = &diagnostic.info {
-				eprintln!(
-					"{} {}\n",
-					"Error:".bold().red(),
-					wrap(&format!("Error: {error}"), max_columns).trim_start_matches("Error: ")
-				);
-				show_snippet::<CatppuccinMocha>(&diagnostic, max_columns);
-				let (line, _) = diagnostic.start_line_column();
-				let path = if &diagnostic.file == &PathBuf::from("stdlib") {
-					"stdlib".to_owned()
-				} else {
-					format!("{}", pathdiff::diff_paths(diagnostic.file, project.root_directory()).unwrap().display())
-				};
-				eprintln!("In {} on line {}\n", path.bold().cyan(), (line + 1).to_string().bold().cyan());
-				eprintln!("{}\n", "-".repeat(max_columns));
-			}
-		}
-
-		eprintln!("{} due to the {} above.\n", "Cancelling".bold().red(), if one_error { "error" } else { "errors" });
-		return false;
-	}
-
-	true
-}
-
 impl CabinCommand for RunCommand {
 	fn execute(self) {
 		let mut project = match cabin::Project::from_child(std::env::current_dir().unwrap()) {
@@ -76,4 +45,35 @@ impl CabinCommand for RunCommand {
 		// Running
 		println!("    {} runtime code...", "Running".bold().green());
 	}
+}
+
+fn check_errors(diagnostics: Diagnostics, project: &mut cabin::Project) -> bool {
+	let one_error = diagnostics.errors().len() == 1;
+	let max_columns = 100;
+	if !diagnostics.errors().is_empty() {
+		eprintln!("\n{}\n", "-".repeat(max_columns));
+		for diagnostic in diagnostics.into_iter() {
+			if let DiagnosticInfo::Error(error) = &diagnostic.info {
+				eprintln!(
+					"{} {}\n",
+					"Error:".bold().red(),
+					wrap(&format!("Error: {error}"), max_columns).trim_start_matches("Error: ")
+				);
+				show_snippet::<CatppuccinMocha>(&diagnostic, max_columns);
+				let (line, _) = diagnostic.start_line_column();
+				let path = if &diagnostic.file == &PathBuf::from("stdlib") {
+					"stdlib".to_owned()
+				} else {
+					format!("{}", pathdiff::diff_paths(diagnostic.file, project.root_directory()).unwrap().display())
+				};
+				eprintln!("In {} on line {}\n", path.bold().cyan(), (line + 1).to_string().bold().cyan());
+				eprintln!("{}\n", "-".repeat(max_columns));
+			}
+		}
+
+		eprintln!("{} due to the {} above.\n", "Cancelling".bold().red(), if one_error { "error" } else { "errors" });
+		return false;
+	}
+
+	true
 }

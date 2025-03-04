@@ -65,10 +65,7 @@ impl Module {
 	pub(crate) fn into_object(self, context: &mut Context) -> Object {
 		let mut fields = HashMap::new();
 		for declaration in self.declarations {
-			let _ = fields.insert(
-				declaration.name().to_owned(),
-				declaration.value(context).evaluate_at_compile_time(context).as_literal(context),
-			);
+			let _ = fields.insert(declaration.name().to_owned(), declaration.value(context).evaluate_to_literal(context));
 		}
 
 		Object {

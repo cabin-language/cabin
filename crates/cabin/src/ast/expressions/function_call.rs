@@ -240,24 +240,11 @@ impl CompileTime for FunctionCall {
 			// Builtin function
 			else {
 				let mut builtin_name = None;
-				let mut system_side_effects = false;
 				let mut runtime = None;
-
-				// Get the address of system_side_effects
-				let system_side_effects_address = context
-					.scope_tree
-					.get_variable_from_id("system_side_effects", ScopeId::stdlib())
-					.unwrap_or(ExpressionPointer::ERROR)
-					.as_literal(context);
 
 				// Get builtin and side effect tags
 				for tag in &function_declaration.tags().values {
 					if let Ok(literal) = tag.try_as_literal(context) {
-						if literal == system_side_effects_address {
-							system_side_effects = true;
-							continue;
-						}
-
 						let object = literal.get_literal(context).try_as::<Object>().unwrap();
 						if object.type_name() == &Name::from("BuiltinTag") {
 							builtin_name = Some(

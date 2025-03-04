@@ -1,12 +1,10 @@
+let Text = group {
+};
+
 # The tag for a built-in function. Functions that are built into the Cabin compiler 
 # and run with native code are marked with this, usually via the `builtin_function<>` function.
 let BuiltinTag = group {
 	internal_name: Text
-};
-
-let Text = group {
-	#[new BuiltinTag { internal_name = "Text.plus" }] 
-	plus = action(this: Text, other: Text): Text
 };
 
 let This = group {};

@@ -1,5 +1,6 @@
 use run::RunCommand;
 
+mod new;
 mod run;
 
 #[enum_dispatch::enum_dispatch]

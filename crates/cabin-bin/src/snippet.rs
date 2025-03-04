@@ -96,9 +96,9 @@ pub(crate) fn show_snippet<CurrentTheme: Theme>(diagnostic: &Diagnostic, max_col
 					"{}\n {}  ",
 					format!(
 						"{}{} here{}",
-						" ".repeat(leftmost_column),
+						" ".repeat(leftmost_column + format!(" {line}  ").len()),
 						"^".repeat(rightmost_column - leftmost_column + 1),
-						" ".repeat(max_columns - (rightmost_column + 1) - " here".len() - format!(" {}  ", line + 1).len())
+						" ".repeat(max_columns - (rightmost_column + 1) - " here".len() - format!(" {line}  ").len())
 					)
 					.truecolor(comment_r, comment_g, comment_b),
 					(line + 1).to_string().truecolor(comment_r, comment_g, comment_b)
@@ -116,11 +116,13 @@ pub(crate) fn show_snippet<CurrentTheme: Theme>(diagnostic: &Diagnostic, max_col
 				let info = format!("{diagnostic}");
 				let info = info.get(..info.find(':').unwrap()).unwrap();
 				eprint!(
-					"{}{}",
+					"{}{}{}{}",
 					" ".repeat(5).on_truecolor(bg_r, bg_g, bg_b),
-					format!(" x {info} ",).on_truecolor(error_bg_r, error_bg_g, error_bg_b).truecolor(error_r, error_g, error_b),
+					"".truecolor(error_bg_r, error_bg_g, error_bg_b).on_truecolor(bg_r, bg_g, bg_b),
+					format!(" {info}",).on_truecolor(error_bg_r, error_bg_g, error_bg_b).truecolor(error_r, error_g, error_b),
+					"".truecolor(error_bg_r, error_bg_g, error_bg_b).on_truecolor(bg_r, bg_g, bg_b),
 				);
-				ending += info.len() + 9;
+				ending += info.len() + 9; // +5 leading spaces, +2 padding characters, +1 , +1 space after 
 			}
 
 			eprint!("{}", " ".repeat(0.max(max_columns as isize - ending as isize) as usize).on_truecolor(bg_r, bg_g, bg_b));
@@ -128,7 +130,7 @@ pub(crate) fn show_snippet<CurrentTheme: Theme>(diagnostic: &Diagnostic, max_col
 			eprint!("{}", "\n".on_truecolor(bg_r, bg_g, bg_b));
 
 			// Line numbers
-			if byte_position != code.len() - 1 && line != end_line + 3 {
+			if byte_position != code.len() - 1 && line != end_line + 2 && line != end_line {
 				if start_line > 0 && (start_line..=end_line).contains(&(line + 1)) {
 					eprint!(
 						"{}",
@@ -193,7 +195,7 @@ pub(crate) fn show_snippet<CurrentTheme: Theme>(diagnostic: &Diagnostic, max_col
 		}
 	}
 
-	eprintln!("{}", " ".repeat(max_columns - column - format!(" {}  ", line + 1).len()).on_truecolor(bg_r, bg_g, bg_b));
+	eprintln!("{}", " ".repeat(max_columns).on_truecolor(bg_r, bg_g, bg_b));
 	eprintln!();
 }
 

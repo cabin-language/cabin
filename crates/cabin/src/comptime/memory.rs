@@ -65,7 +65,7 @@ impl ExpressionPointer {
 	}
 
 	pub(crate) fn evaluate_to_literal(self, context: &mut Context) -> LiteralPointer {
-		self.evaluate_at_compile_time(context).try_as_literal(context).unwrap_or(LiteralPointer::ERROR)
+		self.evaluate_at_compile_time(context).as_literal(context)
 	}
 
 	pub(crate) fn try_as_literal(self, context: &mut Context) -> Result<LiteralPointer, ()> {

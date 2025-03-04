@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use clap::Parser as _;
 use commands::{CabinCommand as _, SubCommand};
 

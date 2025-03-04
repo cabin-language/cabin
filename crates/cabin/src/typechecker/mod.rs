@@ -14,12 +14,19 @@ impl Type {
 		let Type::Literal(source) = self;
 		let Type::Literal(target) = other;
 
-		let anything = context.scope_tree.get_builtin("Anything").unwrap().to_owned().as_literal(context);
-		if target == &anything {
+		if source == &LiteralPointer::ERROR || target == &LiteralPointer::ERROR {
 			return true;
 		}
 
-		if source == &LiteralPointer::ERROR || target == &LiteralPointer::ERROR {
+		let anything = context
+			.scope_tree
+			.get_builtin("Anything")
+			.unwrap()
+			.to_owned()
+			.try_as_literal(context)
+			.unwrap_or(LiteralPointer::ERROR);
+
+		if target == &anything {
 			return true;
 		}
 

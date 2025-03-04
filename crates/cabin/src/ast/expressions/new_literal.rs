@@ -58,8 +58,8 @@ impl Literal {
 impl Typed for Literal {
 	fn get_type(&self, context: &mut Context) -> Type {
 		match self {
-			Self::String(_) => Type::Literal(context.scope_tree.get_builtin("Text").unwrap().as_literal(context)),
-			Self::Number(_) => Type::Literal(context.scope_tree.get_builtin("Number").unwrap().as_literal(context)),
+			Self::String(_) => Type::Literal(context.scope_tree.get_builtin("Text").unwrap().try_as_literal(context).unwrap_or(LiteralPointer::ERROR)),
+			Self::Number(_) => Type::Literal(context.scope_tree.get_builtin("Number").unwrap().try_as_literal(context).unwrap_or(LiteralPointer::ERROR)),
 			Self::ErrorLiteral(_) => Type::Literal(LiteralPointer::ERROR),
 			Literal::FunctionDeclaration(_) => Type::Literal(Expression::Literal(self.to_owned()).store_in_memory(context).as_literal(context)),
 			literal => todo!("{literal:?}"),
