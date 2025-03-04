@@ -61,15 +61,12 @@ impl TryParse for PostfixOperators {
 		let mut end = start;
 
 		// Postfix function call operators
-		while tokens.next_is_one_of(
-			&[
-				TokenType::LeftParenthesis,
-				TokenType::LeftAngleBracket,
-				TokenType::QuestionMark,
-				TokenType::ExclamationPoint,
-			],
-			context,
-		) {
+		while tokens.next_is_one_of(&[
+			TokenType::LeftParenthesis,
+			TokenType::LeftAngleBracket,
+			TokenType::QuestionMark,
+			TokenType::ExclamationPoint,
+		]) {
 			if tokens.next_is(TokenType::QuestionMark) {
 				end = tokens.pop(TokenType::QuestionMark, context)?.span;
 				return Ok(Expression::Unary(UnaryOperation {

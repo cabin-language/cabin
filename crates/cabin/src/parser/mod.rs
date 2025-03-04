@@ -55,11 +55,6 @@ pub(crate) trait TokenQueueFunctionality {
 	/// Returns whether the next token in the queue matches the given token type.
 	fn next_is(&self, token_type: TokenType) -> bool;
 
-	/// Returns whether the next next token in the queue matches the given token type.
-	fn next_next_is(&self, token_type: TokenType, context: &Context) -> bool {
-		self.peek_type2(context).map_or(false, |token| token == token_type)
-	}
-
 	/// Returns whether the next token in the queue matches one of the given token types.
 	///
 	/// # Parameters
@@ -67,7 +62,7 @@ pub(crate) trait TokenQueueFunctionality {
 	///
 	/// # Returns
 	/// Whether the next token in the queue matches one of the given token types.
-	fn next_is_one_of(&self, token_types: &[TokenType], context: &Context) -> bool {
+	fn next_is_one_of(&self, token_types: &[TokenType]) -> bool {
 		token_types.iter().any(|token_type| self.next_is(token_type.to_owned()))
 	}
 

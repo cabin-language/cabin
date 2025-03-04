@@ -39,7 +39,6 @@ let Function = group {
 	this_object: Anything,
 };
 
-let system_side_effects = new Object {};
 let no_side_effects = new Object {};
 let default = new Object {};
 

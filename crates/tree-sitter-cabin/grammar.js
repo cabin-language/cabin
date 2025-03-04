@@ -29,7 +29,7 @@ module.exports = grammar({
 		function_call: $ => prec.left(5, choice(
 			seq(
 				field("callee", $.expression),
-				"<", field("compile_time_arguments", list($.compile_time_argument)), ">",
+				"<", field("compile_time_arguments", list($.type)), ">",
 				optional(seq("(", field("arguments", list($.expression)), ")"))
 			),
 			seq(
@@ -86,7 +86,7 @@ module.exports = grammar({
 			"extensionof",
 			optional(seq("<", field("compile_time_parameters", list($.group_parameter)), ">")),
 			field("target", $.expression),
-			optional(seq("tobe", field("tobe", $.expression))),
+			optional(seq("tobe", field("tobe", $.type))),
 			"{",
 			list($.object_value),
 			"}"
@@ -106,13 +106,13 @@ module.exports = grammar({
 
 		group_parameter: $ => seq(
 			field("name", $.identifier),
-			optional(seq(":", field("type", $.expression)))
+			optional(seq(":", field("type", $.type)))
 		),
 
 		group_field: $ => seq(
 			optional(field("tags", $.tag)),
 			field("name", $.identifier),
-			optional(seq(":", field("type", $.expression))),
+			optional(seq(":", field("type", $.type))),
 			optional(seq("=", field("value", $.expression))),
 		),
 
@@ -123,13 +123,15 @@ module.exports = grammar({
 			"}"
 		),
 
-		either_variant: $ => $.identifier,
+		type: $ => $.expression,
+
+		either_variant: $ => seq(field("name", $.identifier), optional(seq(":", field("type", $.type)))),
 
 		function: $ => prec.left(seq(
 			"action",
 			optional(field("compile_time_parameters", seq("<", list($.group_parameter), ">"))),
 			optional(field("parameters", seq("(", list($.parameter), ")"))),
-			seq(":", field("return_type", $.expression)),
+			seq(":", field("return_type", $.type)),
 			optional(field("body", $.block))
 		)),
 
@@ -143,17 +145,14 @@ module.exports = grammar({
 			optional(field("tags", $.tag)),
 			"let",
 			field("name", $.identifier),
-			optional(seq(":", field("type", $.expression))),
+			optional(seq(":", field("type", $.type))),
 			optional(seq("=", field("value", $.expression))),
 		),
 
 		goto: $ => seq(
 			field("label", $.identifier),
 			"is",
-			choice(
-				"done",
-				field("value", $.expression),
-			),
+			field("value", $.expression),
 		),
 
 		// Tokens
@@ -167,10 +166,8 @@ module.exports = grammar({
 		parameter: $ => seq(
 			field("name", $.identifier),
 			":",
-			field("type", $.expression),
+			field("type", $.type),
 		),
-
-		compile_time_argument: $ => $.expression,
 
 		// Extra
 

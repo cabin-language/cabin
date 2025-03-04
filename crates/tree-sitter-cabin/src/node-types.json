@@ -60,21 +60,6 @@
     "fields": {}
   },
   {
-    "type": "compile_time_argument",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": false,
-      "required": true,
-      "types": [
-        {
-          "type": "expression",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
     "type": "declaration",
     "named": true,
     "fields": {
@@ -103,7 +88,7 @@
         "required": false,
         "types": [
           {
-            "type": "expression",
+            "type": "type",
             "named": true
           }
         ]
@@ -143,16 +128,27 @@
   {
     "type": "either_variant",
     "named": true,
-    "fields": {},
-    "children": {
-      "multiple": false,
-      "required": true,
-      "types": [
-        {
-          "type": "identifier",
-          "named": true
-        }
-      ]
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "type": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -215,7 +211,7 @@
         "required": false,
         "types": [
           {
-            "type": "expression",
+            "type": "type",
             "named": true
           }
         ]
@@ -331,7 +327,7 @@
         "required": true,
         "types": [
           {
-            "type": "expression",
+            "type": "type",
             "named": true
           }
         ]
@@ -375,7 +371,7 @@
             "named": false
           },
           {
-            "type": "compile_time_argument",
+            "type": "type",
             "named": true
           }
         ]
@@ -398,7 +394,7 @@
       },
       "value": {
         "multiple": false,
-        "required": false,
+        "required": true,
         "types": [
           {
             "type": "expression",
@@ -479,7 +475,7 @@
         "required": false,
         "types": [
           {
-            "type": "expression",
+            "type": "type",
             "named": true
           }
         ]
@@ -515,7 +511,7 @@
         "required": false,
         "types": [
           {
-            "type": "expression",
+            "type": "type",
             "named": true
           }
         ]
@@ -669,7 +665,7 @@
         "required": true,
         "types": [
           {
-            "type": "expression",
+            "type": "type",
             "named": true
           }
         ]
@@ -741,6 +737,21 @@
     "children": {
       "multiple": true,
       "required": false,
+      "types": [
+        {
+          "type": "expression",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "type",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
       "types": [
         {
           "type": "expression",
@@ -855,10 +866,6 @@
   },
   {
     "type": "action",
-    "named": false
-  },
-  {
-    "type": "done",
     "named": false
   },
   {
