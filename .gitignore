@@ -1,6 +1,7 @@
 target/
 local/
 node_modules/
-crates/tree-sitter-cabin/scripts
-crates/tree-sitter-cabin/build
+crates/tree-sitter-cabin/scripts/
+crates/tree-sitter-cabin/build/
+.vscode/
 
