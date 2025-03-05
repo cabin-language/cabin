@@ -118,6 +118,7 @@ module.exports = grammar({
 
 		either: $ => seq(
 			"either",
+			optional(seq("<", field("compile_time_parameters", list($.group_parameter)), ">")),
 			"{",
 			field("variants", list($.either_variant)),
 			"}"

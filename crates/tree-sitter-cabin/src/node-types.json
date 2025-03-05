@@ -109,6 +109,20 @@
     "type": "either",
     "named": true,
     "fields": {
+      "compile_time_parameters": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": ",",
+            "named": false
+          },
+          {
+            "type": "group_parameter",
+            "named": true
+          }
+        ]
+      },
       "variants": {
         "multiple": true,
         "required": false,
@@ -201,7 +215,7 @@
         "required": true,
         "types": [
           {
-            "type": "expression",
+            "type": "type",
             "named": true
           }
         ]
