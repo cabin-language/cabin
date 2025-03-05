@@ -119,8 +119,6 @@ pub enum TokenType {
 	/// identifiers, which will cause issues when parsing. Please be careful when moving around this keyword or the `Identifier` token type!
 	KeywordNew,
 
-	KeywordWith,
-
 	/// The `group` keyword token type, which is used to declare a type of group of variables in the language, analogous to a `struct` in other languages.
 	///
 	/// This was named `group` instead of the far more common `struct` to be consistent with Cabin's readability and "common English" aesthetics. It's named
@@ -132,43 +130,9 @@ pub enum TokenType {
 	/// identifiers, which will cause issues when parsing. Please be careful when moving around this keyword or the `Identifier` token type!
 	KeywordGroup,
 
-	/// The `run` keyword token type, which is used to run an expression at compile-time. In Cabin, all expressions are run at compile-time by default,
-	/// but sometimes you want something specifically to be run at compile-time. This keyword forces an expression to be run at runtime. Note, however,
-	/// that all sub-expressions should still be evaluated at compile-time. For example, the expression:
-	///
-	/// ```cabin
-	/// run ((1 + 2) + (3 + 4))
-	/// ```
-	///
-	/// at compile-time will convert to:
-	///
-	/// ```cabin
-	/// run 3 + 7
-	/// ```
-	///
-	/// To run it deeply nested, you'd have to do:
-	///
-	/// ```cabin
-	/// run (run (1 + 2) + run (3 + 4))
-	/// ```
-	///
-	/// A token created with this type will always have the value "run".
-	///
-	/// Like all keywords, this enum variant declaration *must* come before `Identifier`. If it doesn't, then `run` will be tokenized incorrectly as
-	/// identifiers, which will cause issues when parsing. Please be careful when moving around this keyword or the `Identifier` token type!
-	KeywordRuntime,
-
 	KeywordIs,
 
 	KeywordMatch,
-
-	/// The `either` keyword token type. This is used to create enumerations.
-	///
-	/// A token created with this type will always have the value "either".
-	///
-	/// Like all keywords, this enum variant declaration *must* come before `Identifier`. If it doesn't, then `either` will be tokenized incorrectly as
-	/// identifiers, which will cause issues when parsing. Please be careful when moving around this keyword or the `Identifier` token type!
-	KeywordOneOf,
 
 	/// The `let` keyword token type. This is used to declare a variable.
 	///
@@ -330,12 +294,9 @@ impl TokenType {
 			Self::KeywordIn => regex!(r"^in\b"),
 			Self::KeywordIs => regex!(r"^is\b"),
 			Self::KeywordLet => regex!(r"^let\b"),
-			Self::KeywordWith => regex!(r"^with\b"),
 			Self::KeywordMatch => regex!(r"^match\b"),
 			Self::KeywordNew => regex!(r"^new\b"),
-			Self::KeywordOneOf => regex!(r"^choice\b"),
 			Self::KeywordOtherwise => regex!(r"^otherwise\b"),
-			Self::KeywordRuntime => regex!(r"^run\b"),
 			Self::KeywordToBe => regex!(r"^tobe\b"),
 			Self::KeywordWhile => regex!(r"^while\b"),
 

@@ -4,6 +4,7 @@ pub mod diagnostics;
 pub mod project;
 pub mod scope;
 pub mod span;
+pub mod theme;
 
 pub(crate) mod builtin;
 pub(crate) mod macros;

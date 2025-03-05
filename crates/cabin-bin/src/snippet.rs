@@ -1,10 +1,8 @@
 use std::{collections::VecDeque, io::Write, path::PathBuf};
 
-use cabin::diagnostics::Diagnostic;
+use cabin::{diagnostics::Diagnostic, theme::Theme};
 use colored::Colorize as _;
 use tree_sitter::StreamingIterator;
-
-use crate::theme::Theme;
 
 /// Prints the code snippet for the given diagnostic, showing the location of the error. All
 /// printing is done to `stderr`.
@@ -17,7 +15,7 @@ use crate::theme::Theme;
 /// # Type Parameters
 ///
 /// - `TTheme` - The theme to color the output with
-pub(crate) fn show_snippet<CurrentTheme: Theme>(diagnostic: &Diagnostic, max_columns: usize) {
+pub(crate) fn show_snippet<CurrentTheme: cabin::theme::Theme>(diagnostic: &Diagnostic, max_columns: usize) {
 	let code = if diagnostic.file == PathBuf::from("stdlib") {
 		cabin::STDLIB.to_owned()
 	} else {

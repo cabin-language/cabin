@@ -54,7 +54,7 @@ impl Project {
 		let config = toml_edit::de::from_str(&config_contents).map_err(|error| ProjectError::MalformattedConfigFile(error))?;
 
 		let main_file = root_directory.join("src").join("main.cabin");
-		let main_file_contents = std::fs::read_to_string(&main_file).map_err(|error| ProjectError::NoMainFile)?;
+		let main_file_contents = std::fs::read_to_string(&main_file).map_err(|_error| ProjectError::NoMainFile)?;
 
 		let mut context = Context::default();
 		context.file = main_file;

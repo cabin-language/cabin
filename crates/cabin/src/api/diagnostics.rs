@@ -1,8 +1,7 @@
-use std::{collections::HashSet, fmt::Display, path::PathBuf};
+use std::{fmt::Display, path::PathBuf};
 
 use convert_case::{Case, Casing as _};
 use indexmap::IndexSet;
-use linked_hash_set::LinkedHashSet;
 
 use crate::{comptime::CompileTimeError, lexer::TokenizeError, parser::ParseError, Context, Span, Spanned, STDLIB};
 

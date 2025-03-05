@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-pub(crate) trait Theme {
+pub trait Theme {
 	fn keyword() -> (u8, u8, u8);
 	fn string() -> (u8, u8, u8);
 	fn parameter() -> (u8, u8, u8);
@@ -18,7 +18,7 @@ pub(crate) trait Theme {
 	fn error_background() -> (u8, u8, u8);
 	fn warning_background() -> (u8, u8, u8);
 
-	fn highlight<'a, 'b>(query: &'a str) -> Option<(u8, u8, u8)> {
+	fn highlight(query: &str) -> Option<(u8, u8, u8)> {
 		let highlight = HashMap::from([
 			("function.call", Self::function_call()),
 			("variable.parameter", Self::parameter()),
@@ -36,7 +36,7 @@ pub(crate) trait Theme {
 	}
 }
 
-pub(crate) struct CatppuccinMocha;
+pub struct CatppuccinMocha;
 
 impl Theme for CatppuccinMocha {
 	fn normal() -> (u8, u8, u8) {

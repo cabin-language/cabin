@@ -1,10 +1,13 @@
 use std::path::PathBuf;
 
-use cabin::diagnostics::{DiagnosticInfo, Diagnostics};
+use cabin::{
+	diagnostics::{DiagnosticInfo, Diagnostics},
+	theme::CatppuccinMocha,
+};
 use colored::Colorize as _;
 
 use super::CabinCommand;
-use crate::{snippet::show_snippet, theme::CatppuccinMocha, wrap};
+use crate::{snippet::show_snippet, wrap};
 
 /// Run a cabin file or project.
 #[derive(clap::Parser)]
@@ -52,7 +55,7 @@ fn check_errors(diagnostics: Diagnostics, project: &mut cabin::Project, show_war
 	let one_error = diagnostics.errors().len() == 1;
 	let max_columns = 100;
 
-	if has_errors || show_warnings {
+	if has_errors || (show_warnings && !diagnostics.warnings().is_empty()) {
 		eprintln!("\n{}\n", "-".repeat(max_columns).bold());
 	}
 

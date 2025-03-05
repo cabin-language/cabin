@@ -1,6 +1,10 @@
 use std::{path::PathBuf, process::Command};
 
-use cabin::config::ProjectType;
+use cabin::{
+	config::ProjectType,
+	theme::{CatppuccinMocha, Theme as _},
+};
+use colored::Colorize;
 
 use super::CabinCommand;
 
@@ -14,37 +18,52 @@ pub struct NewCommand {
 
 impl CabinCommand for NewCommand {
 	fn execute(self) {
-		cliclack::intro("New Cabin project").unwrap();
+		let mut config = cabin::config::Config::default();
+		let location;
 
-		let name: String = cliclack::input("Project name").default_input("example-project").interact().unwrap();
+		// Non-interactive
+		let interactive = if let Some(name) = self.name {
+			location = PathBuf::from(&name);
+			config.information.name = name;
+			config.information.project_type = if self.library { ProjectType::Library } else { ProjectType::Program };
+			config.information.description = "An example Cabin project created with cabin new.".to_owned();
+			false
+		}
+		// Interactive
+		else {
+			cliclack::intro("New Cabin project").unwrap();
 
-		let location: PathBuf = cliclack::input("Location").default_input(&format!("./{name}")).interact().unwrap();
+			let name: String = cliclack::input("Project name").default_input("example-project").interact().unwrap();
 
-		if location.exists() {
-			cliclack::select("Location already exists. Overwrite it?")
-				.initial_value(false)
-				.item(true, "Yes", "")
-				.item(false, "No", "")
+			location = cliclack::input("Location").default_input(&format!("./{name}")).interact().unwrap();
+
+			if location.exists() {
+				cliclack::select("Location already exists. Overwrite it?")
+					.initial_value(false)
+					.item(true, "Yes", "")
+					.item(false, "No", "")
+					.interact()
+					.unwrap();
+			}
+
+			let project_type = cliclack::select("Type:")
+				.initial_value(ProjectType::Program)
+				.item(ProjectType::Program, "Program", "")
+				.item(ProjectType::Library, "Library", "")
 				.interact()
 				.unwrap();
-		}
 
-		let project_type = cliclack::select("Type:")
-			.initial_value(ProjectType::Program)
-			.item(ProjectType::Program, "Program", "")
-			.item(ProjectType::Library, "Library", "")
-			.interact()
-			.unwrap();
+			let description: String = cliclack::input("Description")
+				.default_input("An example Cabin project created with cabin new.")
+				.interact()
+				.unwrap();
 
-		let description: String = cliclack::input("Description")
-			.default_input("An example Cabin project created with cabin new.")
-			.interact()
-			.unwrap();
+			config.information.project_type = project_type;
+			config.information.name = name;
+			config.information.description = description;
 
-		let mut config = cabin::config::Config::default();
-		config.information.project_type = project_type;
-		config.information.name = name;
-		config.information.description = description;
+			true
+		};
 
 		// Project
 		std::fs::create_dir_all(location.join("src")).unwrap();
@@ -59,11 +78,26 @@ impl CabinCommand for NewCommand {
 
 		// Git
 		if which::which("git").is_ok() {
-			Command::new("git").arg("init").arg("-q").current_dir(&location).spawn().unwrap();
+			Command::new("git").arg("init").arg("-q").current_dir(location.canonicalize().unwrap()).spawn().unwrap();
 			std::fs::write(location.join(".gitignore"), "cache/\ncabin.local.toml").unwrap();
 		}
 
-		cliclack::outro("Done!").unwrap();
-		println!();
+		if interactive {
+			cliclack::outro("Done!").unwrap();
+		}
+
+		let (parameter_r, parameter_g, parameter_b) = CatppuccinMocha::parameter();
+		let (function_r, function_g, function_b) = CatppuccinMocha::function_call();
+		println!("\nCreated blank Cabin project at {}. Run it with:\n", location.display().to_string().cyan());
+		println!(
+			"    {} {}",
+			"cd".truecolor(function_r, function_g, function_b),
+			location.display().to_string().truecolor(parameter_r, parameter_g, parameter_b)
+		);
+		println!(
+			"    {} {}\n",
+			"cabin".truecolor(function_r, function_g, function_b),
+			"run".truecolor(function_r, function_g, function_b),
+		);
 	}
 }

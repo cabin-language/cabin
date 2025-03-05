@@ -105,7 +105,7 @@ impl TryParse for Extend {
 		})
 		.span;
 
-		if fields.is_empty() {
+		if fields.is_empty() && type_to_be.is_none() {
 			context.add_diagnostic(Diagnostic {
 				span: start.to(end),
 				file: context.file.clone(),

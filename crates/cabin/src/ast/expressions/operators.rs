@@ -102,7 +102,6 @@ impl TryParse for PrimaryExpression {
 			TokenType::KeywordIf => Expression::If(IfExpression::try_parse(tokens, context)?).store_in_memory(context),
 			TokenType::KeywordForEach => Expression::ForEachLoop(ForEachLoop::try_parse(tokens, context)?).store_in_memory(context),
 			TokenType::KeywordExtend => Expression::Literal(Literal::Extend(Extend::try_parse(tokens, context)?)).store_in_memory(context),
-			TokenType::KeywordRuntime => Expression::Run(RunExpression::try_parse(tokens, context)?).store_in_memory(context),
 
 			// Syntactic sugar: These below handle cases where syntactic sugar exists for initializing objects of certain types, such as
 			// strings, numbers, lists, etc.:
