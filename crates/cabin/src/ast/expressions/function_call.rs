@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use super::{new_literal::Literal, ExpressionOrPointer};
+use super::{new_literal::EvaluatedLiteral, ExpressionOrPointer};
 use crate::{
 	api::{builtin::call_builtin_at_compile_time, context::Context, scope::ScopeId, traits::TryAs as _},
 	ast::{
@@ -158,7 +158,7 @@ impl CompileTime for FunctionCall {
 		if let Ok(pointer) = function.try_as_literal(context) {
 			let literal = pointer.get_literal(context).to_owned();
 			let function_declaration = literal.try_as::<EvaluatedFunctionDeclaration>().unwrap_or_else(|_error| {
-				if !matches!(literal, Literal::ErrorLiteral(_)) {
+				if !matches!(literal, EvaluatedLiteral::ErrorLiteral(_)) {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span,
@@ -288,7 +288,7 @@ impl CompileTime for FunctionCall {
 					// 		// TODO: runtime tag
 					// 	}
 
-					return ExpressionOrPointer::Pointer(call_builtin_at_compile_time(&internal_name, context, self.scope_id, arguments, self.span));
+					return ExpressionOrPointer::Pointer(call_builtin_at_compile_time(&internal_name, context, arguments, self.span));
 					// }
 
 					// return ExpressionOrPointer::Pointer(Expression::error(Span::unknown(), context));

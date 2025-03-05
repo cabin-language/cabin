@@ -1,6 +1,6 @@
 use crate::Context;
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Hash)]
 pub struct Span {
 	/// The zero-indexed start byte index of the span.
 	pub start: usize,

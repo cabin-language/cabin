@@ -1,6 +1,6 @@
-use crate::{ast::expressions::new_literal::Literal, comptime::memory::LiteralPointer, Context};
+use crate::{ast::expressions::new_literal::EvaluatedLiteral, comptime::memory::LiteralPointer, Context};
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Type {
 	Literal(LiteralPointer),
 }
@@ -36,8 +36,8 @@ impl Type {
 	pub fn name(&self, context: &Context) -> String {
 		match self {
 			Type::Literal(literal) => match literal.get_literal(context) {
-				Literal::Group(group) => group.name.as_ref().map(|name| name.unmangled_name().to_owned()).clone().unwrap_or("Unknown".to_owned()),
-				Literal::FunctionDeclaration(function) => {
+				EvaluatedLiteral::Group(group) => group.name.as_ref().map(|name| name.unmangled_name().to_owned()).clone().unwrap_or("Unknown".to_owned()),
+				EvaluatedLiteral::FunctionDeclaration(function) => {
 					let mut result = "action".to_owned();
 					if !function.compile_time_parameters().is_empty() {
 						result += &format!(

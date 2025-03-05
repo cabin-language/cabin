@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use super::new_literal::Literal;
+use super::new_literal::{EvaluatedLiteral, Literal};
 use crate::{
 	api::context::Context,
 	ast::{
@@ -61,7 +61,7 @@ pub(crate) struct BinaryExpression;
 fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<ExpressionPointer, Diagnostic> {
 	let mut expression = operation.parse_precedent(tokens, context)?;
 
-	while tokens.next_is_one_of(operation.token_types, context) {
+	while tokens.next_is_one_of(operation.token_types) {
 		let operator_token = tokens.pop(tokens.peek_type(context)?, context)?;
 		let right = operation.parse_precedent(tokens, context)?;
 		expression = Expression::FunctionCall(FunctionCall::from_binary_operation(context, expression, right, operator_token)?).store_in_memory(context);
@@ -93,15 +93,15 @@ impl TryParse for PrimaryExpression {
 				// TODO: this needs to be its own expression type for transpilation/formatting
 			},
 
-			TokenType::KeywordAction => Expression::FunctionDeclaration(FunctionDeclaration::try_parse(tokens, context)?).store_in_memory(context),
+			TokenType::KeywordAction => Expression::Literal(Literal::FunctionDeclaration(FunctionDeclaration::try_parse(tokens, context)?)).store_in_memory(context),
 			TokenType::LeftBrace => Expression::Block(Block::try_parse(tokens, context)?).store_in_memory(context),
 			TokenType::Identifier => Expression::Name(Name::try_parse(tokens, context)?).store_in_memory(context),
 			TokenType::KeywordNew => Expression::ObjectConstructor(ObjectConstructor::try_parse(tokens, context)?).store_in_memory(context),
-			TokenType::KeywordGroup => Expression::Group(GroupDeclaration::try_parse(tokens, context)?).store_in_memory(context),
-			TokenType::KeywordEither => Expression::Either(Either::try_parse(tokens, context)?).store_in_memory(context),
+			TokenType::KeywordGroup => Expression::Literal(Literal::Group(GroupDeclaration::try_parse(tokens, context)?)).store_in_memory(context),
+			TokenType::KeywordEither => Expression::Literal(Literal::Either(Either::try_parse(tokens, context)?)).store_in_memory(context),
 			TokenType::KeywordIf => Expression::If(IfExpression::try_parse(tokens, context)?).store_in_memory(context),
 			TokenType::KeywordForEach => Expression::ForEachLoop(ForEachLoop::try_parse(tokens, context)?).store_in_memory(context),
-			TokenType::KeywordExtend => Expression::Extend(Extend::try_parse(tokens, context)?).store_in_memory(context),
+			TokenType::KeywordExtend => Expression::Literal(Literal::Extend(Extend::try_parse(tokens, context)?)).store_in_memory(context),
 			TokenType::KeywordRuntime => Expression::Run(RunExpression::try_parse(tokens, context)?).store_in_memory(context),
 
 			// Syntactic sugar: These below handle cases where syntactic sugar exists for initializing objects of certain types, such as
@@ -110,7 +110,7 @@ impl TryParse for PrimaryExpression {
 			TokenType::String => CabinString::try_parse(tokens, context)?,
 			TokenType::Number => {
 				let number_token = tokens.pop(TokenType::Number, context).unwrap();
-				Expression::Literal(Literal::Number(number_token.value.parse().unwrap())).store_in_memory(context)
+				Expression::EvaluatedLiteral(EvaluatedLiteral::Number(number_token.value.parse().unwrap())).store_in_memory(context)
 			},
 
 			// bad :<

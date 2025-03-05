@@ -18,7 +18,7 @@ pub(crate) trait CompileTime {
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output;
 }
 
-#[derive(thiserror::Error, Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(thiserror::Error, Debug, Clone, Hash, PartialEq, Eq)]
 pub enum CompileTimeError {
 	#[error("Unresolvable Type: This expression can't be fully evaluated at compile-time; Default values for group fields must be known at compile-time.")]
 	GroupValueNotKnownAtCompileTime,
@@ -49,6 +49,9 @@ pub enum CompileTimeError {
 
 	#[error("Unknown property: This type has no property called \"{0}\"")]
 	ExtraField(String),
+
+	#[error("Invalid extension target: Attempted to extend a type to be a non-group")]
+	ExtendToBeNonGroup,
 }
 
 impl From<CompileTimeError> for DiagnosticInfo {

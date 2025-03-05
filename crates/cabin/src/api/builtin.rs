@@ -1,9 +1,9 @@
 use std::collections::VecDeque;
 
 use crate::{
-	api::{scope::ScopeId, traits::TryAs as _},
+	api::traits::TryAs as _,
 	ast::{
-		expressions::{new_literal::Literal, Expression},
+		expressions::{new_literal::EvaluatedLiteral, Expression},
 		sugar::string::CabinString,
 	},
 	comptime::memory::ExpressionPointer,
@@ -14,24 +14,22 @@ use crate::{
 };
 
 pub struct BuiltinFunction {
-	evaluate_at_compile_time: fn(&mut Context, ScopeId, Vec<ExpressionPointer>, Span) -> ExpressionPointer,
+	evaluate_at_compile_time: fn(&mut Context, Vec<ExpressionPointer>, Span) -> ExpressionPointer,
 }
 
 static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 	"terminal.print" => BuiltinFunction {
-		evaluate_at_compile_time: |context, caller_scope_id, arguments, span| {
+		evaluate_at_compile_time: |context, arguments, span| {
 			let mut arguments = VecDeque::from(arguments);
 			let pointer = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
-			let returned_object = call_builtin_at_compile_time("Anything.to_string", context, caller_scope_id, vec![pointer], span);
+			let returned_object = call_builtin_at_compile_time("Anything.to_string", context, vec![pointer], span);
 			let string_value = returned_object.as_literal(context).get_literal(context).try_as::<CabinString>().unwrap().value.to_owned();
-			dbg!(pointer.expression(context));
-
-			if !context.has_printed {
-				context.has_printed = true;
-				println!();
-			}
 
 			if context.side_effects {
+				if !context.has_printed {
+					context.has_printed = true;
+					println!();
+				}
 				println!("{string_value}");
 			}
 
@@ -48,19 +46,17 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 		},
 	},
 	"terminal.debug" => BuiltinFunction {
-		evaluate_at_compile_time: |context, caller_scope_id, arguments, span| {
+		evaluate_at_compile_time: |context, arguments, span| {
 			let mut arguments = VecDeque::from(arguments);
 			let pointer = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
-			let returned_object = call_builtin_at_compile_time("Anything.to_string", context, caller_scope_id, vec![pointer], span);
+			let returned_object = call_builtin_at_compile_time("Anything.to_string", context, vec![pointer], span);
 			let string_value = returned_object.as_literal(context).get_literal(context).try_as::<CabinString>().unwrap().value.to_owned();
-			dbg!(pointer.expression(context));
-
-			if !context.has_printed {
-				context.has_printed = true;
-				println!();
-			}
 
 			if context.side_effects {
+				if !context.has_printed {
+					context.has_printed = true;
+					println!();
+				}
 				println!("{string_value}");
 			}
 
@@ -77,33 +73,33 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 		},
 	},
 	"Text.plus" => BuiltinFunction {
-		evaluate_at_compile_time: |context, caller_scope_id, arguments, span| {
+		evaluate_at_compile_time: |context, arguments, span| {
 			let mut arguments = VecDeque::from(arguments);
 			let this = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
 			let other = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
 
-			let Literal::String(string) = this.as_literal(context).get_literal(context).to_owned() else { unreachable!() };
-			let Literal::String(string2) = other.as_literal(context).get_literal(context) else { unreachable!() };
+			let EvaluatedLiteral::String(string) = this.as_literal(context).get_literal(context).to_owned() else { unreachable!() };
+			let EvaluatedLiteral::String(string2) = other.as_literal(context).get_literal(context) else { unreachable!() };
 
-			Expression::Literal(Literal::String(CabinString { value: string.value + &string2.value, span })).store_in_memory(context)
+			Expression::EvaluatedLiteral(EvaluatedLiteral::String(CabinString { value: string.value + &string2.value, span })).store_in_memory(context)
 		},
 	},
 	"terminal.input" => BuiltinFunction {
-		evaluate_at_compile_time: |context, _caller_scope_id, _arguments, _span| {
+		evaluate_at_compile_time: |context, _arguments, _span| {
 			let mut line = String::new();
 			let _ = std::io::stdin().read_line(&mut line).unwrap();
 			line = line.get(0..line.len() - 1).unwrap().to_owned();
-			Expression::Literal(Literal::String(CabinString { value: line, span: Span::unknown() })).store_in_memory(context)
+			Expression::EvaluatedLiteral(EvaluatedLiteral::String(CabinString { value: line, span: Span::unknown() })).store_in_memory(context)
 		},
 	},
 
 	"Anything.to_string" => BuiltinFunction {
-		evaluate_at_compile_time: |context, _caller_scope_id, arguments,span| {
+		evaluate_at_compile_time: |context, arguments, span| {
 			let this = arguments.first().unwrap_or(&Expression::error(span, context)).as_literal(context).get_literal(context);
 
-			Expression::Literal(Literal::String(CabinString { span: Span::unknown(), value: match this {
-				Literal::Number(number) => number.to_string(),
-				Literal::String(string) => string.value.clone(),
+			Expression::EvaluatedLiteral(EvaluatedLiteral::String(CabinString { span: Span::unknown(), value: match this {
+				EvaluatedLiteral::Number(number) => number.to_string(),
+				EvaluatedLiteral::String(string) => string.value.clone(),
 				_ => "<object>".to_owned()
 			}}))
 			.store_in_memory(context)
@@ -130,6 +126,6 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 /// If there is no built-in function with the given name, an error is returned.
 ///
 /// Also, if the built-in function throws an error while being called, that error is returned as well.
-pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, caller_scope_id: ScopeId, arguments: Vec<ExpressionPointer>, span: Span) -> ExpressionPointer {
-	(BUILTINS.get(name).unwrap().evaluate_at_compile_time)(context, caller_scope_id, arguments, span)
+pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, arguments: Vec<ExpressionPointer>, span: Span) -> ExpressionPointer {
+	(BUILTINS.get(name).unwrap().evaluate_at_compile_time)(context, arguments, span)
 }

@@ -23,7 +23,15 @@ pub(crate) fn show_snippet<CurrentTheme: Theme>(diagnostic: &Diagnostic, max_col
 	} else {
 		std::fs::read_to_string(&diagnostic.file).expect(&format!("No file {}", diagnostic.file.display()))
 	};
+
 	let mut highlights = VecDeque::from(highlights::<CurrentTheme>(&code));
+
+	// Severity-specifics
+	let ((error_r, error_g, error_b), (error_bg_r, error_bg_g, error_bg_b), icon) = match &diagnostic.info {
+		cabin::diagnostics::DiagnosticInfo::Error(_) => (CurrentTheme::error(), CurrentTheme::error_background(), ""),
+		cabin::diagnostics::DiagnosticInfo::Warning(_) => (CurrentTheme::warning(), CurrentTheme::warning_background(), ""),
+		_ => unreachable!(),
+	};
 
 	let (bg_r, bg_g, bg_b) = CurrentTheme::background();
 	let (fg_r, fg_g, fg_b) = CurrentTheme::normal();
@@ -45,8 +53,8 @@ pub(crate) fn show_snippet<CurrentTheme: Theme>(diagnostic: &Diagnostic, max_col
 
 	let characters = code.chars().collect::<Vec<_>>();
 
-	let (start_line, start_column) = diagnostic.span.start_line_column(&code).unwrap();
-	let (end_line, end_column) = diagnostic.span.end_line_column(&code).unwrap();
+	let (start_line, _start_column) = diagnostic.span.start_line_column(&code).unwrap();
+	let (end_line, _end_column) = diagnostic.span.end_line_column(&code).unwrap();
 	let mut leftmost_column = usize::MAX;
 	let mut rightmost_column = 0;
 	let middle_line = (start_line + end_line) / 2;
@@ -109,17 +117,17 @@ pub(crate) fn show_snippet<CurrentTheme: Theme>(diagnostic: &Diagnostic, max_col
 
 		// Newline
 		if characters[byte_position] == '\n' && byte_position != code.len() - 2 {
-			let (error_r, error_g, error_b) = CurrentTheme::error();
 			let mut ending = column + 3 * current_line_tabs + format!(" {}  ", line + 1).len();
 			if line == middle_line {
-				let (error_bg_r, error_bg_g, error_bg_b) = CurrentTheme::error_background();
 				let info = format!("{diagnostic}");
 				let info = info.get(..info.find(':').unwrap()).unwrap();
 				eprint!(
 					"{}{}{}{}",
 					" ".repeat(5).on_truecolor(bg_r, bg_g, bg_b),
 					"".truecolor(error_bg_r, error_bg_g, error_bg_b).on_truecolor(bg_r, bg_g, bg_b),
-					format!(" {info}",).on_truecolor(error_bg_r, error_bg_g, error_bg_b).truecolor(error_r, error_g, error_b),
+					format!("{icon} {info}",)
+						.on_truecolor(error_bg_r, error_bg_g, error_bg_b)
+						.truecolor(error_r, error_g, error_b),
 					"".truecolor(error_bg_r, error_bg_g, error_bg_b).on_truecolor(bg_r, bg_g, bg_b),
 				);
 				ending += info.len() + 9; // +5 leading spaces, +2 padding characters, +1 , +1 space after 
@@ -153,7 +161,6 @@ pub(crate) fn show_snippet<CurrentTheme: Theme>(diagnostic: &Diagnostic, max_col
 
 		// Error
 		if diagnostic.span.contains(byte_position) {
-			let (error_r, error_g, error_b) = CurrentTheme::error();
 			let undercurl = "\x1b[4:3m";
 			let normal = "\x1b[0m";
 			eprint!(

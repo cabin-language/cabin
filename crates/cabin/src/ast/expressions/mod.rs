@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use new_literal::Literal;
 // This is required because of a bug in `try_as`
 use try_as::traits::{self as try_as_traits, TryAsMut};
 
@@ -8,16 +9,12 @@ use crate::{
 	ast::{
 		expressions::{
 			block::Block,
-			either::Either,
-			extend::Extend,
 			field_access::FieldAccess,
 			foreach::ForEachLoop,
 			function_call::FunctionCall,
-			function_declaration::FunctionDeclaration,
-			group::GroupDeclaration,
 			if_expression::IfExpression,
 			name::Name,
-			new_literal::Literal,
+			new_literal::EvaluatedLiteral,
 			object::ObjectConstructor,
 			operators::BinaryExpression,
 			parameter::Parameter,
@@ -65,11 +62,8 @@ pub enum Expression {
 	Run(RunExpression),
 	Unary(UnaryOperation),
 	Parameter(Parameter),
-	Extend(Extend),
-	Group(GroupDeclaration),
-	FunctionDeclaration(FunctionDeclaration),
-	Either(Either),
 	Literal(Literal),
+	EvaluatedLiteral(EvaluatedLiteral),
 	List(List),
 }
 
@@ -108,17 +102,12 @@ impl CompileTime for Expression {
 			Self::FieldAccess(field_access) => field_access.evaluate_at_compile_time(context),
 			Self::FunctionCall(function_call) => function_call.evaluate_at_compile_time(context),
 			Self::If(if_expression) => if_expression.evaluate_at_compile_time(context),
-			Self::Extend(extend) => ExpressionOrPointer::Expression(Expression::Literal(Literal::Extend(extend.evaluate_at_compile_time(context)))),
 			Self::Name(name) => ExpressionOrPointer::Expression(Expression::Name(name.clone().evaluate_at_compile_time(context))),
 			Self::ObjectConstructor(constructor) => ExpressionOrPointer::Expression(constructor.evaluate_at_compile_time(context)),
 			Self::ForEachLoop(for_loop) => for_loop.evaluate_at_compile_time(context),
 			Self::Run(run_expression) => ExpressionOrPointer::Expression(Expression::Run(run_expression.evaluate_at_compile_time(context))),
-			Expression::Group(group_declaration) => ExpressionOrPointer::Expression(Expression::Literal(Literal::Group(group_declaration.evaluate_at_compile_time(context)))),
-			Expression::FunctionDeclaration(function_declaration) => {
-				ExpressionOrPointer::Expression(Expression::Literal(Literal::FunctionDeclaration(function_declaration.evaluate_at_compile_time(context))))
-			},
-			Expression::Either(either) => ExpressionOrPointer::Expression(Expression::Literal(Literal::Either(either.evaluate_at_compile_time(context)))),
-			Self::Literal(_) => ExpressionOrPointer::Expression(self),
+			Self::EvaluatedLiteral(_) => ExpressionOrPointer::Expression(self),
+			Self::Literal(literal) => ExpressionOrPointer::Expression(Expression::EvaluatedLiteral(literal.evaluate_at_compile_time(context))),
 			Self::List(list) => ExpressionOrPointer::Expression(list.evaluate_at_compile_time(context)),
 			Self::Unary(_) | Self::Parameter(_) => todo!(),
 		}
@@ -141,7 +130,7 @@ impl TranspileToC for Expression {
 impl Typed for Expression {
 	fn get_type(&self, context: &mut Context) -> Type {
 		match self {
-			Expression::Literal(literal) => literal.get_type(context),
+			Expression::EvaluatedLiteral(literal) => literal.get_type(context),
 			Expression::Name(name) => name.get_type(context),
 			value => todo!("{value:?}"),
 		}
@@ -150,7 +139,7 @@ impl Typed for Expression {
 
 impl Expression {
 	pub(crate) fn error(span: Span, context: &mut Context) -> ExpressionPointer {
-		Expression::Literal(Literal::ErrorLiteral(span)).store_in_memory(context)
+		Expression::EvaluatedLiteral(EvaluatedLiteral::ErrorLiteral(span)).store_in_memory(context)
 	}
 
 	pub(crate) fn store_in_memory(self, context: &mut Context) -> ExpressionPointer {
@@ -159,30 +148,42 @@ impl Expression {
 
 	pub(crate) fn set_tags(&mut self, tags: TagList) {
 		match self {
-			Self::FunctionDeclaration(function) => function.set_tags(tags),
+			Expression::Literal(literal) => match literal {
+				Literal::FunctionDeclaration(function) => function.set_tags(tags),
+				_ => {},
+			},
 			_ => {},
 		}
 	}
 
 	pub(crate) fn set_name(&mut self, name: Name) {
 		match self {
-			Self::Group(group) => group.name = Some(name),
+			Expression::Literal(literal) => match literal {
+				Literal::Group(function) => function.name = Some(name),
+				_ => {},
+			},
 			_ => {},
 		}
 	}
 
 	pub(crate) fn set_documentation(&mut self, documentation: &str) {
 		match self {
-			Self::FunctionDeclaration(function) => function.documentation = Some(documentation.to_owned()),
+			Expression::Literal(literal) => match literal {
+				Literal::FunctionDeclaration(function) => function.documentation = Some(documentation.to_owned()),
+				_ => {},
+			},
 			_ => {},
 		}
 	}
 
 	pub fn get_documentation(&self) -> Option<&str> {
 		match self {
-			Self::FunctionDeclaration(function) => function.documentation.as_ref().map(|doc| doc.as_str()),
-			Self::Literal(literal) => match literal {
+			Expression::Literal(literal) => match literal {
 				Literal::FunctionDeclaration(function) => function.documentation.as_ref().map(|doc| doc.as_str()),
+				_ => None,
+			},
+			Self::EvaluatedLiteral(literal) => match literal {
+				EvaluatedLiteral::FunctionDeclaration(function) => function.documentation.as_ref().map(|doc| doc.as_str()),
 				_ => None,
 			},
 			_ => None,
@@ -201,10 +202,7 @@ impl Expression {
 			Expression::Run(_) => "run expression",
 			Expression::Unary(_) => "unary operation",
 			Expression::Parameter(_) => "parameter",
-			Expression::Extend(_) => "extend",
-			Expression::Group(_) => "group",
-			Expression::FunctionDeclaration(_) => "function declaration",
-			Expression::Either(_) => "either",
+			Expression::EvaluatedLiteral(_) => "literal",
 			Expression::Literal(_) => "literal",
 			Expression::List(_) => "list",
 		}
@@ -223,12 +221,9 @@ impl Spanned for Expression {
 			Expression::FieldAccess(field_access) => field_access.span(context),
 			Expression::ForEachLoop(for_each_loop) => for_each_loop.span(context),
 			Expression::Parameter(parameter) => parameter.span(context),
-			Expression::Extend(represent_as) => represent_as.span(context),
 			Expression::Unary(unary) => unary.span(context),
+			Expression::EvaluatedLiteral(literal) => literal.span(context),
 			Expression::Literal(literal) => literal.span(context),
-			Expression::Group(group) => group.span(context),
-			Expression::Either(either) => either.span(context),
-			Expression::FunctionDeclaration(function) => function.span(context),
 			Expression::List(list) => list.span(context),
 		}
 	}
@@ -248,9 +243,4 @@ impl RuntimeableExpression for Expression {
 			},
 		}
 	}
-}
-
-#[derive(Debug, Clone, try_as::macros::From, try_as::macros::TryInto, try_as::macros::TryAsRef, try_as::macros::TryAsMut)]
-pub enum CompileTimeEvaluatedExpression {
-	Literal(Literal),
 }

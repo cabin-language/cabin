@@ -1,4 +1,10 @@
-let Text = group {
+let Text = group {};
+
+let Addable = group {};
+
+#[default]
+let AddText = extensionof Text tobe Addable {
+	plus = action(this: This, other: This): This,
 };
 
 # The tag for a built-in function. Functions that are built into the Cabin compiler 
@@ -13,13 +19,13 @@ let List = group {};
 
 let Number = group {}; 
 
-let Optional = either {
-	data,
+let Optional = either<Data> {
+	some: Data,
 	nothing
 };
 
 let Anything = group {
-	to_text: action(this: Anything): Text,
+	to_text: action(this: This): Text,
 };
 
 let Group = group {
@@ -40,6 +46,11 @@ let Function = group {
 };
 
 let no_side_effects = new Object {};
+
+# A tag for extensions that makes the exension "default". Defaul extensions are automatically
+# brought into scope when the extension is in scope. Extensions can only be declared default if
+# the extension is declared in the same scope as the type its extending. Only one extension of
+# some type to be another specific type may be default.
 let default = new Object {};
 
 let RuntimeTag = group {
@@ -66,8 +77,8 @@ let AddNumbers = extensionof Number tobe Addable {
 	plus = action(this: Number, other: Number): Number,
 };
 
-let Attempted = either {
-	data,
+let Attempted = either<Data> {
+	data: Data,
 	error
 };
 

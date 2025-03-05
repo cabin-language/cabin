@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::parameter::EvaluatedParameter;
+use super::{new_literal::EvaluatedLiteral, parameter::EvaluatedParameter};
 use crate::{
 	api::{context::Context, scope::ScopeType},
 	ast::{
@@ -10,14 +10,15 @@ use crate::{
 	comptime::{
 		memory::{ExpressionPointer, LiteralPointer},
 		CompileTime,
+		CompileTimeError,
 	},
-	diagnostics::{Diagnostic, DiagnosticInfo},
+	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	if_then_else_default,
 	if_then_some,
 	lexer::TokenType,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
-	typechecker::Type,
+	typechecker::{Type, Typed as _},
 	Span,
 	Spanned,
 };
@@ -104,6 +105,14 @@ impl TryParse for Extend {
 		})
 		.span;
 
+		if fields.is_empty() {
+			context.add_diagnostic(Diagnostic {
+				span: start.to(end),
+				file: context.file.clone(),
+				info: Warning::EmptyExtension.into(),
+			});
+		}
+
 		context.scope_tree.exit_scope().unwrap();
 
 		Ok(Extend {
@@ -135,6 +144,41 @@ impl CompileTime for Extend {
 			.into_iter()
 			.map(|parameter| parameter.evaluate_at_compile_time(context))
 			.collect::<Vec<_>>();
+
+		// Validate fields
+		if let Some(Type::Literal(type_literal)) = &type_to_be {
+			if let EvaluatedLiteral::Group(group) = type_literal.get_literal(context).to_owned() {
+				// Missing fields
+				for (field_name, field_value) in &fields {
+					if !fields.contains_key(field_name) {
+						context.add_diagnostic(Diagnostic {
+							span: self.span.to(self.type_to_be.as_ref().unwrap().span(context)),
+							info: CompileTimeError::MissingField(field_name.unmangled_name().to_owned()).into(),
+							file: context.file.clone(),
+						});
+					}
+				}
+
+				// Extra fields
+				for (field_name, field_value) in &fields {
+					if !group.fields.contains_key(field_name) {
+						context.add_diagnostic(Diagnostic {
+							span: field_name.span(context).to(field_value.get_literal(context).span(context)),
+							info: CompileTimeError::ExtraField(field_name.unmangled_name().to_owned()).into(),
+							file: context.file.clone(),
+						});
+					}
+				}
+			}
+			// Not group
+			else {
+				context.add_diagnostic(Diagnostic {
+					span: self.type_to_be.as_ref().unwrap().span(context),
+					info: CompileTimeError::ExtendToBeNonGroup.into(),
+					file: context.file.clone(),
+				});
+			}
+		}
 
 		EvaluatedExtend {
 			type_to_extend,

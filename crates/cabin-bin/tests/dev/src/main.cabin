@@ -1,4 +1,5 @@
-let Person = group {
-	first_name: Textf
-};
+let fruit = "cherry";
+
+debug(fruit);
+
 

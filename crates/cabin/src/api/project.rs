@@ -16,8 +16,8 @@ pub enum ProjectError {
 	#[error("No cabin.toml file exists in the project root.")]
 	ConfigFileDoesntExist,
 
-	#[error("cabin.toml contains invalid data.")]
-	MalformattedConfigFile,
+	#[error("cabin.toml contains invalid data: {0}")]
+	MalformattedConfigFile(toml_edit::de::Error),
 
 	#[error("No main file found.")]
 	NoMainFile,
@@ -50,11 +50,11 @@ impl Project {
 		}
 
 		let config_file = root_directory.join("cabin.toml");
-		let Ok(config_contents) = std::fs::read_to_string(config_file) else { return Err(ProjectError::ConfigFileDoesntExist) };
-		let Ok(config) = toml_edit::de::from_str(&config_contents) else { return Err(ProjectError::MalformattedConfigFile) };
+		let config_contents = std::fs::read_to_string(config_file).map_err(|_error| ProjectError::ConfigFileDoesntExist)?;
+		let config = toml_edit::de::from_str(&config_contents).map_err(|error| ProjectError::MalformattedConfigFile(error))?;
 
 		let main_file = root_directory.join("src").join("main.cabin");
-		let Ok(main_file_contents) = std::fs::read_to_string(&main_file) else { return Err(ProjectError::NoMainFile) };
+		let main_file_contents = std::fs::read_to_string(&main_file).map_err(|error| ProjectError::NoMainFile)?;
 
 		let mut context = Context::default();
 		context.file = main_file;

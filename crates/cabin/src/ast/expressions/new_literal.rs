@@ -2,21 +2,26 @@ use std::collections::HashMap;
 
 use try_as::traits as try_as_traits;
 
+use super::{either::EvaluatedEither, function_declaration::FunctionDeclaration, group::GroupDeclaration};
 use crate::{
 	ast::{
 		expressions::{
 			either::Either,
-			extend::EvaluatedExtend,
+			extend::{EvaluatedExtend, Extend},
 			field_access::Dot,
 			function_declaration::EvaluatedFunctionDeclaration,
 			group::EvaluatedGroupDeclaration,
 			name::Name,
 			Expression,
 		},
-		sugar::{list::LiteralList, string::CabinString},
+		sugar::{
+			list::{List, LiteralList},
+			string::CabinString,
+		},
 	},
 	comptime::{
 		memory::{ExpressionPointer, LiteralPointer},
+		CompileTime,
 		CompileTimeError,
 	},
 	diagnostics::Diagnostic,
@@ -28,6 +33,41 @@ use crate::{
 
 #[derive(Debug, Clone, try_as::macros::TryAsRef)]
 pub enum Literal {
+	String(CabinString),
+	FunctionDeclaration(FunctionDeclaration),
+	Group(GroupDeclaration),
+	Extend(Extend),
+	Either(Either),
+}
+
+impl CompileTime for Literal {
+	type Output = EvaluatedLiteral;
+
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+		match self {
+			Self::FunctionDeclaration(function) => EvaluatedLiteral::FunctionDeclaration(function.evaluate_at_compile_time(context)),
+			Self::Either(either) => EvaluatedLiteral::Either(either.evaluate_at_compile_time(context)),
+			Self::Extend(extend) => EvaluatedLiteral::Extend(extend.evaluate_at_compile_time(context)),
+			Self::Group(group) => EvaluatedLiteral::Group(group.evaluate_at_compile_time(context)),
+			Self::String(string) => EvaluatedLiteral::String(string),
+		}
+	}
+}
+
+impl Spanned for Literal {
+	fn span(&self, context: &Context) -> Span {
+		match self {
+			Self::String(string) => string.span(context),
+			Self::FunctionDeclaration(function) => function.span(context),
+			Self::Group(group) => group.span(context),
+			Self::Extend(extend) => extend.span(context),
+			Self::Either(either) => either.span(context),
+		}
+	}
+}
+
+#[derive(Debug, Clone, try_as::macros::TryAsRef)]
+pub enum EvaluatedLiteral {
 	Object(Object),
 	String(CabinString),
 	Number(f64),
@@ -35,11 +75,11 @@ pub enum Literal {
 	FunctionDeclaration(EvaluatedFunctionDeclaration),
 	Group(EvaluatedGroupDeclaration),
 	Extend(EvaluatedExtend),
-	Either(Either),
+	Either(EvaluatedEither),
 	ErrorLiteral(Span),
 }
 
-impl Literal {
+impl EvaluatedLiteral {
 	pub(crate) fn kind_name(&self) -> &'static str {
 		match self {
 			Self::Group(_) => "Group",
@@ -55,25 +95,25 @@ impl Literal {
 	}
 }
 
-impl Typed for Literal {
+impl Typed for EvaluatedLiteral {
 	fn get_type(&self, context: &mut Context) -> Type {
 		match self {
 			Self::String(_) => Type::Literal(context.scope_tree.get_builtin("Text").unwrap().try_as_literal(context).unwrap_or(LiteralPointer::ERROR)),
 			Self::Number(_) => Type::Literal(context.scope_tree.get_builtin("Number").unwrap().try_as_literal(context).unwrap_or(LiteralPointer::ERROR)),
 			Self::ErrorLiteral(_) => Type::Literal(LiteralPointer::ERROR),
-			Literal::FunctionDeclaration(_) => Type::Literal(Expression::Literal(self.to_owned()).store_in_memory(context).as_literal(context)),
+			EvaluatedLiteral::FunctionDeclaration(_) => Type::Literal(Expression::EvaluatedLiteral(self.to_owned()).store_in_memory(context).as_literal(context)),
 			literal => todo!("{literal:?}"),
 		}
 	}
 }
 
-impl Dot for Literal {
+impl Dot for EvaluatedLiteral {
 	fn dot(&self, name: &Name, context: &mut Context) -> ExpressionPointer {
 		match self {
-			Literal::Object(object) => object.dot(name, context),
-			Literal::Either(either) => either.dot(name, context),
-			Literal::String(string) => string.dot(name, context),
-			Literal::ErrorLiteral(_) => Expression::Literal(self.to_owned()).store_in_memory(context),
+			EvaluatedLiteral::Object(object) => object.dot(name, context),
+			EvaluatedLiteral::Either(either) => either.dot(name, context),
+			EvaluatedLiteral::String(string) => string.dot(name, context),
+			EvaluatedLiteral::ErrorLiteral(_) => Expression::EvaluatedLiteral(self.to_owned()).store_in_memory(context),
 			value => todo!("{value:?}"),
 		}
 	}
@@ -124,7 +164,7 @@ impl Dot for Object {
 	}
 }
 
-impl Spanned for Literal {
+impl Spanned for EvaluatedLiteral {
 	fn span(&self, context: &Context) -> Span {
 		match self {
 			Self::String(string) => string.span(context),

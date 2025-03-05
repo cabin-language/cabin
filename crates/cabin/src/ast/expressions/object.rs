@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::new_literal::{Literal, Object};
+use super::new_literal::{EvaluatedLiteral, Object};
 use crate::{
 	api::context::Context,
 	ast::{
@@ -116,7 +116,7 @@ impl CompileTime for ObjectConstructor {
 		if self.type_name != "Object".into() {
 			let object_type = self.get_type(context);
 			let Type::Literal(type_literal) = object_type;
-			if let Literal::Group(group) = type_literal.get_literal(context).to_owned() {
+			if let EvaluatedLiteral::Group(group) = type_literal.get_literal(context).to_owned() {
 				for (field_name, field) in &group.fields {
 					// Wrong field type
 					if let Some(field_value) = self.fields.get(field_name) {
@@ -153,7 +153,7 @@ impl CompileTime for ObjectConstructor {
 		}
 
 		if let Ok(literal) = self.try_into_literal(context) {
-			Expression::Literal(Literal::Object(literal))
+			Expression::EvaluatedLiteral(EvaluatedLiteral::Object(literal))
 		} else {
 			Expression::ObjectConstructor(self)
 		}

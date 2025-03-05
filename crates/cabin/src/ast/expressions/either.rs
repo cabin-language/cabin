@@ -1,21 +1,26 @@
 use convert_case::{Case, Casing as _};
 
-use super::field_access::Dot;
+use super::{field_access::Dot, parameter::EvaluatedParameter};
 use crate::{
 	api::context::Context,
 	ast::{
 		expressions::{
 			name::Name,
-			new_literal::{Literal, Object},
+			new_literal::{EvaluatedLiteral, Object},
+			parameter::Parameter,
 			Expression,
 		},
 		misc::tag::TagList,
 	},
 	comptime::{memory::ExpressionPointer, CompileTime},
 	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
+	if_then_else_default,
+	if_then_some,
 	lexer::TokenType,
 	parse_list,
-	parser::{ListType, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	parser::{ListType, Parse, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	scope::ScopeType,
+	typechecker::Type,
 	Span,
 	Spanned,
 };
@@ -44,9 +49,17 @@ use crate::{
 /// ```
 #[derive(Debug, Clone)]
 pub struct Either {
-	variants: Vec<(Name, ExpressionPointer)>,
+	variants: Vec<EitherVariant>,
 	span: Span,
 	tags: TagList,
+	compile_time_parameters: Vec<Parameter>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EitherVariant {
+	name: Name,
+	subtype: Option<ExpressionPointer>,
+	value: ExpressionPointer,
 }
 
 impl TryParse for Either {
@@ -55,8 +68,41 @@ impl TryParse for Either {
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordEither, context)?.span;
 		let mut variants = Vec::new();
+
+		context.scope_tree.enter_new_scope(ScopeType::Either);
+
+		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
+			let mut compile_time_parameters = Vec::new();
+			_ = parse_list!(tokens, context, ListType::AngleBracketed, {
+				let name = Name::try_parse(tokens, context)?;
+				let mut span = name.span(context);
+				let parameter_type = if_then_some!(tokens.next_is(TokenType::Colon), {
+					_ = tokens.pop(TokenType::Colon, context)?;
+					let parameter_type = Expression::parse(tokens, context);
+					span = span.to(parameter_type.span(context));
+					parameter_type
+				})
+				.unwrap_or(Expression::Name(Name::new("Anything", context, name.span(context))).store_in_memory(context));
+				let error = Expression::error(Span::unknown(), context);
+				if let Err(error) = context.scope_tree.declare_new_variable(name.clone(), error) {
+					context.add_diagnostic(Diagnostic {
+						file: context.file.clone(),
+						span: name.span(context),
+						info: DiagnosticInfo::Error(error),
+					});
+				}
+				compile_time_parameters.push(Parameter { name, parameter_type, span });
+			});
+			compile_time_parameters
+		});
+
 		let end = parse_list!(tokens, context, ListType::Braced, {
 			let name = Name::try_parse(tokens, context)?;
+			let subtype = if_then_some!(tokens.next_is(TokenType::Colon), {
+				_ = tokens.pop(TokenType::Colon, context)?;
+				Expression::parse(tokens, context)
+			});
+
 			if name.unmangled_name() != name.unmangled_name().to_case(Case::Snake) {
 				context.add_diagnostic(Diagnostic {
 					span: name.span(context),
@@ -66,20 +112,28 @@ impl TryParse for Either {
 					}),
 				});
 			}
-			variants.push((name, Expression::Literal(Literal::Object(Object::empty())).store_in_memory(context)));
+
+			variants.push(EitherVariant {
+				name,
+				subtype,
+				value: Expression::EvaluatedLiteral(EvaluatedLiteral::Object(Object::empty())).store_in_memory(context),
+			});
 		})
 		.span;
+
+		context.scope_tree.exit_scope().unwrap();
 
 		Ok(Either {
 			variants,
 			span: start.to(end),
 			tags: TagList::default(),
+			compile_time_parameters,
 		})
 	}
 }
 
 impl CompileTime for Either {
-	type Output = Either;
+	type Output = EvaluatedEither;
 
 	fn evaluate_at_compile_time(mut self, context: &mut Context) -> Self::Output {
 		// Tags
@@ -94,7 +148,25 @@ impl CompileTime for Either {
 			});
 		}
 
-		self
+		let mut variants = Vec::new();
+		for variant in self.variants {
+			variants.push(EvaluatedEitherVariant {
+				name: variant.name,
+				value: variant.value,
+				subtype: variant.subtype.map(|subtype| Type::Literal(subtype.evaluate_to_literal(context))),
+			});
+		}
+
+		EvaluatedEither {
+			variants,
+			span: self.span,
+			tags: self.tags,
+			compile_time_parameters: self
+				.compile_time_parameters
+				.into_iter()
+				.map(|parameter| parameter.evaluate_at_compile_time(context))
+				.collect(),
+		}
 	}
 }
 
@@ -104,12 +176,27 @@ impl Spanned for Either {
 	}
 }
 
-impl Dot for Either {
+impl Dot for EvaluatedEither {
 	fn dot(&self, name: &Name, _context: &mut Context) -> ExpressionPointer {
 		self.variants
 			.iter()
-			.find_map(|(variant_name, value)| (name == variant_name).then_some(value))
-			.unwrap_or(&ExpressionPointer::ERROR)
+			.find_map(|variant| (name == &variant.name).then_some(variant.value))
+			.unwrap_or(ExpressionPointer::ERROR)
 			.to_owned()
 	}
+}
+
+#[derive(Debug, Clone)]
+pub struct EvaluatedEither {
+	variants: Vec<EvaluatedEitherVariant>,
+	compile_time_parameters: Vec<EvaluatedParameter>,
+	span: Span,
+	tags: TagList,
+}
+
+#[derive(Debug, Clone)]
+pub struct EvaluatedEitherVariant {
+	name: Name,
+	subtype: Option<Type>,
+	value: ExpressionPointer,
 }

@@ -14,7 +14,9 @@ pub(crate) trait Theme {
 	fn special_punctuation() -> (u8, u8, u8);
 	fn grouping_punctuation() -> (u8, u8, u8);
 	fn error() -> (u8, u8, u8);
+	fn warning() -> (u8, u8, u8);
 	fn error_background() -> (u8, u8, u8);
+	fn warning_background() -> (u8, u8, u8);
 
 	fn highlight<'a, 'b>(query: &'a str) -> Option<(u8, u8, u8)> {
 		let highlight = HashMap::from([
@@ -91,5 +93,13 @@ impl Theme for CatppuccinMocha {
 
 	fn error_background() -> (u8, u8, u8) {
 		(50, 40, 58)
+	}
+
+	fn warning() -> (u8, u8, u8) {
+		(249, 226, 175)
+	}
+
+	fn warning_background() -> (u8, u8, u8) {
+		(51, 49, 48)
 	}
 }

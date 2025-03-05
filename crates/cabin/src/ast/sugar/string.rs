@@ -9,7 +9,7 @@ use crate::{
 		field_access::{Dot, FieldAccess},
 		function_call::FunctionCall,
 		name::Name,
-		new_literal::Literal,
+		new_literal::EvaluatedLiteral,
 		Expression,
 	},
 	comptime::memory::ExpressionPointer,
@@ -57,7 +57,7 @@ impl StringPart {
 	pub(crate) fn into_expression(self, context: &mut Context) -> ExpressionPointer {
 		match self {
 			StringPart::Expression(expression) => expression,
-			StringPart::Literal(literal) => Expression::Literal(Literal::String(literal)).store_in_memory(context),
+			StringPart::Literal(literal) => Expression::EvaluatedLiteral(EvaluatedLiteral::String(literal)).store_in_memory(context),
 		}
 	}
 }
@@ -120,7 +120,7 @@ impl TryParse for CabinString {
 		}
 
 		if parts.iter().all(|part| matches!(part, StringPart::Literal(_))) {
-			return Ok(Expression::Literal(Literal::String(CabinString {
+			return Ok(Expression::EvaluatedLiteral(EvaluatedLiteral::String(CabinString {
 				value: parts.into_iter().map(|part| part.try_as::<CabinString>().unwrap().value.clone()).collect::<String>(),
 				span,
 			}))

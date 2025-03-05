@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Debug};
 use super::CompileTimeError;
 use crate::{
 	api::context::Context,
-	ast::expressions::{new_literal::Literal, Expression, ExpressionOrPointer},
+	ast::expressions::{new_literal::EvaluatedLiteral, Expression, ExpressionOrPointer},
 	comptime::CompileTime,
 	diagnostics::Diagnostic,
 	transpiler::{TranspileError, TranspileToC},
@@ -27,7 +27,7 @@ use crate::{
 /// and when to use which. Also see the documentation for `VirtualMemory` for more information about virtual memory.
 ///
 /// This internally just wraps a `usize`, so cloning and copying is incredibly cheap.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ExpressionPointer(usize);
 
 impl ExpressionPointer {
@@ -54,7 +54,7 @@ impl ExpressionPointer {
 
 	pub(crate) fn is_literal(&self, context: &mut Context) -> bool {
 		match self.expression(context).to_owned() {
-			Expression::Literal(_) => true,
+			Expression::EvaluatedLiteral(_) => true,
 			Expression::Name(name) => name.value(context).is_some_and(|value| value.is_literal(context)),
 			_ => false,
 		}
@@ -70,9 +70,12 @@ impl ExpressionPointer {
 
 	pub(crate) fn try_as_literal(self, context: &mut Context) -> Result<LiteralPointer, ()> {
 		match self.expression(context).to_owned() {
-			Expression::Literal(_) => Ok(LiteralPointer(self)),
+			Expression::EvaluatedLiteral(_) | Expression::Literal(_) => Ok(LiteralPointer(self)),
 			Expression::Name(name) => name.value(context).unwrap_or(ExpressionPointer::ERROR).try_as_literal(context),
-			_ => Err(()),
+			_expr => {
+				dbg!(_expr);
+				Err(())
+			},
 		}
 	}
 
@@ -88,15 +91,15 @@ impl ExpressionPointer {
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LiteralPointer(ExpressionPointer);
 
 impl LiteralPointer {
 	pub const ERROR: LiteralPointer = LiteralPointer(ExpressionPointer::ERROR);
 
-	pub fn get_literal<'ctx>(&self, context: &'ctx Context) -> &'ctx Literal {
+	pub fn get_literal<'ctx>(&self, context: &'ctx Context) -> &'ctx EvaluatedLiteral {
 		match self.0.expression(context) {
-			Expression::Literal(literal) => literal,
+			Expression::EvaluatedLiteral(literal) => literal,
 			_ => unreachable!(),
 		}
 	}
@@ -184,7 +187,7 @@ impl VirtualMemory {
 	/// The created empty virtual memory.
 	pub fn empty() -> VirtualMemory {
 		VirtualMemory {
-			memory: HashMap::from([(0, Expression::Literal(Literal::ErrorLiteral(Span::unknown())))]),
+			memory: HashMap::from([(0, Expression::EvaluatedLiteral(EvaluatedLiteral::ErrorLiteral(Span::unknown())))]),
 		}
 	}
 

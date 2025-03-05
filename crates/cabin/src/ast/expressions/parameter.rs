@@ -13,9 +13,9 @@ use crate::{
 
 #[derive(Clone)]
 pub struct Parameter {
-	name: Name,
-	parameter_type: ExpressionPointer,
-	span: Span,
+	pub(crate) name: Name,
+	pub(crate) parameter_type: ExpressionPointer,
+	pub(crate) span: Span,
 }
 
 impl TryParse for Parameter {

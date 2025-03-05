@@ -10,7 +10,7 @@ use crate::{
 	Spanned,
 };
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct TailStatement {
 	pub label: Name,
 	pub value: ExpressionPointer,

@@ -5,7 +5,7 @@ use crate::{
 	api::{diagnostics::Diagnostic, scope::ScopeTree},
 	ast::expressions::{
 		name::Name,
-		new_literal::{Literal, Object},
+		new_literal::{EvaluatedLiteral, Object},
 		Expression,
 	},
 	comptime::memory::VirtualMemory,
@@ -72,9 +72,10 @@ impl Default for Context {
 		};
 
 		// Add stdlib
-		let stdlib_pointer = Expression::Literal(Literal::Object(crate::parse_library(STDLIB, &mut context).into_object(&mut context))).store_in_memory(&mut context);
+		let stdlib_pointer =
+			Expression::EvaluatedLiteral(EvaluatedLiteral::Object(crate::parse_library(STDLIB, &mut context).into_object(&mut context))).store_in_memory(&mut context);
 		context.scope_tree.declare_new_variable("builtin", stdlib_pointer).unwrap();
-		let Expression::Literal(Literal::Object(stdlib)) = stdlib_pointer.expression(&context).to_owned() else { unreachable!() };
+		let Expression::EvaluatedLiteral(EvaluatedLiteral::Object(stdlib)) = stdlib_pointer.expression(&context).to_owned() else { unreachable!() };
 
 		// Bring some stdib items into scope
 		context.scope_tree.declare_new_variable("Text", stdlib.get_field("Text").unwrap().into()).unwrap();

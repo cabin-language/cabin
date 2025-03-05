@@ -13,7 +13,7 @@ use crate::{
 	Spanned,
 };
 
-#[derive(Clone, Eq, PartialOrd, Ord)]
+#[derive(Clone, Eq)]
 pub struct Name {
 	/// The internal string value of this name. This is the value as it appears in the Cabin source code; In other words,
 	/// it's unmangled.
@@ -152,6 +152,16 @@ impl Name {
 			name: name.as_ref().to_owned(),
 			span: Span::unknown(),
 			scope_id: ScopeId::global(),
+			should_mangle: true,
+			documentation: None,
+		}
+	}
+
+	pub(crate) fn new<T: AsRef<str>>(name: T, context: &Context, span: Span) -> Name {
+		Name {
+			name: name.as_ref().to_owned(),
+			span,
+			scope_id: context.scope_tree.unique_id(),
 			should_mangle: true,
 			documentation: None,
 		}

@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use crate::{
 	api::context::Context,
-	ast::expressions::{new_literal::Literal, Expression},
+	ast::expressions::{new_literal::EvaluatedLiteral, Expression},
 	comptime::{
 		memory::{ExpressionPointer, LiteralPointer},
 		CompileTime,
@@ -39,7 +39,7 @@ impl CompileTime for List {
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		let items = self.elements.into_iter().map(|item| item.evaluate_at_compile_time(context)).collect::<Vec<_>>();
 		if items.iter().all(|item| item.is_literal(context)) {
-			Expression::Literal(Literal::List(LiteralList(items.into_iter().map(|item| item.as_literal(context)).collect())))
+			Expression::EvaluatedLiteral(EvaluatedLiteral::List(LiteralList(items.into_iter().map(|item| item.as_literal(context)).collect())))
 		} else {
 			Expression::List(List { elements: items, span: self.span })
 		}

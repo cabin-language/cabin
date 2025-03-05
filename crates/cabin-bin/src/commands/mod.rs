@@ -1,3 +1,4 @@
+use new::NewCommand;
 use run::RunCommand;
 
 mod new;
@@ -13,6 +14,7 @@ pub trait CabinCommand {
 #[enum_dispatch::enum_dispatch(CabinCommand)]
 pub enum SubCommand {
 	Run(RunCommand),
+	New(NewCommand),
 }
 
 #[macro_export]

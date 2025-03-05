@@ -3,7 +3,11 @@ use convert_case::{Case, Casing as _};
 use crate::{
 	api::{context::Context, scope::ScopeId},
 	ast::{
-		expressions::{name::Name, new_literal::Literal, Expression},
+		expressions::{
+			name::Name,
+			new_literal::{EvaluatedLiteral, Literal},
+			Expression,
+		},
 		misc::tag::TagList,
 		statements::Statement,
 	},
@@ -17,7 +21,7 @@ use crate::{
 	Spanned,
 };
 
-#[derive(Debug, Clone, Hash, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Declaration {
 	name: Name,
 	scope_id: ScopeId,
@@ -62,20 +66,33 @@ impl TryParse for Declaration {
 		let expression = value.expression(context);
 
 		match expression {
-			Expression::Group(_) | Expression::Either(_) | Expression::Extend(_) => {
-				if !name.unmangled_name().is_case(Case::Pascal) {
-					context.add_diagnostic(Diagnostic {
-						file: context.file.clone(),
-						span: name.span(context),
-						info: DiagnosticInfo::Warning(Warning::NonPascalCaseGroup {
-							original_name: name.unmangled_name().to_owned(),
-							type_name: expression.kind_name().to_owned(),
-						}),
-					});
-				}
+			Expression::Literal(literal) => match literal {
+				Literal::Group(_) | Literal::Either(_) | Literal::Extend(_) => {
+					if !name.unmangled_name().is_case(Case::Pascal) {
+						context.add_diagnostic(Diagnostic {
+							file: context.file.clone(),
+							span: name.span(context),
+							info: DiagnosticInfo::Warning(Warning::NonPascalCaseGroup {
+								original_name: name.unmangled_name().to_owned(),
+								type_name: expression.kind_name().to_owned(),
+							}),
+						});
+					}
+				},
+				_ => {
+					if !name.unmangled_name().is_case(Case::Snake) {
+						context.add_diagnostic(Diagnostic {
+							file: context.file.clone(),
+							span: name.span(context),
+							info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
+								original_name: name.unmangled_name().to_owned(),
+							}),
+						})
+					}
+				},
 			},
-			Expression::Literal(literal) => {
-				if matches!(literal, Literal::Group(_) | Literal::Either(_) | Literal::Extend(_)) {
+			Expression::EvaluatedLiteral(literal) => {
+				if matches!(literal, EvaluatedLiteral::Group(_) | EvaluatedLiteral::Either(_) | EvaluatedLiteral::Extend(_)) {
 					if !name.unmangled_name().is_case(Case::Pascal) {
 						context.add_diagnostic(Diagnostic {
 							file: context.file.clone(),

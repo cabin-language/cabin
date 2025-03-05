@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{api::context::Context, ast::expressions::name::Name, comptime::memory::ExpressionPointer};
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScopeId(usize);
 
 impl ScopeId {

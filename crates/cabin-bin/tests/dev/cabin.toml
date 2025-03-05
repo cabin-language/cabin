@@ -1,8 +1,8 @@
 [information]
 name = "dev-testing"
+type = "program"
 description = "An example cabin project."
 version = "0.1.0"
-type = "program"
 
 [options]
 
