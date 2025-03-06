@@ -1,5 +1,12 @@
-let fruit = "cherry";
+let Person = group {
+	first_name: Text,
+	last_name: Text,
+};
 
-debug(fruit);
+let john = new Person {
+	first_name = "john",
+	lsat_name = "smith"
+};
 
+debug(john.first_name);
 

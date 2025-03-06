@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use new_literal::Literal;
+use new_literal::UnevaluatedLiteral;
 // This is required because of a bug in `try_as`
 use try_as::traits::{self as try_as_traits, TryAsMut};
 
@@ -62,7 +62,7 @@ pub enum Expression {
 	Run(RunExpression),
 	Unary(UnaryOperation),
 	Parameter(Parameter),
-	Literal(Literal),
+	Literal(UnevaluatedLiteral),
 	EvaluatedLiteral(EvaluatedLiteral),
 	List(List),
 }
@@ -149,7 +149,7 @@ impl Expression {
 	pub(crate) fn set_tags(&mut self, tags: TagList) {
 		match self {
 			Expression::Literal(literal) => match literal {
-				Literal::FunctionDeclaration(function) => function.set_tags(tags),
+				UnevaluatedLiteral::FunctionDeclaration(function) => function.set_tags(tags),
 				_ => {},
 			},
 			_ => {},
@@ -159,7 +159,7 @@ impl Expression {
 	pub(crate) fn set_name(&mut self, name: Name) {
 		match self {
 			Expression::Literal(literal) => match literal {
-				Literal::Group(function) => function.name = Some(name),
+				UnevaluatedLiteral::Group(function) => function.name = Some(name),
 				_ => {},
 			},
 			_ => {},
@@ -169,7 +169,7 @@ impl Expression {
 	pub(crate) fn set_documentation(&mut self, documentation: &str) {
 		match self {
 			Expression::Literal(literal) => match literal {
-				Literal::FunctionDeclaration(function) => function.documentation = Some(documentation.to_owned()),
+				UnevaluatedLiteral::FunctionDeclaration(function) => function.documentation = Some(documentation.to_owned()),
 				_ => {},
 			},
 			_ => {},
@@ -179,7 +179,7 @@ impl Expression {
 	pub fn get_documentation(&self) -> Option<&str> {
 		match self {
 			Expression::Literal(literal) => match literal {
-				Literal::FunctionDeclaration(function) => function.documentation.as_ref().map(|doc| doc.as_str()),
+				UnevaluatedLiteral::FunctionDeclaration(function) => function.documentation.as_ref().map(|doc| doc.as_str()),
 				_ => None,
 			},
 			Self::EvaluatedLiteral(literal) => match literal {
@@ -202,8 +202,8 @@ impl Expression {
 			Expression::Run(_) => "run expression",
 			Expression::Unary(_) => "unary operation",
 			Expression::Parameter(_) => "parameter",
-			Expression::EvaluatedLiteral(_) => "literal",
-			Expression::Literal(_) => "literal",
+			Expression::EvaluatedLiteral(literal) => literal.kind_name(),
+			Expression::Literal(literal) => literal.kind_name(),
 			Expression::List(_) => "list",
 		}
 	}

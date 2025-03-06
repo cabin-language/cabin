@@ -67,7 +67,7 @@ impl CabinCommand for NewCommand {
 
 		// Project
 		std::fs::create_dir_all(location.join("src")).unwrap();
-		std::fs::write(location.join("src").join("main.cabin"), "run print(\"Hello world!\");").unwrap();
+		std::fs::write(location.join("src").join("main.cabin"), "run(print(\"Hello world!\"));").unwrap();
 		std::fs::write(location.join("cabin.toml"), toml_edit::ser::to_string_pretty(&config).unwrap()).unwrap();
 
 		// Cache

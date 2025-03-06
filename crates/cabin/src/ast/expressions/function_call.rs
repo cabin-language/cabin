@@ -156,7 +156,7 @@ impl CompileTime for FunctionCall {
 
 		// Evaluate function
 		if let Ok(pointer) = function.try_as_literal(context) {
-			let literal = pointer.get_literal(context).to_owned();
+			let literal = pointer.evaluated_literal(context).to_owned();
 			let function_declaration = literal.try_as::<EvaluatedFunctionDeclaration>().unwrap_or_else(|_error| {
 				if !matches!(literal, EvaluatedLiteral::ErrorLiteral(_)) {
 					context.add_diagnostic(Diagnostic {
@@ -242,13 +242,13 @@ impl CompileTime for FunctionCall {
 				// Get builtin and side effect tags
 				for tag in &function_declaration.tags().values {
 					if let Ok(literal) = tag.try_as_literal(context) {
-						let object = literal.get_literal(context).try_as::<Object>().unwrap();
+						let object = literal.evaluated_literal(context).try_as::<Object>().unwrap();
 						if object.type_name() == &Name::from("BuiltinTag") {
 							builtin_name = Some(
 								object
 									.get_field("internal_name")
 									.unwrap()
-									.get_literal(context)
+									.evaluated_literal(context)
 									.try_as::<CabinString>()
 									.unwrap()
 									.value
@@ -259,18 +259,18 @@ impl CompileTime for FunctionCall {
 					}
 
 					if let Ok(pointer) = tag.try_as_literal(context) {
-						if let Ok(object) = pointer.get_literal(context).try_as::<Object>() {
+						if let Ok(object) = pointer.evaluated_literal(context).try_as::<Object>() {
 							if object.type_name() == &"RuntimeTag".into() {
 								runtime = Some(
 									object
 										.get_field("reason")
 										.unwrap()
-										.get_literal(context)
+										.evaluated_literal(context)
 										.try_as::<Object>()
 										.unwrap()
 										.get_field("internal_value")
 										.unwrap()
-										.get_literal(context)
+										.evaluated_literal(context)
 										.try_as::<CabinString>()
 										.unwrap()
 										.value

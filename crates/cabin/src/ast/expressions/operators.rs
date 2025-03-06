@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use super::new_literal::{EvaluatedLiteral, Literal};
+use super::new_literal::{EvaluatedLiteral, UnevaluatedLiteral};
 use crate::{
 	api::context::Context,
 	ast::{
@@ -93,15 +93,15 @@ impl TryParse for PrimaryExpression {
 				// TODO: this needs to be its own expression type for transpilation/formatting
 			},
 
-			TokenType::KeywordAction => Expression::Literal(Literal::FunctionDeclaration(FunctionDeclaration::try_parse(tokens, context)?)).store_in_memory(context),
+			TokenType::KeywordAction => Expression::Literal(UnevaluatedLiteral::FunctionDeclaration(FunctionDeclaration::try_parse(tokens, context)?)).store_in_memory(context),
 			TokenType::LeftBrace => Expression::Block(Block::try_parse(tokens, context)?).store_in_memory(context),
 			TokenType::Identifier => Expression::Name(Name::try_parse(tokens, context)?).store_in_memory(context),
 			TokenType::KeywordNew => Expression::ObjectConstructor(ObjectConstructor::try_parse(tokens, context)?).store_in_memory(context),
-			TokenType::KeywordGroup => Expression::Literal(Literal::Group(GroupDeclaration::try_parse(tokens, context)?)).store_in_memory(context),
-			TokenType::KeywordEither => Expression::Literal(Literal::Either(Either::try_parse(tokens, context)?)).store_in_memory(context),
+			TokenType::KeywordGroup => Expression::Literal(UnevaluatedLiteral::Group(GroupDeclaration::try_parse(tokens, context)?)).store_in_memory(context),
+			TokenType::KeywordEither => Expression::Literal(UnevaluatedLiteral::Either(Either::try_parse(tokens, context)?)).store_in_memory(context),
 			TokenType::KeywordIf => Expression::If(IfExpression::try_parse(tokens, context)?).store_in_memory(context),
 			TokenType::KeywordForEach => Expression::ForEachLoop(ForEachLoop::try_parse(tokens, context)?).store_in_memory(context),
-			TokenType::KeywordExtend => Expression::Literal(Literal::Extend(Extend::try_parse(tokens, context)?)).store_in_memory(context),
+			TokenType::KeywordExtend => Expression::Literal(UnevaluatedLiteral::Extend(Extend::try_parse(tokens, context)?)).store_in_memory(context),
 
 			// Syntactic sugar: These below handle cases where syntactic sugar exists for initializing objects of certain types, such as
 			// strings, numbers, lists, etc.:

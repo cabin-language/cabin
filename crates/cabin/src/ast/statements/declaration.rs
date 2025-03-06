@@ -5,7 +5,7 @@ use crate::{
 	ast::{
 		expressions::{
 			name::Name,
-			new_literal::{EvaluatedLiteral, Literal},
+			new_literal::{EvaluatedLiteral, UnevaluatedLiteral},
 			Expression,
 		},
 		misc::tag::TagList,
@@ -67,7 +67,7 @@ impl TryParse for Declaration {
 
 		match expression {
 			Expression::Literal(literal) => match literal {
-				Literal::Group(_) | Literal::Either(_) | Literal::Extend(_) => {
+				UnevaluatedLiteral::Group(_) | UnevaluatedLiteral::Either(_) | UnevaluatedLiteral::Extend(_) => {
 					if !name.unmangled_name().is_case(Case::Pascal) {
 						context.add_diagnostic(Diagnostic {
 							file: context.file.clone(),

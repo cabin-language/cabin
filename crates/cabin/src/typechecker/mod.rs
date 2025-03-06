@@ -33,9 +33,9 @@ impl Type {
 		source == target
 	}
 
-	pub fn name(&self, context: &Context) -> String {
+	pub fn name(&self, context: &mut Context) -> String {
 		match self {
-			Type::Literal(literal) => match literal.get_literal(context) {
+			Type::Literal(literal) => match literal.evaluated_literal(context).to_owned() {
 				EvaluatedLiteral::Group(group) => group.name.as_ref().map(|name| name.unmangled_name().to_owned()).clone().unwrap_or("Unknown".to_owned()),
 				EvaluatedLiteral::FunctionDeclaration(function) => {
 					let mut result = "action".to_owned();

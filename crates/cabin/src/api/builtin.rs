@@ -23,7 +23,7 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 			let mut arguments = VecDeque::from(arguments);
 			let pointer = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
 			let returned_object = call_builtin_at_compile_time("Anything.to_string", context, vec![pointer], span);
-			let string_value = returned_object.as_literal(context).get_literal(context).try_as::<CabinString>().unwrap().value.to_owned();
+			let string_value = returned_object.as_literal(context).evaluated_literal(context).try_as::<CabinString>().unwrap().value.to_owned();
 
 			if context.side_effects {
 				if !context.has_printed {
@@ -50,7 +50,7 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 			let mut arguments = VecDeque::from(arguments);
 			let pointer = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
 			let returned_object = call_builtin_at_compile_time("Anything.to_string", context, vec![pointer], span);
-			let string_value = returned_object.as_literal(context).get_literal(context).try_as::<CabinString>().unwrap().value.to_owned();
+			let string_value = returned_object.as_literal(context).evaluated_literal(context).try_as::<CabinString>().unwrap().value.to_owned();
 
 			if context.side_effects {
 				if !context.has_printed {
@@ -78,8 +78,8 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 			let this = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
 			let other = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
 
-			let EvaluatedLiteral::String(string) = this.as_literal(context).get_literal(context).to_owned() else { unreachable!() };
-			let EvaluatedLiteral::String(string2) = other.as_literal(context).get_literal(context) else { unreachable!() };
+			let EvaluatedLiteral::String(string) = this.as_literal(context).evaluated_literal(context).to_owned() else { unreachable!() };
+			let EvaluatedLiteral::String(string2) = other.as_literal(context).evaluated_literal(context) else { unreachable!() };
 
 			Expression::EvaluatedLiteral(EvaluatedLiteral::String(CabinString { value: string.value + &string2.value, span })).store_in_memory(context)
 		},
@@ -95,7 +95,7 @@ static BUILTINS: phf::Map<&str, BuiltinFunction> = phf::phf_map! {
 
 	"Anything.to_string" => BuiltinFunction {
 		evaluate_at_compile_time: |context, arguments, span| {
-			let this = arguments.first().unwrap_or(&Expression::error(span, context)).as_literal(context).get_literal(context);
+			let this = arguments.first().unwrap_or(&Expression::error(span, context)).as_literal(context).evaluated_literal(context);
 
 			Expression::EvaluatedLiteral(EvaluatedLiteral::String(CabinString { span: Span::unknown(), value: match this {
 				EvaluatedLiteral::Number(number) => number.to_string(),

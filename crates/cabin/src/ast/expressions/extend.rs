@@ -147,7 +147,7 @@ impl CompileTime for Extend {
 
 		// Validate fields
 		if let Some(Type::Literal(type_literal)) = &type_to_be {
-			if let EvaluatedLiteral::Group(group) = type_literal.get_literal(context).to_owned() {
+			if let EvaluatedLiteral::Group(group) = type_literal.evaluated_literal(context).to_owned() {
 				// Missing fields
 				for (field_name, field_value) in &fields {
 					if !fields.contains_key(field_name) {
@@ -162,8 +162,9 @@ impl CompileTime for Extend {
 				// Extra fields
 				for (field_name, field_value) in &fields {
 					if !group.fields.contains_key(field_name) {
+						let literal = field_value.evaluated_literal(context).to_owned();
 						context.add_diagnostic(Diagnostic {
-							span: field_name.span(context).to(field_value.get_literal(context).span(context)),
+							span: field_name.span(context).to(literal.span(context)),
 							info: CompileTimeError::ExtraField(field_name.unmangled_name().to_owned()).into(),
 							file: context.file.clone(),
 						});

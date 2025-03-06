@@ -4,7 +4,7 @@ use std::{
 	ops::{Deref, DerefMut},
 };
 
-use crate::{api::context::Context, ast::expressions::name::Name, comptime::memory::ExpressionPointer};
+use crate::{api::context::Context, ast::expressions::name::Name, comptime::memory::ExpressionPointer, parser::ParseError};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScopeId(usize);
 
@@ -309,8 +309,12 @@ impl ScopeTree {
 	/// Returns an error if a variable already exists with the given name in the scope with the given id.
 	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Name>, value: ExpressionPointer, id: ScopeId) -> Result<(), crate::Error> {
 		let name = name.into();
-		let _ = self.scopes.get_mut(id.0).unwrap().variables.insert(name, value);
-		Ok(())
+		let old = self.scopes.get_mut(id.0).unwrap().variables.insert(name.clone(), value);
+		old.map_or(Ok(()), |_| {
+			Err(crate::Error::Parse(ParseError::DuplicateVariableDeclaration {
+				name: name.unmangled_name().to_owned(),
+			}))
+		})
 	}
 
 	/// Returns an immutable reference to the global scope in this scope data's scope arena. This does have to traverse up the scope tree,

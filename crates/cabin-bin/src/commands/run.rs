@@ -6,8 +6,7 @@ use cabin::{
 };
 use colored::Colorize as _;
 
-use super::CabinCommand;
-use crate::{snippet::show_snippet, wrap};
+use crate::{commands::CabinCommand, snippet::show_snippet, wrap};
 
 /// Run a cabin file or project.
 #[derive(clap::Parser)]

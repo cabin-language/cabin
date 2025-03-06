@@ -116,7 +116,7 @@ impl CompileTime for ObjectConstructor {
 		if self.type_name != "Object".into() {
 			let object_type = self.get_type(context);
 			let Type::Literal(type_literal) = object_type;
-			if let EvaluatedLiteral::Group(group) = type_literal.get_literal(context).to_owned() {
+			if let EvaluatedLiteral::Group(group) = type_literal.evaluated_literal(context).to_owned() {
 				for (field_name, field) in &group.fields {
 					// Wrong field type
 					if let Some(field_value) = self.fields.get(field_name) {
@@ -132,7 +132,7 @@ impl CompileTime for ObjectConstructor {
 					// Missing field
 					else {
 						context.add_diagnostic(Diagnostic {
-							span: self.span,
+							span: self.span.to(self.type_name.span(context)),
 							info: CompileTimeError::MissingField(field_name.unmangled_name().to_owned()).into(),
 							file: context.file.clone(),
 						});

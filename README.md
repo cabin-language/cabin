@@ -33,11 +33,25 @@ By default, the Cabin compiler comes with the following tools:
 - [x] Project Creator: Creates new Cabin projects with a set up config file and source folder.
 - [x] Runner: Runs Cabin code without outputting any permanent files
 - [x] Project Configurer: Changes compiler options for a given project
+- [x] Linter: Provides code diagnostics including errors, warnings, hints, and information.
 - [ ] Compiler: Compiles Cabin code to native binary executable
 - [ ] Formatter: Formats Cabin code to a single unified style
 - [ ] Transpiler: Transpiles Cabin code to C
-- [ ] Linter: Provides code diagnostics including errors, warnings, hints, and information.
 - [ ] Package Manager: Manages Cabin dependencies, publishes cabin packages, etc.
+
+## Hooks
+
+Below are some things that might make Cabin attractive.
+
+### Readable Errors
+
+Cabin has had special care given to its error messages, providing detailed, readable, and clear errors.
+
+![errors](./docs/errors.png)
+
+### Simple Syntax
+
+Cabin is designed to be dead simple. The language only has 17 keywords, and the grammar is absolutely tiny; [The Tree-Sitter grammar](./crates/tree-sitter-cabin/grammar.js) is only about ~200 lines. The language intentionally avoids adding sugar for existing syntax; There's almost always just one way to do something.
 
 ## Philosophy
 

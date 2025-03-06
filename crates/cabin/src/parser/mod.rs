@@ -22,16 +22,16 @@ pub enum ParseError {
 	#[error("Unexpected end of file: Expected more tokens")]
 	UnexpectedGenericEOF,
 
-	#[error("The variable \"{name}\" was declared twice")]
+	#[error("Duplicate variable: The variable \"{name}\" was declared twice")]
 	DuplicateVariableDeclaration { name: String },
 
-	#[error("Only declarations are allowed at the top level of a module")]
+	#[error("Invalid top-level statement: Only declarations are allowed at the top level of a module")]
 	InvalidTopLevelStatement { statement: Statement },
 
 	#[error("Invalid formatted string: {0}")]
 	InvalidFormatString(String),
 
-	#[error("Duplicate field \"{0}\"")]
+	#[error("Duplicate field: The field \"{0}\" exists multiple times in this type")]
 	DuplicateField(String),
 }
 

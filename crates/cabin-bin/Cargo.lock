@@ -104,7 +104,6 @@ name = "cabin-bin"
 version = "0.1.0"
 dependencies = [
  "cabin",
- "cc",
  "clap",
  "cliclack",
  "colored",

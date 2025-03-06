@@ -3,7 +3,11 @@ use std::{collections::HashMap, fmt::Debug};
 use super::CompileTimeError;
 use crate::{
 	api::context::Context,
-	ast::expressions::{new_literal::EvaluatedLiteral, Expression, ExpressionOrPointer},
+	ast::expressions::{
+		new_literal::{EvaluatedLiteral, Literal, LiteralMut},
+		Expression,
+		ExpressionOrPointer,
+	},
 	comptime::CompileTime,
 	diagnostics::Diagnostic,
 	transpiler::{TranspileError, TranspileToC},
@@ -97,9 +101,45 @@ pub struct LiteralPointer(ExpressionPointer);
 impl LiteralPointer {
 	pub const ERROR: LiteralPointer = LiteralPointer(ExpressionPointer::ERROR);
 
-	pub fn get_literal<'ctx>(&self, context: &'ctx Context) -> &'ctx EvaluatedLiteral {
+	pub fn get_literal<'ctx>(&self, context: &'ctx Context) -> Literal<'ctx> {
 		match self.0.expression(context) {
-			Expression::EvaluatedLiteral(literal) => literal,
+			Expression::EvaluatedLiteral(literal) => Literal::Evaluated(literal),
+			Expression::Literal(literal) => Literal::Unevaluated(literal),
+			_ => unreachable!(),
+		}
+	}
+
+	/// If this `LiteralPointer` points to an `EvaluatedLiteral`, a reference to that
+	/// `EvaluatedLiteral` is returned.
+	///
+	/// Otherwise, when this `LiteralPointer` points to an `UnevaluatedLiteral`, the literal it
+	/// points to is evaluated, and the resulting `EvaluatedLiteral` replaces the old `UnevaluatedLiteral`
+	/// in (virtual) memory. Thus, this pointer, and all other pointers to that value, now point to the
+	/// new `EvaluatedLiteral`. A reference to new `EvaluatedLiteral` is returned.
+	///
+	/// # Parameters
+	///
+	/// - `context` - Global state data about the compiler, including it's `VirtualMemory`.
+	///
+	/// # Returns
+	///
+	/// A reference to the (now) evaluated literal that this pointer points to.
+	pub fn evaluated_literal<'ctx>(&self, context: &'ctx mut Context) -> &'ctx EvaluatedLiteral {
+		if matches!(self.get_literal(context), Literal::Evaluated(_)) {
+			let Literal::Evaluated(evaluated)  = self.get_literal(context) else { unreachable!() };
+			return evaluated;
+		}
+
+		let Literal::Unevaluated(unevaluated) = self.get_literal(context) else { unreachable!() };
+		let evaluated = unevaluated.clone().evaluate_at_compile_time(context);
+		let _ = context.virtual_memory.memory.insert(self.0 .0, Expression::EvaluatedLiteral(evaluated));
+		self.evaluated_literal(context)
+	}
+
+	pub fn literal_mut<'ctx>(&self, context: &'ctx mut Context) -> LiteralMut<'ctx> {
+		match self.0.expression_mut(context) {
+			Expression::EvaluatedLiteral(literal) => LiteralMut::Evaluated(literal),
+			Expression::Literal(literal) => LiteralMut::Unevaluated(literal),
 			_ => unreachable!(),
 		}
 	}

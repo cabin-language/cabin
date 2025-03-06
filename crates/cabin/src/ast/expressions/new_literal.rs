@@ -14,10 +14,7 @@ use crate::{
 			name::Name,
 			Expression,
 		},
-		sugar::{
-			list::{List, LiteralList},
-			string::CabinString,
-		},
+		sugar::{list::LiteralList, string::CabinString},
 	},
 	comptime::{
 		memory::{ExpressionPointer, LiteralPointer},
@@ -31,8 +28,28 @@ use crate::{
 	Spanned,
 };
 
+#[derive(Clone, Debug)]
+pub enum Literal<'a> {
+	Evaluated(&'a EvaluatedLiteral),
+	Unevaluated(&'a UnevaluatedLiteral),
+}
+
+impl Literal<'_> {
+	pub fn as_evaluated(&self) -> Option<&EvaluatedLiteral> {
+		match self {
+			Literal::Evaluated(evaluated) => Some(evaluated),
+			_ => None,
+		}
+	}
+}
+
+pub enum LiteralMut<'a> {
+	Evaluated(&'a mut EvaluatedLiteral),
+	Unevaluated(&'a mut UnevaluatedLiteral),
+}
+
 #[derive(Debug, Clone, try_as::macros::TryAsRef)]
-pub enum Literal {
+pub enum UnevaluatedLiteral {
 	String(CabinString),
 	FunctionDeclaration(FunctionDeclaration),
 	Group(GroupDeclaration),
@@ -40,7 +57,19 @@ pub enum Literal {
 	Either(Either),
 }
 
-impl CompileTime for Literal {
+impl UnevaluatedLiteral {
+	pub(crate) fn kind_name(&self) -> &'static str {
+		match self {
+			Self::Group(_) => "Group",
+			Self::FunctionDeclaration(_) => "Function",
+			Self::Extend(_) => "Extension",
+			Self::String(_) => "String",
+			Self::Either(_) => "Either",
+		}
+	}
+}
+
+impl CompileTime for UnevaluatedLiteral {
 	type Output = EvaluatedLiteral;
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
@@ -54,7 +83,7 @@ impl CompileTime for Literal {
 	}
 }
 
-impl Spanned for Literal {
+impl Spanned for UnevaluatedLiteral {
 	fn span(&self, context: &Context) -> Span {
 		match self {
 			Self::String(string) => string.span(context),
