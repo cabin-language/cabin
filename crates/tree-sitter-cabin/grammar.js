@@ -30,20 +30,21 @@ module.exports = grammar({
 			seq(
 				field("callee", $.expression),
 				"<", field("compile_time_arguments", list($.type)), ">",
-				optional(seq("(", field("arguments", list($.expression)), ")"))
+				optional(seq("(", field("arguments", list(seq(optional("let"), $.expression))), ")"))
 			),
 			seq(
 				field("callee", $.expression),
-				seq("(", field("arguments", list($.expression)), ")")
+				seq("(", field("arguments", list(seq(optional("let"), $.expression))), ")")
 			),
 		)),
 
 		binary: $ => choice(
-			prec.left(5, seq(field("left", $.expression), field("operator", "."), field("right", $.identifier))),
-			prec.right(4, seq(field("left", $.expression), "^", field("right", $.expression))),
-			prec.left(3, seq(field("left", $.expression), choice("*", "/"), field("right", $.expression))),
-			prec.left(2, seq(field("left", $.expression), choice("+", "-"), field("right", $.expression))),
-			prec.left(1, seq(field("left", $.expression), choice("==", "!=", "<=", ">=", "< ", " >"), field("right", $.expression)))
+			prec.left(6, seq(field("left", $.expression), field("operator", "."), field("right", $.identifier))),
+			prec.right(5, seq(field("left", $.expression), "^", field("right", $.expression))),
+			prec.left(4, seq(field("left", $.expression), choice("*", "/"), field("right", $.expression))),
+			prec.left(3, seq(field("left", $.expression), choice("+", "-"), field("right", $.expression))),
+			prec.left(2, seq(field("left", $.expression), choice("==", "!=", "<=", ">=", "< ", " >"), field("right", $.expression))),
+			prec.left(1, seq(field("left", $.expression), choice("and", "or"), field("right", $.expression)))
 		),
 
 		literal: $ => choice(
@@ -56,7 +57,28 @@ module.exports = grammar({
 			$.object_constructor,
 			$.extend,
 			$.foreach,
+			$.if_expression,
+			$.while_loop,
+			$.match,
+			$.block,
 			$.identifier,
+		),
+
+		match: $ => seq(
+			"match",
+			field("source", $.expression),
+			"{",
+			listWithoutTrailingComma(seq($.expression, "=>", $.expression)),
+			optional(seq(",", optional(seq("otherwise", "=>", $.expression, optional(","))))),
+			"}"
+		),
+
+		if_expression: $ => seq(
+			"if",
+			field("condition", $.expression),
+			field("body", $.block),
+			repeat(seq("otherwise", "if", $.expression, $.block)),
+			optional(seq("otherwise", $.block)),
 		),
 
 		foreach: $ => seq(
@@ -67,9 +89,16 @@ module.exports = grammar({
 			$.block
 		),
 
+		while_loop: $ => seq(
+			"while",
+			field("condition", $.expression),
+			field("body", $.block),
+		),
+
 		object_constructor: $ => seq(
 			"new",
-			field("type", $.identifier),
+			optional(field("type", $.identifier)),
+			optional(seq("<", field("compile_time_arguments", list($.type)), ">")),
 			"{",
 			list($.object_value),
 			"}"
@@ -84,12 +113,15 @@ module.exports = grammar({
 
 		extend: $ => seq(
 			"extensionof",
-			optional(seq("<", field("compile_time_parameters", list($.group_parameter)), ">")),
 			field("target", $.type),
 			optional(seq("tobe", field("tobe", $.type))),
 			"{",
 			list($.object_value),
 			"}"
+		),
+
+		pattern: $ => seq(
+			$.expression
 		),
 
 		block: $ => seq("{", repeat($.statement), "}"),
@@ -132,7 +164,7 @@ module.exports = grammar({
 			"action",
 			optional(field("compile_time_parameters", seq("<", list($.group_parameter), ">"))),
 			optional(field("parameters", seq("(", list($.parameter), ")"))),
-			seq(":", field("return_type", $.type)),
+			optional(seq(":", field("return_type", $.type))),
 			optional(field("body", $.block))
 		)),
 
@@ -158,8 +190,19 @@ module.exports = grammar({
 
 		// Tokens
 
-		identifier: _$ => /[a-zA-Z_]\w*/,
-		string: _$ => /"[^"]*"/,
+		pascal_case_identifier: _$ => /[A-Z]\w*/,
+		other_identifier: _$ => /[a-z_]\w*/,
+		identifier: $ => choice($.pascal_case_identifier, $.other_identifier),
+
+		string: $ => seq(
+			'"',
+			repeat(choice(
+				seq("{", $.expression, "}"),
+				/[^"\{\}]+/
+			)),
+			'"',
+		),
+
 		number: _$ => /-?\d+(\.\d+)?/,
 
 		// Utilities
@@ -189,5 +232,14 @@ module.exports = grammar({
  */
 function list(rule) {
 	return optional(seq(rule, repeat(seq(",", rule)), optional(",")));
+}
+
+/**
+ * A comma separated, possibly empty list, allowing trailing commas.
+ *
+ * @param {RuleOrLiteral} rule
+ */
+function listWithoutTrailingComma(rule) {
+	return optional(seq(rule, repeat(seq(",", rule))));
 }
 

@@ -140,10 +140,10 @@ impl CompileTime for ObjectConstructor {
 				}
 
 				// Extra fields
-				for (field_name, field_value) in &self.fields {
+				for (field_name, _field_value) in &self.fields {
 					if !group.fields.contains_key(field_name) {
 						context.add_diagnostic(Diagnostic {
-							span: field_name.span(context).to(field_value.span(context)),
+							span: field_name.span(context),
 							info: CompileTimeError::ExtraField(field_name.unmangled_name().to_owned()).into(),
 							file: context.file.clone(),
 						});
