@@ -1,4 +1,7 @@
-use crate::Context;
+use crate::{
+	io::{IoReader, IoWriter},
+	Context,
+};
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum TranspileError {
@@ -20,13 +23,13 @@ pub(crate) trait TranspileToC {
 	/// # Errors
 	///
 	/// If this AST node is invalid, meaning it contains an error node, an error is returned.
-	fn to_c(&self, context: &mut Context, output: Option<String>) -> Result<String, TranspileError>;
+	fn to_c<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>, output: Option<String>) -> Result<String, TranspileError>;
 
-	fn c_prelude(&self, _context: &mut Context) -> Result<String, TranspileError> {
+	fn c_prelude<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &mut Context<Input, Output, Error>) -> Result<String, TranspileError> {
 		Ok(String::new())
 	}
 
-	fn c_type_prelude(&self, _context: &mut Context) -> Result<String, TranspileError> {
+	fn c_type_prelude<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &mut Context<Input, Output, Error>) -> Result<String, TranspileError> {
 		Ok(String::new())
 	}
 }

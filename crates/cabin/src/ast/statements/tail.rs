@@ -3,6 +3,8 @@ use crate::{
 	ast::expressions::{name::Name, Expression},
 	comptime::{memory::ExpressionPointer, CompileTime},
 	diagnostics::Diagnostic,
+	interpreter::Runtime,
+	io::{IoReader, IoWriter},
 	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::TranspileToC,
@@ -20,7 +22,7 @@ pub struct TailStatement {
 impl TryParse for TailStatement {
 	type Output = TailStatement;
 
-	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
 		let label = Name::try_parse(tokens, context)?;
 
 		let _ = tokens.pop(TokenType::KeywordIs, context)?;
@@ -37,7 +39,7 @@ impl TryParse for TailStatement {
 impl CompileTime for TailStatement {
 	type Output = TailStatement;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
 		let value = self.value.evaluate_at_compile_time(context);
 		TailStatement {
 			label: self.label,
@@ -47,15 +49,32 @@ impl CompileTime for TailStatement {
 	}
 }
 
+impl Runtime for TailStatement {
+	type Output = TailStatement;
+
+	fn evaluate_at_runtime<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+		let value = self.value.evaluate_at_runtime(context);
+		TailStatement {
+			label: self.label,
+			value,
+			span: self.span,
+		}
+	}
+}
+
 impl TranspileToC for TailStatement {
-	fn to_c(&self, context: &mut Context, _output: Option<String>) -> Result<String, crate::transpiler::TranspileError> {
+	fn to_c<Input: IoReader, Output: IoWriter, Error: IoWriter>(
+		&self,
+		context: &mut Context<Input, Output, Error>,
+		_output: Option<String>,
+	) -> Result<String, crate::transpiler::TranspileError> {
 		let label = self.label.to_c(context, None)?;
 		Ok(format!("{}\ngoto label_end_{};", self.value.to_c(context, Some(label.clone()))?, label))
 	}
 }
 
 impl Spanned for TailStatement {
-	fn span(&self, _context: &Context) -> Span {
+	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
 		self.span
 	}
 }

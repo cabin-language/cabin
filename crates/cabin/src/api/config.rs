@@ -22,7 +22,7 @@ pub struct ProjectInformation {
 	pub project_type: ProjectType,
 }
 
-#[serde_inline_default(true)]
+#[serde_inline_default]
 #[derive(derive_getters::Getters, serde::Serialize, serde::Deserialize, SmartDefault)]
 pub struct CompilerOptions {
 	#[default = false]

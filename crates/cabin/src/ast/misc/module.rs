@@ -2,11 +2,12 @@ use std::collections::HashMap;
 
 use crate::{
 	ast::{
-		expressions::new_literal::Object,
+		expressions::literal::Object,
 		statements::{declaration::Declaration, Statement},
 	},
 	comptime::{memory::LiteralPointer, CompileTime},
 	diagnostics::{Diagnostic, DiagnosticInfo},
+	io::{IoReader, IoWriter},
 	parser::{Parse, ParseError, TokenQueue, TokenQueueFunctionality as _},
 	scope::{ScopeId, ScopeType},
 	Context,
@@ -23,7 +24,7 @@ pub struct Module {
 impl Parse for Module {
 	type Output = Self;
 
-	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
+	fn parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Self::Output {
 		context.scope_tree.enter_new_scope(ScopeType::File);
 		let inner_scope_id = context.scope_tree.unique_id();
 		let mut declarations = Vec::new();
@@ -52,7 +53,7 @@ impl Parse for Module {
 impl CompileTime for Module {
 	type Output = Module;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
 		let evaluated = Self {
 			declarations: self.declarations.into_iter().map(|statement| statement.evaluate_at_compile_time(context)).collect(),
 			inner_scope_id: self.inner_scope_id,
@@ -62,7 +63,7 @@ impl CompileTime for Module {
 }
 
 impl Module {
-	pub(crate) fn into_object(self, context: &mut Context) -> Object {
+	pub(crate) fn into_object<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Object {
 		let mut fields = HashMap::new();
 		for declaration in self.declarations {
 			let _ = fields.insert(declaration.name().to_owned(), declaration.value(context).evaluate_to_literal(context));

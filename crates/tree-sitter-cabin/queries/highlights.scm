@@ -56,7 +56,10 @@
 	value: (expression (literal (function)))
 )
 (either_variant name: (identifier) @lsp.type.enumMember)
-(expression (literal (identifier (other_identifier))) @variable)
+
+(expression (literal (identifier (other_identifier))) @boolean (#any-of? @boolean "true" "false"))
+(expression (literal (identifier (other_identifier))) @constant.builtin (#any-of? @constant.builtin "nothing"))
+(expression (literal (identifier (other_identifier))) @variable (#not-any-of? @variable "true" "false" "nothing"))
 
 ; Brackets
 ["(" ")" "[" "]" "{" "}" "<" ">"] @punctuation.bracket

@@ -4,8 +4,8 @@ use crate::{
 	api::{context::Context, scope::ScopeId},
 	ast::{
 		expressions::{
+			literal::{EvaluatedLiteral, UnevaluatedLiteral},
 			name::Name,
-			new_literal::{EvaluatedLiteral, UnevaluatedLiteral},
 			Expression,
 		},
 		misc::tag::TagList,
@@ -14,6 +14,8 @@ use crate::{
 	comptime::{memory::ExpressionPointer, CompileTime},
 	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	if_then_some,
+	interpreter::Runtime,
+	io::{IoReader, IoWriter},
 	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
@@ -33,7 +35,7 @@ impl Declaration {
 		&self.name
 	}
 
-	pub(crate) fn value(&self, context: &Context) -> ExpressionPointer {
+	pub(crate) fn value<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &Context<Input, Output, Error>) -> ExpressionPointer {
 		context.scope_tree.get_variable_from_id(self.name.clone(), self.scope_id).unwrap()
 	}
 }
@@ -41,7 +43,7 @@ impl Declaration {
 impl TryParse for Declaration {
 	type Output = Statement;
 
-	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
 		// Tags
 		let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
 
@@ -149,15 +151,25 @@ impl TryParse for Declaration {
 impl CompileTime for Declaration {
 	type Output = Declaration;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
 		let evaluated = self.value(context).clone().evaluate_at_compile_time(context); // TODO: use a mapping function instead of cloning
 		context.scope_tree.reassign_variable_from_id(&self.name, evaluated, self.scope_id);
 		self
 	}
 }
 
+impl Runtime for Declaration {
+	type Output = Declaration;
+
+	fn evaluate_at_runtime<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+		let evaluated = self.value(context).clone().evaluate_at_runtime(context);
+		context.scope_tree.reassign_variable_from_id(&self.name, evaluated, self.scope_id);
+		self
+	}
+}
+
 impl TranspileToC for Declaration {
-	fn to_c(&self, context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>, _output: Option<String>) -> Result<String, TranspileError> {
 		let name = self.name().to_c(context, None)?;
 		Ok(format!(
 			"void* {name};\n{};\nlabel_end_{name}:;\n\n",
@@ -165,17 +177,17 @@ impl TranspileToC for Declaration {
 		))
 	}
 
-	fn c_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
+	fn c_prelude<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Result<String, TranspileError> {
 		self.value(context).to_owned().c_prelude(context)
 	}
 
-	fn c_type_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
+	fn c_type_prelude<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Result<String, TranspileError> {
 		self.value(context).to_owned().c_type_prelude(context)
 	}
 }
 
 impl Spanned for Declaration {
-	fn span(&self, _context: &Context) -> Span {
+	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
 		self.span
 	}
 }

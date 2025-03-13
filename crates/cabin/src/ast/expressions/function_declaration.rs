@@ -11,6 +11,7 @@ use crate::{
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	if_then_some,
+	io::{IoReader, IoWriter},
 	lexer::TokenType,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -34,7 +35,7 @@ pub struct FunctionDeclaration {
 impl TryParse for FunctionDeclaration {
 	type Output = FunctionDeclaration;
 
-	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
 		// "function" keyword
 		let start = tokens.pop(TokenType::KeywordAction, context)?.span;
 		let mut end = start;
@@ -113,7 +114,7 @@ impl TryParse for FunctionDeclaration {
 impl CompileTime for FunctionDeclaration {
 	type Output = EvaluatedFunctionDeclaration;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
 		// Compile-time parameters
 		let compile_time_parameters = {
 			let mut compile_time_parameters = Vec::new();
@@ -155,7 +156,7 @@ impl CompileTime for FunctionDeclaration {
 }
 
 impl Spanned for FunctionDeclaration {
-	fn span(&self, _context: &Context) -> Span {
+	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
 		self.span
 	}
 }

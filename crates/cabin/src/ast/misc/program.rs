@@ -1,6 +1,8 @@
 use crate::{
 	ast::statements::Statement,
 	comptime::CompileTime,
+	interpreter::Runtime,
+	io::{IoReader, IoWriter},
 	parser::{Parse, TokenQueue, TokenQueueFunctionality as _},
 	scope::{ScopeId, ScopeType},
 	transpiler::{TranspileError, TranspileToC},
@@ -16,7 +18,7 @@ pub struct Program {
 impl Parse for Program {
 	type Output = Self;
 
-	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
+	fn parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Self::Output {
 		context.scope_tree.enter_new_scope(ScopeType::File);
 		let inner_scope_id = context.scope_tree.unique_id();
 		let mut statements = Vec::new();
@@ -34,7 +36,7 @@ impl Parse for Program {
 impl CompileTime for Program {
 	type Output = Program;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
 		let evaluated = Self {
 			statements: self.statements.into_iter().map(|statement| statement.evaluate_at_compile_time(context)).collect(),
 			inner_scope_id: self.inner_scope_id,
@@ -43,8 +45,20 @@ impl CompileTime for Program {
 	}
 }
 
+impl Runtime for Program {
+	type Output = Program;
+
+	fn evaluate_at_runtime<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+		let evaluated = Self {
+			statements: self.statements.into_iter().map(|statement| statement.evaluate_at_runtime(context)).collect(),
+			inner_scope_id: self.inner_scope_id,
+		};
+		evaluated
+	}
+}
+
 impl TranspileToC for Program {
-	fn to_c(&self, context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>, _output: Option<String>) -> Result<String, TranspileError> {
 		let type_prelude = self
 			.statements
 			.iter()

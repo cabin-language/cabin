@@ -3,6 +3,8 @@ use crate::{
 	ast::expressions::{Expression, Spanned},
 	comptime::{memory::ExpressionPointer, CompileTime},
 	diagnostics::Diagnostic,
+	interpreter::Runtime,
+	io::{IoReader, IoWriter},
 	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
@@ -42,7 +44,7 @@ pub struct RunExpression {
 impl CompileTime for RunExpression {
 	type Output = RunExpression;
 
-	fn evaluate_at_compile_time(self, _context: &mut Context) -> Self::Output {
+	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, _context: &mut Context<Input, Output, Error>) -> Self::Output {
 		RunExpression {
 			expression: self.expression,
 			span: self.span,
@@ -50,14 +52,22 @@ impl CompileTime for RunExpression {
 	}
 }
 
+impl Runtime for RunExpression {
+	type Output = ExpressionPointer;
+
+	fn evaluate_at_runtime<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+		self.expression.evaluate_at_runtime(context)
+	}
+}
+
 impl TranspileToC for RunExpression {
-	fn to_c(&self, context: &mut Context, output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>, output: Option<String>) -> Result<String, TranspileError> {
 		self.expression.to_c(context, output)
 	}
 }
 
 impl Spanned for RunExpression {
-	fn span(&self, _context: &Context) -> Span {
+	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
 		self.span.to_owned()
 	}
 }
@@ -66,5 +76,5 @@ impl Spanned for RunExpression {
 /// the expression needs to implement how the `run` keyword should act on it via
 /// `evaluate_subexpressions_at_compile_time()`.
 pub trait RuntimeableExpression: Sized {
-	fn evaluate_subexpressions_at_compile_time(self, context: &mut Context) -> Self;
+	fn evaluate_subexpressions_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self;
 }

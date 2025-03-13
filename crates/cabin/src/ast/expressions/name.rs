@@ -4,6 +4,7 @@ use crate::{
 	api::context::Context,
 	comptime::{memory::ExpressionPointer, CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
+	io::{IoReader, IoWriter},
 	lexer::TokenType,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 	scope::ScopeId,
@@ -41,7 +42,10 @@ pub struct Name {
 impl TryParse for Name {
 	type Output = Self;
 
-	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> anyhow::Result<Self::Output, Diagnostic> {
+	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(
+		tokens: &mut TokenQueue,
+		context: &mut Context<Input, Output, Error>,
+	) -> anyhow::Result<Self::Output, Diagnostic> {
 		let token = tokens.pop(TokenType::Identifier, context)?;
 
 		let name = Name {
@@ -65,25 +69,25 @@ impl TryParse for Name {
 impl CompileTime for Name {
 	type Output = Name;
 
-	fn evaluate_at_compile_time(self, _context: &mut Context) -> Self::Output {
+	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, _context: &mut Context<Input, Output, Error>) -> Self::Output {
 		self
 	}
 }
 
 impl TranspileToC for Name {
-	fn to_c(&self, _context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &mut Context<Input, Output, Error>, _output: Option<String>) -> Result<String, TranspileError> {
 		Ok(self.mangled_name())
 	}
 }
 
 impl Typed for Name {
-	fn get_type(&self, context: &mut Context) -> Type {
+	fn get_type<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Type {
 		self.value(context).unwrap_or(ExpressionPointer::ERROR).get_type(context)
 	}
 }
 
 impl Name {
-	pub fn value(&self, context: &mut Context) -> Option<ExpressionPointer> {
+	pub fn value<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Option<ExpressionPointer> {
 		context
 			.scope_tree
 			.get_variable_from_id(self, self.scope_id)
@@ -117,7 +121,7 @@ impl AsRef<Name> for Name {
 }
 
 impl Spanned for Name {
-	fn span(&self, _context: &Context) -> Span {
+	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
 		self.span
 	}
 }
@@ -157,7 +161,7 @@ impl Name {
 		}
 	}
 
-	pub(crate) fn new<T: AsRef<str>>(name: T, context: &Context, span: Span) -> Name {
+	pub(crate) fn new<T: AsRef<str>, Input: IoReader, Output: IoWriter, Error: IoWriter>(name: T, context: &Context<Input, Output, Error>, span: Span) -> Name {
 		Name {
 			name: name.as_ref().to_owned(),
 			span,

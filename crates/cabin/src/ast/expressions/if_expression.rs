@@ -4,6 +4,7 @@ use crate::{
 	ast::expressions::{block::Block, Expression},
 	comptime::{memory::ExpressionPointer, CompileTime},
 	diagnostics::Diagnostic,
+	io::{IoReader, IoWriter},
 	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
@@ -22,7 +23,7 @@ pub struct IfExpression {
 impl TryParse for IfExpression {
 	type Output = IfExpression;
 
-	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordIf, context)?.span;
 		let condition = Expression::parse(tokens, context);
 		let body = Block::try_parse(tokens, context)?;
@@ -48,7 +49,7 @@ impl TryParse for IfExpression {
 impl CompileTime for IfExpression {
 	type Output = ExpressionOrPointer;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
 		// Check condition
 		let condition = self.condition.evaluate_at_compile_time(context);
 		let cabin_true = context.scope_tree.get_variable_from_id("true", ScopeId::global()).unwrap();
@@ -86,13 +87,13 @@ impl CompileTime for IfExpression {
 }
 
 impl TranspileToC for IfExpression {
-	fn to_c(&self, context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>, _output: Option<String>) -> Result<String, TranspileError> {
 		Ok(format!("if ({}) {}", self.condition.to_c(context, None)?, self.body.to_c(context, None)?))
 	}
 }
 
 impl Spanned for IfExpression {
-	fn span(&self, _context: &Context) -> Span {
+	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
 		self.span
 	}
 }

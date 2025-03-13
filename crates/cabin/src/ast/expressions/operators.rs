@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use super::new_literal::{EvaluatedLiteral, UnevaluatedLiteral};
+use super::literal::{EvaluatedLiteral, UnevaluatedLiteral};
 use crate::{
 	api::context::Context,
 	ast::{
@@ -22,6 +22,7 @@ use crate::{
 	},
 	comptime::memory::ExpressionPointer,
 	diagnostics::{Diagnostic, DiagnosticInfo},
+	io::{IoReader, IoWriter},
 	lexer::{Token, TokenType},
 	parser::{Parse as _, ParseError, TokenQueueFunctionality as _, TryParse},
 };
@@ -45,7 +46,11 @@ impl BinaryOperation {
 	/// - `tokens` - The token stream to parse
 	/// - `current_scope` - The current scope
 	/// - `debug_info` - The debug information
-	fn parse_precedent(&self, tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<ExpressionPointer, Diagnostic> {
+	fn parse_precedent<Input: IoReader, Output: IoWriter, Error: IoWriter>(
+		&self,
+		tokens: &mut VecDeque<Token>,
+		context: &mut Context<Input, Output, Error>,
+	) -> Result<ExpressionPointer, Diagnostic> {
 		if let Some(precedent) = self.precedent {
 			parse_binary_expression(precedent, tokens, context)
 		} else {
@@ -58,7 +63,11 @@ impl BinaryOperation {
 #[derive(Clone, Debug)]
 pub(crate) struct BinaryExpression;
 
-fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<ExpressionPointer, Diagnostic> {
+fn parse_binary_expression<Input: IoReader, Output: IoWriter, Error: IoWriter>(
+	operation: &BinaryOperation,
+	tokens: &mut VecDeque<Token>,
+	context: &mut Context<Input, Output, Error>,
+) -> Result<ExpressionPointer, Diagnostic> {
 	let mut expression = operation.parse_precedent(tokens, context)?;
 
 	while tokens.next_is_one_of(operation.token_types) {
@@ -73,7 +82,10 @@ fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<To
 impl TryParse for BinaryExpression {
 	type Output = ExpressionPointer;
 
-	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(
+		tokens: &mut VecDeque<Token>,
+		context: &mut Context<Input, Output, Error>,
+	) -> Result<Self::Output, Diagnostic> {
 		parse_binary_expression(&COMBINATOR, tokens, context)
 	}
 }
@@ -83,7 +95,10 @@ pub struct PrimaryExpression;
 impl TryParse for PrimaryExpression {
 	type Output = ExpressionPointer;
 
-	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(
+		tokens: &mut VecDeque<Token>,
+		context: &mut Context<Input, Output, Error>,
+	) -> Result<Self::Output, Diagnostic> {
 		Ok(match tokens.peek_type(context)? {
 			TokenType::LeftParenthesis => {
 				let _ = tokens.pop(TokenType::LeftParenthesis, context).unwrap_or_else(|_| unreachable!());

@@ -2,12 +2,13 @@ use std::ops::Deref;
 
 use crate::{
 	api::context::Context,
-	ast::expressions::{new_literal::EvaluatedLiteral, Expression},
+	ast::expressions::{literal::EvaluatedLiteral, Expression},
 	comptime::{
 		memory::{ExpressionPointer, LiteralPointer},
 		CompileTime,
 	},
 	diagnostics::Diagnostic,
+	io::{IoReader, IoWriter},
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TryParse},
 	Span,
@@ -23,7 +24,7 @@ pub struct List {
 impl TryParse for List {
 	type Output = List;
 
-	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
 		let mut list = Vec::new();
 		let end = parse_list!(tokens, context, ListType::Bracketed, { list.push(Expression::parse(tokens, context)) }).span;
 		Ok(List {
@@ -36,7 +37,7 @@ impl TryParse for List {
 impl CompileTime for List {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
 		let items = self.elements.into_iter().map(|item| item.evaluate_at_compile_time(context)).collect::<Vec<_>>();
 		if items.iter().all(|item| item.is_literal(context)) {
 			Expression::EvaluatedLiteral(EvaluatedLiteral::List(LiteralList(items.into_iter().map(|item| item.as_literal(context)).collect())))
@@ -47,7 +48,7 @@ impl CompileTime for List {
 }
 
 impl Spanned for List {
-	fn span(&self, context: &Context) -> Span {
+	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
 		self.span
 	}
 }

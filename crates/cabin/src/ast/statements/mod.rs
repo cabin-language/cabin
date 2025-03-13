@@ -6,6 +6,8 @@ use crate::{
 	},
 	comptime::{memory::ExpressionPointer, CompileTime},
 	diagnostics::Diagnostic,
+	interpreter::Runtime,
+	io::{IoReader, IoWriter},
 	lexer::TokenType,
 	parser::{Parse, TokenQueue, TokenQueueFunctionality as _, TryParse as _},
 	transpiler::{TranspileError, TranspileToC},
@@ -27,8 +29,8 @@ pub enum Statement {
 impl Parse for Statement {
 	type Output = Statement;
 
-	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
-		fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Statement, Diagnostic> {
+	fn parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Self::Output {
+		fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Statement, Diagnostic> {
 			let statement = match tokens.peek_type(context)? {
 				TokenType::KeywordLet | TokenType::TagOpening => Declaration::try_parse(tokens, context)?,
 				TokenType::Identifier => {
@@ -64,7 +66,7 @@ impl Parse for Statement {
 
 					let _ = tokens.pop(token_type, context).unwrap();
 				}
-				let end = tokens.front().unwrap().span;
+				let end = tokens.front().map(|front| front.span).unwrap_or(Span::unknown());
 				Statement::Error(start.to(end))
 			},
 		}
@@ -74,7 +76,7 @@ impl Parse for Statement {
 impl CompileTime for Statement {
 	type Output = Statement;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
 		match self {
 			Statement::Declaration(declaration) => Statement::Declaration(declaration.evaluate_at_compile_time(context)),
 			Statement::Expression(expression) => Statement::Expression(expression.evaluate_at_compile_time(context)),
@@ -84,8 +86,21 @@ impl CompileTime for Statement {
 	}
 }
 
+impl Runtime for Statement {
+	type Output = Statement;
+
+	fn evaluate_at_runtime<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+		match self {
+			Statement::Declaration(declaration) => Statement::Declaration(declaration.evaluate_at_runtime(context)),
+			Statement::Expression(expression) => Statement::Expression(expression.evaluate_at_runtime(context)),
+			Statement::Tail(tail) => Statement::Tail(tail.evaluate_at_runtime(context)),
+			Statement::Error(span) => Statement::Error(span),
+		}
+	}
+}
+
 impl TranspileToC for Statement {
-	fn to_c(&self, context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>, _output: Option<String>) -> Result<String, TranspileError> {
 		Ok(match self {
 			Statement::Declaration(declaration) => declaration.to_c(context, None)?,
 			Statement::Tail(tail) => tail.to_c(context, None)?,
@@ -96,7 +111,7 @@ impl TranspileToC for Statement {
 }
 
 impl Spanned for Statement {
-	fn span(&self, context: &Context) -> Span {
+	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &Context<Input, Output, Error>) -> Span {
 		match self {
 			Self::Declaration(declaration) => declaration.span(context),
 			Self::Tail(tail) => tail.span(context),

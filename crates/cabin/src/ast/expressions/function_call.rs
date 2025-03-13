@@ -1,14 +1,14 @@
 use std::collections::VecDeque;
 
-use super::{new_literal::EvaluatedLiteral, ExpressionOrPointer};
+use super::{literal::EvaluatedLiteral, ExpressionOrPointer};
 use crate::{
 	api::{builtin::call_builtin_at_compile_time, context::Context, scope::ScopeId, traits::TryAs as _},
 	ast::{
 		expressions::{
 			field_access::FieldAccess,
 			function_declaration::EvaluatedFunctionDeclaration,
+			literal::Object,
 			name::Name,
-			new_literal::Object,
 			run::RuntimeableExpression,
 			unary::{UnaryOperation, UnaryOperator},
 			Expression,
@@ -23,6 +23,7 @@ use crate::{
 	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
+	io::{IoReader, IoWriter},
 	lexer::{Token, TokenType},
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueueFunctionality as _, TryParse},
@@ -54,7 +55,10 @@ pub(crate) struct PostfixOperators;
 impl TryParse for PostfixOperators {
 	type Output = ExpressionPointer;
 
-	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(
+		tokens: &mut VecDeque<Token>,
+		context: &mut Context<Input, Output, Error>,
+	) -> Result<Self::Output, Diagnostic> {
 		// Primary expression
 		let mut expression = FieldAccess::try_parse(tokens, context)?;
 		let start = expression.span(context);
@@ -116,7 +120,7 @@ impl TryParse for PostfixOperators {
 impl CompileTime for FunctionCall {
 	type Output = ExpressionOrPointer;
 
-	fn evaluate_at_compile_time(mut self, context: &mut Context) -> Self::Output {
+	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(mut self, context: &mut Context<Input, Output, Error>) -> Self::Output {
 		let span = self.function.span(context);
 		self.tags = self.tags.evaluate_at_compile_time(context);
 
@@ -310,7 +314,7 @@ impl CompileTime for FunctionCall {
 }
 
 impl RuntimeableExpression for FunctionCall {
-	fn evaluate_subexpressions_at_compile_time(self, context: &mut Context) -> Self {
+	fn evaluate_subexpressions_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self {
 		let function = self.function.evaluate_at_compile_time(context);
 
 		// Compile-time arguments
@@ -345,7 +349,7 @@ impl RuntimeableExpression for FunctionCall {
 }
 
 impl Spanned for FunctionCall {
-	fn span(&self, _context: &Context) -> Span {
+	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
 		self.span
 	}
 }
@@ -381,7 +385,12 @@ impl FunctionCall {
 	///
 	/// Only if the given token does not represent a valid binary operation. The given token must have a type of
 	/// `TokenType::Plus`, `TokenType::Minus`, etc.
-	pub(crate) fn from_binary_operation(context: &mut Context, left: ExpressionPointer, right: ExpressionPointer, operation: Token) -> Result<FunctionCall, Diagnostic> {
+	pub(crate) fn from_binary_operation<Input: IoReader, Output: IoWriter, Error: IoWriter>(
+		context: &mut Context<Input, Output, Error>,
+		left: ExpressionPointer,
+		right: ExpressionPointer,
+		operation: Token,
+	) -> Result<FunctionCall, Diagnostic> {
 		let function_name = match operation.token_type {
 			TokenType::Asterisk => "times",
 			TokenType::DoubleEquals => "equals",
@@ -407,7 +416,7 @@ impl FunctionCall {
 		})
 	}
 
-	pub(crate) fn basic(function: ExpressionPointer, context: &mut Context) -> FunctionCall {
+	pub(crate) fn basic<Input: IoReader, Output: IoWriter, Error: IoWriter>(function: ExpressionPointer, context: &mut Context<Input, Output, Error>) -> FunctionCall {
 		FunctionCall {
 			function,
 			arguments: Vec::new(),

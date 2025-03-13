@@ -8,12 +8,13 @@ use crate::{
 	ast::expressions::{
 		field_access::{Dot, FieldAccess},
 		function_call::FunctionCall,
+		literal::EvaluatedLiteral,
 		name::Name,
-		new_literal::EvaluatedLiteral,
 		Expression,
 	},
 	comptime::memory::ExpressionPointer,
 	diagnostics::{Diagnostic, DiagnosticInfo},
+	io::{IoReader, IoWriter},
 	lexer::{tokenize_string, Token, TokenType},
 	parser::{Parse as _, ParseError, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	Span,
@@ -54,7 +55,7 @@ pub(crate) enum StringPart {
 }
 
 impl StringPart {
-	pub(crate) fn into_expression(self, context: &mut Context) -> ExpressionPointer {
+	pub(crate) fn into_expression<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> ExpressionPointer {
 		match self {
 			StringPart::Expression(expression) => expression,
 			StringPart::Literal(literal) => Expression::EvaluatedLiteral(EvaluatedLiteral::String(literal)).store_in_memory(context),
@@ -73,7 +74,7 @@ pub struct CabinString {
 impl TryParse for CabinString {
 	type Output = ExpressionPointer;
 
-	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
 		let token = tokens.pop(TokenType::String, context)?;
 		let span = token.span;
 		let with_quotes = token.value;
@@ -151,13 +152,13 @@ impl TryParse for CabinString {
 }
 
 impl Spanned for CabinString {
-	fn span(&self, _context: &Context) -> Span {
+	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
 		self.span
 	}
 }
 
 impl Dot for CabinString {
-	fn dot(&self, name: &Name, context: &mut Context) -> ExpressionPointer {
+	fn dot<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, name: &Name, context: &mut Context<Input, Output, Error>) -> ExpressionPointer {
 		match name.unmangled_name() {
 			_ => ExpressionPointer::ERROR,
 		}

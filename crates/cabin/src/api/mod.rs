@@ -1,6 +1,7 @@
 pub mod config;
 pub mod context;
 pub mod diagnostics;
+pub mod io;
 pub mod project;
 pub mod scope;
 pub mod span;

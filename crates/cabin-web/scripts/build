@@ -1,0 +1,8 @@
+#!/usr/bin/bash
+
+set -e
+
+wasm-pack build --target web
+rm -r ../../../cabin-language.github.io/src/wasm/cabin
+mkdir ../../../cabin-language.github.io/src/wasm/cabin
+cp ./pkg/* ../../../cabin-language.github.io/src/wasm/cabin

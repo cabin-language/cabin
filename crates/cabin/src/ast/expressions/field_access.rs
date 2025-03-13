@@ -4,6 +4,7 @@ use crate::{
 	ast::expressions::{name::Name, operators::PrimaryExpression, Expression},
 	comptime::{memory::ExpressionPointer, CompileTime},
 	diagnostics::Diagnostic,
+	io::{IoReader, IoWriter},
 	lexer::TokenType,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
@@ -22,7 +23,7 @@ pub struct FieldAccess {
 impl TryParse for FieldAccess {
 	type Output = ExpressionPointer;
 
-	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
 		let mut expression = PrimaryExpression::try_parse(tokens, context)?;
 		let start = expression.span(context);
 		while tokens.next_is(TokenType::Dot) {
@@ -45,7 +46,7 @@ impl TryParse for FieldAccess {
 impl CompileTime for FieldAccess {
 	type Output = ExpressionOrPointer;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
 		let left_evaluated = self.left.evaluate_at_compile_time(context);
 
 		// Resolvable at compile-time
@@ -67,7 +68,7 @@ impl CompileTime for FieldAccess {
 }
 
 impl TranspileToC for FieldAccess {
-	fn to_c(&self, context: &mut Context, output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>, output: Option<String>) -> Result<String, TranspileError> {
 		Ok(format!(
 			"void* left;{}{}->{};",
 			self.left.to_c(context, Some("left".to_owned()))?,
@@ -78,7 +79,7 @@ impl TranspileToC for FieldAccess {
 }
 
 impl Spanned for FieldAccess {
-	fn span(&self, _context: &Context) -> Span {
+	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
 		self.span
 	}
 }
@@ -90,5 +91,5 @@ impl FieldAccess {
 }
 
 pub trait Dot {
-	fn dot(&self, name: &Name, context: &mut Context) -> ExpressionPointer;
+	fn dot<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, name: &Name, context: &mut Context<Input, Output, Error>) -> ExpressionPointer;
 }

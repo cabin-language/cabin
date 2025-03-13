@@ -4,12 +4,14 @@ use super::CompileTimeError;
 use crate::{
 	api::context::Context,
 	ast::expressions::{
-		new_literal::{EvaluatedLiteral, Literal, LiteralMut},
+		literal::{EvaluatedLiteral, Literal, LiteralMut},
 		Expression,
 		ExpressionOrPointer,
 	},
 	comptime::CompileTime,
 	diagnostics::Diagnostic,
+	interpreter::Runtime,
+	io::{IoReader, IoWriter},
 	transpiler::{TranspileError, TranspileToC},
 	typechecker::{Type, Typed},
 	Span,
@@ -48,15 +50,15 @@ impl ExpressionPointer {
 	/// # Returns
 	///
 	/// A reference to the `LiteralObject` that this `VirtualPointer` points to.
-	pub fn expression<'a>(&self, context: &'a Context) -> &'a Expression {
+	pub fn expression<'a, Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &'a Context<Input, Output, Error>) -> &'a Expression {
 		context.virtual_memory.get(self)
 	}
 
-	pub(crate) fn expression_mut<'a>(&self, context: &'a mut Context) -> &'a mut Expression {
+	pub(crate) fn expression_mut<'a, Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &'a mut Context<Input, Output, Error>) -> &'a mut Expression {
 		context.virtual_memory.memory.get_mut(&self.0).unwrap()
 	}
 
-	pub(crate) fn is_literal(&self, context: &mut Context) -> bool {
+	pub(crate) fn is_literal<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> bool {
 		match self.expression(context).to_owned() {
 			Expression::EvaluatedLiteral(_) => true,
 			Expression::Name(name) => name.value(context).is_some_and(|value| value.is_literal(context)),
@@ -64,15 +66,11 @@ impl ExpressionPointer {
 		}
 	}
 
-	pub(crate) fn is_error(&self) -> bool {
-		self == &ExpressionPointer::ERROR
-	}
-
-	pub(crate) fn evaluate_to_literal(self, context: &mut Context) -> LiteralPointer {
+	pub(crate) fn evaluate_to_literal<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> LiteralPointer {
 		self.evaluate_at_compile_time(context).as_literal(context)
 	}
 
-	pub(crate) fn try_as_literal(self, context: &mut Context) -> Result<LiteralPointer, ()> {
+	pub(crate) fn try_as_literal<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Result<LiteralPointer, ()> {
 		match self.expression(context).to_owned() {
 			Expression::EvaluatedLiteral(_) | Expression::Literal(_) => Ok(LiteralPointer(self)),
 			Expression::Name(name) => name.value(context).unwrap_or(ExpressionPointer::ERROR).try_as_literal(context),
@@ -83,7 +81,7 @@ impl ExpressionPointer {
 		}
 	}
 
-	pub(crate) fn as_literal(self, context: &mut Context) -> LiteralPointer {
+	pub(crate) fn as_literal<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> LiteralPointer {
 		self.try_as_literal(context).unwrap_or_else(|_| {
 			context.add_diagnostic(Diagnostic {
 				file: context.file.clone(),
@@ -101,7 +99,7 @@ pub struct LiteralPointer(ExpressionPointer);
 impl LiteralPointer {
 	pub const ERROR: LiteralPointer = LiteralPointer(ExpressionPointer::ERROR);
 
-	pub fn get_literal<'ctx>(&self, context: &'ctx Context) -> Literal<'ctx> {
+	pub fn get_literal<'ctx, Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &'ctx Context<Input, Output, Error>) -> Literal<'ctx> {
 		match self.0.expression(context) {
 			Expression::EvaluatedLiteral(literal) => Literal::Evaluated(literal),
 			Expression::Literal(literal) => Literal::Unevaluated(literal),
@@ -124,7 +122,7 @@ impl LiteralPointer {
 	/// # Returns
 	///
 	/// A reference to the (now) evaluated literal that this pointer points to.
-	pub fn evaluated_literal<'ctx>(&self, context: &'ctx mut Context) -> &'ctx EvaluatedLiteral {
+	pub fn evaluated_literal<'ctx, Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &'ctx mut Context<Input, Output, Error>) -> &'ctx EvaluatedLiteral {
 		if matches!(self.get_literal(context), Literal::Evaluated(_)) {
 			let Literal::Evaluated(evaluated)  = self.get_literal(context) else { unreachable!() };
 			return evaluated;
@@ -136,7 +134,7 @@ impl LiteralPointer {
 		self.evaluated_literal(context)
 	}
 
-	pub fn literal_mut<'ctx>(&self, context: &'ctx mut Context) -> LiteralMut<'ctx> {
+	pub fn literal_mut<'ctx, Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &'ctx mut Context<Input, Output, Error>) -> LiteralMut<'ctx> {
 		match self.0.expression_mut(context) {
 			Expression::EvaluatedLiteral(literal) => LiteralMut::Evaluated(literal),
 			Expression::Literal(literal) => LiteralMut::Unevaluated(literal),
@@ -154,7 +152,7 @@ impl From<LiteralPointer> for ExpressionPointer {
 impl CompileTime for ExpressionPointer {
 	type Output = ExpressionPointer;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
 		let evaluated = context.virtual_memory.get(&self).clone().evaluate_at_compile_time(context);
 		match evaluated {
 			ExpressionOrPointer::Expression(expression) => {
@@ -166,22 +164,37 @@ impl CompileTime for ExpressionPointer {
 	}
 }
 
+impl Runtime for ExpressionPointer {
+	type Output = ExpressionPointer;
+
+	fn evaluate_at_runtime<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+		let evaluated = context.virtual_memory.get(&self).clone().evaluate_at_runtime(context);
+		match evaluated {
+			ExpressionOrPointer::Expression(expression) => {
+				let _ = context.virtual_memory.memory.insert(self.0, expression);
+				self
+			},
+			ExpressionOrPointer::Pointer(pointer) => pointer,
+		}
+	}
+}
+
 impl Typed for ExpressionPointer {
-	fn get_type(&self, context: &mut Context) -> Type {
+	fn get_type<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Type {
 		self.expression(context).clone().get_type(context)
 	}
 }
 
 impl TranspileToC for ExpressionPointer {
-	fn to_c(&self, _context: &mut Context, output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &mut Context<Input, Output, Error>, output: Option<String>) -> Result<String, TranspileError> {
 		Ok(format!("{}&literal_{}", output.map(|name| format!("{name} = ")).unwrap_or_default(), self.0))
 	}
 
-	fn c_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
+	fn c_prelude<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Result<String, TranspileError> {
 		self.expression(context).to_owned().c_prelude(context)
 	}
 
-	fn c_type_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
+	fn c_type_prelude<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Result<String, TranspileError> {
 		self.expression(context).to_owned().c_type_prelude(context)
 	}
 }
@@ -200,7 +213,7 @@ impl std::fmt::Display for ExpressionPointer {
 }
 
 impl Spanned for ExpressionPointer {
-	fn span(&self, context: &Context) -> Span {
+	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &Context<Input, Output, Error>) -> Span {
 		self.expression(context).span(context)
 	}
 }

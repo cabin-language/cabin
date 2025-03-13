@@ -1,5 +1,12 @@
 use std::{collections::VecDeque, path::Path};
 
+use api::{
+	context::StandardContext,
+	io::{IoReader, IoWriter},
+};
+use comptime::CompileTime;
+use interpreter::Runtime;
+
 // Re-exports
 pub use crate::api::{context::Context, diagnostics::Error, project::Project, span::*, *};
 use crate::{
@@ -12,6 +19,7 @@ use crate::{
 pub mod ast;
 pub mod compiler;
 pub mod comptime;
+pub mod interpreter;
 pub mod lexer;
 pub mod parser;
 pub mod transpiler;
@@ -24,23 +32,26 @@ pub(crate) mod api;
 /// `Text`, `Number`, `terminal`, etc. See `/std/stdlib.cabin` for its contents.
 pub const STDLIB: &str = include_str!("../std/stdlib.cabin");
 
-pub fn parse_module(code: &str, context: &mut Context) -> (Module, Diagnostics) {
+pub fn parse_module<Input: IoReader, Output: IoWriter, Error: IoWriter>(code: &str, context: &mut Context<Input, Output, Error>) -> (Module, Diagnostics) {
 	let mut tokens = lexer::tokenize(code, context);
 	(Module::parse(&mut tokens, context), context.diagnostics().to_owned())
 }
 
-pub fn parse_library_file<P: AsRef<Path>>(path: P, context: &mut Context) -> Result<Module, std::io::Error> {
+pub fn parse_library_file<P: AsRef<Path>, Input: IoReader, Output: IoWriter, Error: IoWriter>(
+	path: P,
+	context: &mut Context<Input, Output, Error>,
+) -> Result<Module, std::io::Error> {
 	let code = std::fs::read_to_string(path.as_ref().join("src/library.cabin"))?;
 	Ok(parse_library(&code, context))
 }
 
-pub fn parse_library(code: &str, context: &mut Context) -> Module {
+pub fn parse_library<Input: IoReader, Output: IoWriter, Error: IoWriter>(code: &str, context: &mut Context<Input, Output, Error>) -> Module {
 	let mut tokens = lexer::tokenize(code, context);
 	let module = Module::parse(&mut tokens, context);
 	module
 }
 
-pub fn parse_program(code: &str, context: &mut Context) -> Program {
+pub fn parse_program<Input: IoReader, Output: IoWriter, Error: IoWriter>(code: &str, context: &mut Context<Input, Output, Error>) -> Program {
 	let mut tokens = lexer::tokenize(code, context);
 	let program = Program::parse(&mut tokens, context);
 	program
@@ -49,4 +60,11 @@ pub fn parse_program(code: &str, context: &mut Context) -> Program {
 pub fn tokenize(code: &str) -> (VecDeque<Token>, Diagnostics) {
 	let mut context = Context::default();
 	(lexer::tokenize(code, &mut context), context.diagnostics().to_owned())
+}
+
+pub fn interpret(code: &str, context: &mut StandardContext) {
+	let mut tokens = lexer::tokenize(code, context);
+	let program = Program::parse(&mut tokens, context);
+	let evaluated = program.evaluate_at_compile_time(context);
+	let _ = evaluated.evaluate_at_runtime(context);
 }

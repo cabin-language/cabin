@@ -1,4 +1,9 @@
-use crate::{ast::expressions::new_literal::EvaluatedLiteral, comptime::memory::LiteralPointer, Context};
+use crate::{
+	ast::expressions::literal::EvaluatedLiteral,
+	comptime::memory::LiteralPointer,
+	io::{IoReader, IoWriter},
+	Context,
+};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Type {
@@ -6,11 +11,11 @@ pub enum Type {
 }
 
 pub trait Typed {
-	fn get_type(&self, context: &mut Context) -> Type;
+	fn get_type<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Type;
 }
 
 impl Type {
-	pub(crate) fn is_assignable_to(&self, other: &Type, context: &mut Context) -> bool {
+	pub(crate) fn is_assignable_to<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, other: &Type, context: &mut Context<Input, Output, Error>) -> bool {
 		let Type::Literal(source) = self;
 		let Type::Literal(target) = other;
 
@@ -33,7 +38,7 @@ impl Type {
 		source == target
 	}
 
-	pub fn name(&self, context: &mut Context) -> String {
+	pub fn name<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> String {
 		match self {
 			Type::Literal(literal) => match literal.evaluated_literal(context).to_owned() {
 				EvaluatedLiteral::Group(group) => group.name.as_ref().map(|name| name.unmangled_name().to_owned()).clone().unwrap_or("Unknown".to_owned()),
@@ -73,5 +78,5 @@ impl Type {
 }
 
 pub trait Check {
-	fn is_valid(&self, context: &mut Context) -> bool;
+	fn is_valid<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> bool;
 }

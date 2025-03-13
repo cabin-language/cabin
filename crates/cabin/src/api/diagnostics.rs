@@ -3,6 +3,7 @@ use std::{fmt::Display, path::PathBuf};
 use convert_case::{Case, Casing as _};
 use indexmap::IndexSet;
 
+use super::io::{IoReader, IoWriter};
 use crate::{comptime::CompileTimeError, lexer::TokenizeError, parser::ParseError, Context, Span, Spanned, STDLIB};
 
 #[derive(Clone, Debug, thiserror::Error, Hash, PartialEq, Eq)]
@@ -68,7 +69,7 @@ impl Diagnostic {
 }
 
 impl Spanned for Diagnostic {
-	fn span(&self, _context: &Context) -> Span {
+	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
 		self.span
 	}
 }

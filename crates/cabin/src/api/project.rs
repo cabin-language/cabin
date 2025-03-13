@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use super::context::StandardContext;
 use crate::{
 	api::{config::Config, diagnostics::Diagnostics},
 	ast::{expressions::name::Name, misc::program::Program},
@@ -26,7 +27,7 @@ pub enum ProjectError {
 pub struct Project {
 	root_directory: PathBuf,
 	config: Config,
-	context: Context,
+	context: StandardContext,
 	program: Option<Program>,
 	main_file_contents: String,
 }
@@ -84,11 +85,11 @@ impl Project {
 		&self.config
 	}
 
-	pub fn context(&self) -> &Context {
+	pub fn context(&self) -> &StandardContext {
 		&self.context
 	}
 
-	pub fn context_mut(&mut self) -> &mut Context {
+	pub fn context_mut(&mut self) -> &mut StandardContext {
 		&mut self.context
 	}
 

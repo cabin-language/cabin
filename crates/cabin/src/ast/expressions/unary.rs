@@ -2,6 +2,7 @@ use crate::{
 	api::context::Context,
 	ast::expressions::{Expression, Spanned},
 	comptime::{memory::ExpressionPointer, CompileTime},
+	io::{IoReader, IoWriter},
 	Span,
 };
 
@@ -24,13 +25,13 @@ pub struct UnaryOperation {
 impl CompileTime for UnaryOperation {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time(self, _context: &mut Context) -> Self::Output {
+	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, _context: &mut Context<Input, Output, Error>) -> Self::Output {
 		todo!()
 	}
 }
 
 impl Spanned for UnaryOperation {
-	fn span(&self, _context: &Context) -> Span {
+	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
 		self.span
 	}
 }
