@@ -50,15 +50,15 @@ impl ExpressionPointer {
 	/// # Returns
 	///
 	/// A reference to the `LiteralObject` that this `VirtualPointer` points to.
-	pub fn expression<'a, Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &'a Context<Input, Output, Error>) -> &'a Expression {
+	pub fn expression<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &Context<Input, Output, Error>) -> &Expression {
 		context.virtual_memory.get(self)
 	}
 
-	pub(crate) fn expression_mut<'a, Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &'a mut Context<Input, Output, Error>) -> &'a mut Expression {
+	pub(crate) fn expression_mut<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> &mut Expression {
 		context.virtual_memory.memory.get_mut(&self.0).unwrap()
 	}
 
-	pub(crate) fn is_literal<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> bool {
+	pub(crate) fn is_literal<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> bool {
 		match self.expression(context).to_owned() {
 			Expression::EvaluatedLiteral(_) => true,
 			Expression::Name(name) => name.value(context).is_some_and(|value| value.is_literal(context)),
@@ -74,8 +74,8 @@ impl ExpressionPointer {
 		match self.expression(context).to_owned() {
 			Expression::EvaluatedLiteral(_) | Expression::Literal(_) => Ok(LiteralPointer(self)),
 			Expression::Name(name) => name.value(context).unwrap_or(ExpressionPointer::ERROR).try_as_literal(context),
-			_expr => {
-				dbg!(_expr);
+			expression => {
+				dbg!(expression);
 				Err(())
 			},
 		}
@@ -153,7 +153,7 @@ impl CompileTime for ExpressionPointer {
 	type Output = ExpressionPointer;
 
 	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
-		let evaluated = context.virtual_memory.get(&self).clone().evaluate_at_compile_time(context);
+		let evaluated = context.virtual_memory.get(self).clone().evaluate_at_compile_time(context);
 		match evaluated {
 			ExpressionOrPointer::Expression(expression) => {
 				let _ = context.virtual_memory.memory.insert(self.0, expression);
@@ -168,7 +168,7 @@ impl Runtime for ExpressionPointer {
 	type Output = ExpressionPointer;
 
 	fn evaluate_at_runtime<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
-		let evaluated = context.virtual_memory.get(&self).clone().evaluate_at_runtime(context);
+		let evaluated = context.virtual_memory.get(self).clone().evaluate_at_runtime(context);
 		match evaluated {
 			ExpressionOrPointer::Expression(expression) => {
 				let _ = context.virtual_memory.memory.insert(self.0, expression);
@@ -275,7 +275,7 @@ impl VirtualMemory {
 	/// # Parameters
 	///
 	/// - `address` - A `VirtualPointer` to the location to get the `LiteralObject` from in virtual memory.
-	pub(crate) fn get(&self, address: &ExpressionPointer) -> &Expression {
+	pub(crate) fn get(&self, address: ExpressionPointer) -> &Expression {
 		self.memory.get(&address.0).unwrap()
 	}
 

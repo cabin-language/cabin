@@ -84,7 +84,6 @@ impl TryParse for FunctionDeclaration {
 				};
 			}
 			for parameter in &parameters {
-				let error = Expression::error(Span::unknown(), context);
 				if let Err(error) = context.scope_tree.declare_new_variable_from_id(parameter.name().clone(), error, block.inner_scope_id()) {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
@@ -197,15 +196,15 @@ impl EvaluatedFunctionDeclaration {
 		&self.parameters
 	}
 
-	pub(crate) fn body(&self) -> Option<&Block> {
+	pub(crate) const fn body(&self) -> Option<&Block> {
 		self.body.as_ref()
 	}
 
-	pub(crate) fn return_type(&self) -> Option<&Type> {
+	pub(crate) const fn return_type(&self) -> Option<&Type> {
 		self.return_type.as_ref()
 	}
 
-	pub(crate) fn tags(&self) -> &TagList {
+	pub(crate) const fn tags(&self) -> &TagList {
 		&self.tags
 	}
 

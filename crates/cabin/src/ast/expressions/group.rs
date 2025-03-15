@@ -11,7 +11,6 @@ use crate::{
 	comptime::{
 		memory::{ExpressionPointer, LiteralPointer},
 		CompileTime,
-		CompileTimeError,
 	},
 	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	if_then_else_default,
@@ -20,7 +19,7 @@ use crate::{
 	lexer::{Token, TokenType},
 	parse_list,
 	parser::{ListType, Parse as _, ParseError, TokenQueueFunctionality as _, TryParse},
-	typechecker::{Type, Typed},
+	typechecker::{Type, Typed as _},
 	Span,
 	Spanned,
 };
@@ -149,17 +148,13 @@ impl CompileTime for GroupDeclaration {
 
 		for (name, field) in self.fields {
 			// Field value
-			let value = if let Some(value) = field.default_value {
-				Some(value.evaluate_to_literal(context))
-			} else {
-				None
-			};
+			let value = field.default_value.map(|value| value.evaluate_to_literal(context));
 
 			// Field type
 			let field_type = if let Some(field_type) = field.field_type {
 				Type::Literal(field_type.evaluate_to_literal(context))
-			} else if let Some(value) = field.default_value {
-				value.get_type(context)
+			} else if let Some(default_value) = field.default_value {
+				default_value.get_type(context)
 			} else {
 				Type::Literal(LiteralPointer::ERROR)
 			};

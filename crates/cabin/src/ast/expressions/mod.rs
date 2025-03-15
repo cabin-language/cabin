@@ -104,7 +104,7 @@ impl CompileTime for Expression {
 			Self::FieldAccess(field_access) => field_access.evaluate_at_compile_time(context),
 			Self::FunctionCall(function_call) => function_call.evaluate_at_compile_time(context),
 			Self::If(if_expression) => if_expression.evaluate_at_compile_time(context),
-			Self::Name(name) => ExpressionOrPointer::Expression(Expression::Name(name.clone().evaluate_at_compile_time(context))),
+			Self::Name(name) => ExpressionOrPointer::Expression(Expression::Name(name.evaluate_at_compile_time(context))),
 			Self::ObjectConstructor(constructor) => ExpressionOrPointer::Expression(constructor.evaluate_at_compile_time(context)),
 			Self::ForEachLoop(for_loop) => for_loop.evaluate_at_compile_time(context),
 			Self::Run(run_expression) => ExpressionOrPointer::Expression(Expression::Run(run_expression.evaluate_at_compile_time(context))),

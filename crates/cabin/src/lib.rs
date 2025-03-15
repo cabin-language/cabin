@@ -4,20 +4,19 @@ use api::{
 	context::StandardContext,
 	io::{IoReader, IoWriter},
 };
-use comptime::CompileTime;
-use interpreter::Runtime;
 
 // Re-exports
 pub use crate::api::{context::Context, diagnostics::Error, project::Project, span::*, *};
 use crate::{
 	api::diagnostics::Diagnostics,
 	ast::misc::{module::Module, program::Program},
+	comptime::CompileTime as _,
+	interpreter::Runtime as _,
 	lexer::Token,
 	parser::Parse as _,
 };
 
 pub mod ast;
-pub mod compiler;
 pub mod comptime;
 pub mod interpreter;
 pub mod lexer;
@@ -47,14 +46,12 @@ pub fn parse_library_file<P: AsRef<Path>, Input: IoReader, Output: IoWriter, Err
 
 pub fn parse_library<Input: IoReader, Output: IoWriter, Error: IoWriter>(code: &str, context: &mut Context<Input, Output, Error>) -> Module {
 	let mut tokens = lexer::tokenize(code, context);
-	let module = Module::parse(&mut tokens, context);
-	module
+	Module::parse(&mut tokens, context)
 }
 
 pub fn parse_program<Input: IoReader, Output: IoWriter, Error: IoWriter>(code: &str, context: &mut Context<Input, Output, Error>) -> Program {
 	let mut tokens = lexer::tokenize(code, context);
-	let program = Program::parse(&mut tokens, context);
-	program
+	Program::parse(&mut tokens, context)
 }
 
 pub fn tokenize(code: &str) -> (VecDeque<Token>, Diagnostics) {

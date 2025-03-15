@@ -52,6 +52,8 @@ pub struct Context<Input: IoReader, Output: IoWriter, Error: IoWriter> {
 	pub(crate) virtual_memory: VirtualMemory,
 
 	pub(crate) io: Io<Input, Output, Error>,
+
+	/// Whether Cabin is currently being run as an interactive REPL.
 	pub(crate) interactive: bool,
 
 	/// Whether the AST is currently being evaluated "with side effects".
@@ -95,9 +97,10 @@ impl Default for StandardContext {
 
 impl StandardContext {
 	pub fn interactive() -> StandardContext {
-		let mut context = Context::default();
-		context.interactive = true;
-		context
+		Context {
+			interactive: true,
+			..Default::default()
+		}
 	}
 }
 
@@ -208,8 +211,12 @@ impl<Input: IoReader, Output: IoWriter, Error: IoWriter> Context<Input, Output, 
 	/// # Returns
 	///
 	/// The diagnostics in the user's code
-	pub fn diagnostics(&self) -> &Diagnostics {
+	pub const fn diagnostics(&self) -> &Diagnostics {
 		&self.diagnostics
+	}
+
+	pub fn clear_diagnostics(&mut self) {
+		self.diagnostics.clear();
 	}
 
 	/// Adds a new diagnostic to the context. Diagnostics are retrievable via
@@ -222,19 +229,19 @@ impl<Input: IoReader, Output: IoWriter, Error: IoWriter> Context<Input, Output, 
 		self.diagnostics.push(diagnostic);
 	}
 
-	pub fn scope_tree(&self) -> &ScopeTree {
+	pub const fn scope_tree(&self) -> &ScopeTree {
 		&self.scope_tree
 	}
 
 	pub fn print<S: Display>(&mut self, text: S) {
-		self.io.output.write(&StyledString::plain(format!("{}", text)));
+		self.io.output.write(&StyledString::plain(format!("{text}")));
 	}
 
 	pub fn eprint<S: Display>(&mut self, text: S) {
-		self.io.error.write(&StyledString::plain(format!("{}", text)));
+		self.io.error.write(&StyledString::plain(format!("{text}")));
 	}
 
 	pub fn input(&mut self) -> String {
-		self.io.input.read()
+		self.io.input.read_line()
 	}
 }

@@ -32,7 +32,7 @@ pub trait Theme {
 			("comment", Self::comment()),
 			("string", Self::string()),
 		]);
-		highlight.get(query).cloned()
+		highlight.get(query).copied()
 	}
 }
 

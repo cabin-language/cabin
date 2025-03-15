@@ -143,7 +143,7 @@ impl TryParse for CabinString {
 				token_type: TokenType::Plus,
 				value: "+".to_owned(),
 				span,
-			})?)
+			}))
 			.store_in_memory(context);
 		}
 

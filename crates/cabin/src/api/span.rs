@@ -53,6 +53,18 @@ impl Span {
 		self.length
 	}
 
+	/// Converts the start value of this span from a byte position to a line-column position in the
+	/// given text. If this span's start byte index greater than the text's length, `None` is
+	/// returned.
+	///
+	/// # Parameters
+	///
+	/// - `text` - The text to convert from byte position to line-column
+	///
+	/// # Returns
+	///
+	/// The `(line, column)` of the start of this span, or `None` if it's out of range for the
+	/// given text.
 	pub fn start_line_column(&self, text: &str) -> Option<(usize, usize)> {
 		let mut line = 0;
 		let mut column = 0;

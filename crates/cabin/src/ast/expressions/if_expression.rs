@@ -49,6 +49,7 @@ impl TryParse for IfExpression {
 impl CompileTime for IfExpression {
 	type Output = ExpressionOrPointer;
 
+	#[allow(clippy::almost_swapped, reason = "False positive; context.side_effects is reassigned")]
 	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
 		// Check condition
 		let condition = self.condition.evaluate_at_compile_time(context);
@@ -62,10 +63,10 @@ impl CompileTime for IfExpression {
 		context.side_effects = had_side_effects;
 
 		// Evaluate else body
-		let had_side_effects = context.side_effects;
-		context.side_effects = had_side_effects && !condition_is_true;
+		let had_side_effects_2 = context.side_effects;
+		context.side_effects = had_side_effects_2 && !condition_is_true;
 		let else_body = self.else_body.map(|else_body| else_body.evaluate_at_compile_time(context));
-		context.side_effects = had_side_effects;
+		context.side_effects = had_side_effects_2;
 
 		// Fully evaluated: return the value (only if true)
 		if condition_is_true {

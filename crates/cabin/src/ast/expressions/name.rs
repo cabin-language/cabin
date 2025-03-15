@@ -86,22 +86,6 @@ impl Typed for Name {
 	}
 }
 
-impl Name {
-	pub fn value<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Option<ExpressionPointer> {
-		context
-			.scope_tree
-			.get_variable_from_id(self, self.scope_id)
-			.ok_or_else(|| {
-				context.add_diagnostic(Diagnostic {
-					file: context.file.clone(),
-					info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::UnknownVariable(self.unmangled_name().to_owned()))),
-					span: self.span,
-				});
-			})
-			.ok()
-	}
-}
-
 impl<T: AsRef<str>> From<T> for Name {
 	fn from(value: T) -> Self {
 		Name {
@@ -151,6 +135,20 @@ impl Debug for Name {
 }
 
 impl Name {
+	pub fn value<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Option<ExpressionPointer> {
+		context
+			.scope_tree
+			.get_variable_from_id(self, self.scope_id)
+			.ok_or_else(|| {
+				context.add_diagnostic(Diagnostic {
+					file: context.file.clone(),
+					info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::UnknownVariable(self.unmangled_name().to_owned()))),
+					span: self.span,
+				});
+			})
+			.ok()
+	}
+
 	pub(crate) fn hardcoded<T: AsRef<str>>(name: T) -> Name {
 		Name {
 			name: name.as_ref().to_owned(),

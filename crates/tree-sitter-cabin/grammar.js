@@ -1,9 +1,3 @@
-/**
- * @file Cabin grammar for tree-sitter
- * @author Violet
- * @license LGPL
- */
-
 /// <reference types="tree-sitter-cli/dsl" />
 // @ts-check
 
@@ -39,7 +33,7 @@ module.exports = grammar({
 		)),
 
 		binary: $ => choice(
-			prec.left(6, seq(field("left", $.expression), field("operator", "."), field("right", $.identifier))),
+			prec.left(6, seq(field("left", $.expression), field("operator", choice(".", "::")), field("right", $.identifier))),
 			prec.right(5, seq(field("left", $.expression), "^", field("right", $.expression))),
 			prec.left(4, seq(field("left", $.expression), choice("*", "/"), field("right", $.expression))),
 			prec.left(3, seq(field("left", $.expression), choice("+", "-"), field("right", $.expression))),
@@ -50,6 +44,7 @@ module.exports = grammar({
 		literal: $ => choice(
 			$.function,
 			$.string,
+			$.raw_string,
 			$.number,
 			$.list,
 			$.group,
@@ -61,7 +56,15 @@ module.exports = grammar({
 			$.while_loop,
 			$.match,
 			$.block,
+			$.run,
 			$.identifier,
+		),
+
+		run: $ => seq(
+			"run",
+			"(",
+			$.expression,
+			")"
 		),
 
 		match: $ => seq(
@@ -193,6 +196,8 @@ module.exports = grammar({
 		pascal_case_identifier: _$ => /[A-Z]\w*/,
 		other_identifier: _$ => /[a-z_]\w*/,
 		identifier: $ => choice($.pascal_case_identifier, $.other_identifier),
+
+		raw_string: $ => /`[^`]*`/,
 
 		string: $ => seq(
 			'"',

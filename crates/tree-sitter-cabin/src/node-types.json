@@ -20,6 +20,10 @@
           {
             "type": ".",
             "named": false
+          },
+          {
+            "type": "::",
+            "named": false
           }
         ]
       },
@@ -653,6 +657,14 @@
           "named": true
         },
         {
+          "type": "raw_string",
+          "named": true
+        },
+        {
+          "type": "run",
+          "named": true
+        },
+        {
           "type": "string",
           "named": true
         },
@@ -805,6 +817,21 @@
         },
         {
           "type": "function_call",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "run",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "expression",
           "named": true
         }
       ]
@@ -981,6 +1008,10 @@
     "named": false
   },
   {
+    "type": "::",
+    "named": false
+  },
+  {
     "type": ";",
     "named": false
   },
@@ -1099,6 +1130,14 @@
   {
     "type": "pascal_case_identifier",
     "named": true
+  },
+  {
+    "type": "raw_string",
+    "named": true
+  },
+  {
+    "type": "run",
+    "named": false
   },
   {
     "type": "tobe",

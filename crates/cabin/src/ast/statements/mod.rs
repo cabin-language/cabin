@@ -66,7 +66,7 @@ impl Parse for Statement {
 
 					let _ = tokens.pop(token_type, context).unwrap();
 				}
-				let end = tokens.front().map(|front| front.span).unwrap_or(Span::unknown());
+				let end = tokens.front().map_or(Span::unknown(), |front| front.span);
 				Statement::Error(start.to(end))
 			},
 		}

@@ -12,6 +12,7 @@
 (binary ["and" "or"] @keyword)
 (match ["match" "otherwise"] @keyword)
 (function_call ["let"] @keyword)
+(run ["run"] @keyword)
 
 ; Semantics
 (type (expression (literal (identifier))) @type)
@@ -22,7 +23,12 @@
 	callee: (expression (binary operator: "." right: (identifier) @function.call))
 	(#set! "priority" 110)
 )
+(function_call
+	callee: (expression (binary operator: "::" right: (identifier) @function.call))
+	(#set! "priority" 110)
+)
 (binary operator: "." right: (identifier) @variable.member)
+(binary operator: "::" right: (identifier) @variable.member)
 (parameter name: (identifier) @variable.parameter)
 (group_field name: (identifier) @variable.member)
 (group_field
@@ -58,17 +64,18 @@
 (either_variant name: (identifier) @lsp.type.enumMember)
 
 (expression (literal (identifier (other_identifier))) @boolean (#any-of? @boolean "true" "false"))
-(expression (literal (identifier (other_identifier))) @constant.builtin (#any-of? @constant.builtin "nothing"))
-(expression (literal (identifier (other_identifier))) @variable (#not-any-of? @variable "true" "false" "nothing"))
+(expression (literal (identifier (other_identifier))) @constant.builtin (#any-of? @constant.builtin "nothing" "library"))
+(expression (literal (identifier (other_identifier))) @variable (#not-any-of? @variable "true" "false" "nothing" "library"))
 
 ; Brackets
 ["(" ")" "[" "]" "{" "}" "<" ">"] @punctuation.bracket
-[";" ":" "," "." "=>"] @punctuation.delimiter
+[";" ":" "," "." "=>" "::"] @punctuation.delimiter
 ["+" "-" "*" "/" "^" "==" "!=" "<=" ">=" "< " " >" "="] @operator
 (tag ["#"] @punctuation.special)
 
 ; Tokens
 (number) @number
 (string) @string
+(raw_string) @string
 (comment) @comment
 (pascal_case_identifier) @type

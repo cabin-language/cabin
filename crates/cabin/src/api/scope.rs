@@ -10,11 +10,11 @@ use crate::{api::context::Context, ast::expressions::name::Name, comptime::memor
 pub struct ScopeId(usize);
 
 impl ScopeId {
-	pub fn global() -> Self {
+	pub const fn global() -> Self {
 		Self(0)
 	}
 
-	pub fn stdlib() -> Self {
+	pub const fn stdlib() -> Self {
 		Self(1)
 	}
 }
@@ -94,7 +94,6 @@ impl Scope {
 	/// # Returns
 	/// A reference to the declaration data of the variable that exists in this scope with the given name. If none exists, `None` is returned. If it does exist
 	/// and `Some` is returned, the returned reference will have the same lifetime as this `Scope` object, as well as the given scopes slice.
-
 	fn get_variable<'scopes>(&'scopes self, name: impl Into<Name> + Clone, scopes: &'scopes [Self]) -> Option<ExpressionPointer> {
 		self.variables
 			.get(&name.clone().into())
@@ -129,7 +128,6 @@ impl Scope {
 	///
 	/// # Returns
 	/// A string representation of this scope to debug programs.
-
 	pub fn to_string(&self, scopes: &[Self]) -> String {
 		let mut string = vec!["{".to_owned()];
 		string.push(format!("\ttype: [{:?}]", self.scope_type));
@@ -174,7 +172,6 @@ impl ScopeTree {
 	///
 	/// # Returns
 	/// A newly created scope data object with an empty global scope.
-
 	pub fn global() -> Self {
 		Self {
 			scopes: vec![Scope {
@@ -216,7 +213,6 @@ impl ScopeTree {
 	///
 	/// # Returns
 	/// An immutable reference to the scope with this id, or `None` if no scope exists with the given id.
-
 	pub fn get_scope_from_id(&self, id: ScopeId) -> &Scope {
 		self.scopes.get(id.0).unwrap()
 	}
@@ -233,7 +229,6 @@ impl ScopeTree {
 	///
 	/// # Returns
 	/// A reference to the variable declaration, or `None` if the variable does not exist in the current scope.
-
 	pub fn get_variable_from_id(&self, name: impl Into<Name> + Clone, id: ScopeId) -> Option<ExpressionPointer> {
 		self.get_scope_from_id(id).get_variable(name, &self.scopes)
 	}
@@ -277,7 +272,6 @@ impl ScopeTree {
 	///
 	/// # Returns
 	/// The unique ID of the current scope
-
 	pub const fn unique_id(&self) -> ScopeId {
 		ScopeId(self.current_scope)
 	}
@@ -317,8 +311,6 @@ impl ScopeTree {
 			}))
 		})
 	}
-
-	/// Returns an immutable reference to the global scope in this scope data's scope arena. This does have to traverse up the scope tree,
 
 	/// Declares a new variable in the current scope with the given value and tags. This should only be used to declare a new variable,
 	/// not reassign an existing one. To reassign an existing variable, use `reassign_variable()`. To declare a new variable in a scope with a specific id,
@@ -377,8 +369,6 @@ impl ScopeTree {
 		// };
 	}
 
-	/// Returns the unique ID of the scope of the current file.
-
 	/// Reassigns a variable in the current scope. This will traverse up the scope tree through the current scope's parents to find the declaration for the given
 	/// variable name, and reassign the value. This is only to be used to reassign an existing variable. To add a new variable, use `add_variable()`. To
 	/// reassign a variable declared in this specific scope, use `reassign_variable_from_id()`. If the function traverses all the way into the global scope
@@ -392,20 +382,7 @@ impl ScopeTree {
 	/// # Errors
 	/// Returns an error if no variable with the given name exists in the current scope.
 	pub fn reassign_variable(&mut self, name: &Name, value: ExpressionPointer) {
-		self.reassign_variable_from_id(name, value, ScopeId(self.current_scope))
-	}
-
-	pub fn scope_type_of(&self, label: &Name) -> anyhow::Result<&ScopeType> {
-		let mut current = self.current();
-		while current.label != Some(label.to_owned()) {
-			if let Some(parent) = current.parent {
-				current = self.scopes.get(parent).unwrap();
-			} else {
-				anyhow::bail!("No scope found with the label \"{}\"", label.unmangled_name())
-			}
-		}
-
-		Ok(&current.scope_type)
+		self.reassign_variable_from_id(name, value, ScopeId(self.current_scope));
 	}
 
 	pub const fn get_stdlib_id() -> ScopeId {

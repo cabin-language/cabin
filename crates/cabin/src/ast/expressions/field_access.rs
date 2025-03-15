@@ -85,7 +85,7 @@ impl Spanned for FieldAccess {
 }
 
 impl FieldAccess {
-	pub(crate) fn new(left: ExpressionPointer, right: Name, scope_id: ScopeId, span: Span) -> FieldAccess {
+	pub(crate) const fn new(left: ExpressionPointer, right: Name, scope_id: ScopeId, span: Span) -> FieldAccess {
 		FieldAccess { left, right, scope_id, span }
 	}
 }

@@ -1,11 +1,14 @@
-use std::path::{Path, PathBuf};
+use std::{
+	fmt::Write as _,
+	path::{Path, PathBuf},
+};
 
 use super::context::StandardContext;
 use crate::{
 	api::{config::Config, diagnostics::Diagnostics},
 	ast::{expressions::name::Name, misc::program::Program},
-	comptime::CompileTime,
-	transpiler::TranspileToC,
+	comptime::CompileTime as _,
+	transpiler::TranspileToC as _,
 	Context,
 };
 
@@ -14,12 +17,16 @@ pub enum ProjectError {
 	#[error("Project directory doesn't exist.")]
 	RootDirectoryDoesntExist,
 
+	/// The error that occurs when there is no `cabin.toml` file locateable.
 	#[error("No cabin.toml file exists in the project root.")]
 	ConfigFileDoesntExist,
 
+	/// The error that occurs when the user's config file contains invalid TOML data, or is
+	/// missing required information.
 	#[error("cabin.toml contains invalid data: {0}")]
 	MalformattedConfigFile(toml_edit::de::Error),
 
+	/// The error that occurs when a project has no `src/main.cabin`.
 	#[error("No main file found.")]
 	NoMainFile,
 }
@@ -44,6 +51,16 @@ impl Project {
 	///
 	/// The project object, or an error if the project is corrupted in some way (root
 	/// directory doesn't exist, `cabin.toml` doesn't exist, etc.)
+	///
+	/// # Errors
+	///
+	/// Several errors can occur while instantiating the project object:
+	///
+	/// - If the given `root_directory` doesn't exist, an error is returned.
+	/// - If the project has no `cabin.toml` in it's root, or it does but it contains invalid data,
+	/// an error is returned.
+	/// - If the project has no locateable main file (`src/main.cabin` by default, or otherwise as
+	/// specified in `cabin.toml`), an error is returned.
 	pub fn from_root<P: AsRef<Path>>(root_directory: P) -> Result<Project, ProjectError> {
 		let root_directory = root_directory.as_ref();
 		if !root_directory.is_dir() {
@@ -52,7 +69,7 @@ impl Project {
 
 		let config_file = root_directory.join("cabin.toml");
 		let config_contents = std::fs::read_to_string(config_file).map_err(|_error| ProjectError::ConfigFileDoesntExist)?;
-		let config = toml_edit::de::from_str(&config_contents).map_err(|error| ProjectError::MalformattedConfigFile(error))?;
+		let config = toml_edit::de::from_str(&config_contents).map_err(ProjectError::MalformattedConfigFile)?;
 
 		let main_file = root_directory.join("src").join("main.cabin");
 		let main_file_contents = std::fs::read_to_string(&main_file).map_err(|_error| ProjectError::NoMainFile)?;
@@ -81,11 +98,11 @@ impl Project {
 		&self.root_directory
 	}
 
-	pub fn config(&self) -> &Config {
+	pub const fn config(&self) -> &Config {
 		&self.config
 	}
 
-	pub fn context(&self) -> &StandardContext {
+	pub const fn context(&self) -> &StandardContext {
 		&self.context
 	}
 
@@ -115,6 +132,9 @@ impl Project {
 		self.context.diagnostics()
 	}
 
+	/// Returns the name at the given byte position in the source code, or `None` if there is no
+	/// name at that byte position. The returned name contains environment (scope) information, so
+	/// this requires tokenizing and parsing the program, if it wasn't already.
 	pub fn name_at(&mut self, name_position: usize) -> Option<Name> {
 		self.context.side_effects = false;
 
@@ -130,7 +150,7 @@ impl Project {
 		self.context().name_query_result.clone()
 	}
 
-	pub fn printed(&self) -> bool {
+	pub const fn printed(&self) -> bool {
 		self.context.has_printed
 	}
 
@@ -145,7 +165,7 @@ impl Project {
 		let mut c_code = "#include <stdio.h>\n#include<stdlib.h>\n\nint main(int argc, char* argv[]) {\n\n".to_owned();
 
 		let body = self.program.as_ref().unwrap().to_c(&mut self.context, None).unwrap();
-		body.lines().for_each(|line| c_code += &format!("\t{line}\n"));
+		body.lines().for_each(|line| writeln!(c_code, "\t{line}").unwrap());
 
 		c_code += "\n\n\treturn 0;\n}";
 

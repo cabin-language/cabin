@@ -45,12 +45,12 @@ impl TryParse for ObjectConstructor {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, context, ListType::AngleBracketed, {
 				let parameter = Parameter::try_parse(tokens, context)?;
-				let name = parameter.name();
+				let parameter_name = parameter.name();
 				let error = Expression::error(Span::unknown(), context);
-				if let Err(error) = context.scope_tree.declare_new_variable(name.clone(), error) {
+				if let Err(error) = context.scope_tree.declare_new_variable(parameter_name.clone(), error) {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
-						span: name.span(context),
+						span: parameter_name.span(context),
 						info: DiagnosticInfo::Error(error),
 					});
 				}
@@ -127,7 +127,7 @@ impl CompileTime for ObjectConstructor {
 								span: field_value.span(context),
 								info: CompileTimeError::TypeMismatch(expected_type, field.field_type.clone()).into(),
 								file: context.file.clone(),
-							})
+							});
 						}
 					}
 					// Missing field
@@ -141,7 +141,7 @@ impl CompileTime for ObjectConstructor {
 				}
 
 				// Extra fields
-				for (field_name, _field_value) in &self.fields {
+				for field_name in self.fields.keys() {
 					if !group.fields.contains_key(field_name) {
 						context.add_diagnostic(Diagnostic {
 							span: field_name.span(context),
@@ -163,13 +163,13 @@ impl CompileTime for ObjectConstructor {
 
 impl Typed for ObjectConstructor {
 	fn get_type<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Type {
-		Type::Literal(self.type_name.value(context).map(|value| value.as_literal(context)).unwrap_or(LiteralPointer::ERROR))
+		Type::Literal(self.type_name.value(context).map_or(LiteralPointer::ERROR, |value| value.as_literal(context)))
 	}
 }
 
 impl TranspileToC for ObjectConstructor {
 	fn to_c<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &mut Context<Input, Output, Error>, _output: Option<String>) -> Result<String, TranspileError> {
-		Ok(format!("NULL"))
+		Ok("NULL".to_owned()) // TODO: obj constr c
 	}
 
 	fn c_prelude<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Result<String, TranspileError> {

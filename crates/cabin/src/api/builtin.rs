@@ -11,7 +11,7 @@ use crate::{
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	Context,
 	Span,
-	Spanned,
+	Spanned as _,
 };
 
 /// Calls a built-in function at compile-time. Built-in functions are called at compiled time with Rust code. This is used in
@@ -61,7 +61,7 @@ pub fn call_builtin_at_compile_time<Input: IoReader, Output: IoWriter, Error: Io
 			}
 
 			// Add hint diagnostic
-			if pointer != ExpressionPointer::ERROR {
+			if pointer != ExpressionPointer::ERROR && !context.interactive {
 				context.add_diagnostic(Diagnostic {
 					span: pointer.span(context),
 					info: DiagnosticInfo::Info(string_value),
@@ -92,7 +92,7 @@ pub fn call_builtin_at_compile_time<Input: IoReader, Output: IoWriter, Error: Io
 			}
 
 			// Add hint diagnostic
-			if pointer != ExpressionPointer::ERROR {
+			if pointer != ExpressionPointer::ERROR && !context.interactive {
 				context.add_diagnostic(Diagnostic {
 					span: pointer.span(context),
 					info: DiagnosticInfo::Info(string_value),
@@ -128,6 +128,7 @@ pub fn call_builtin_at_compile_time<Input: IoReader, Output: IoWriter, Error: Io
 		},
 
 		"Anything.to_string" => {
+			#[allow(clippy::or_fun_call, reason = "False positive; Returning reference")]
 			let this = arguments
 				.first()
 				.unwrap_or(&Expression::error(span, context))

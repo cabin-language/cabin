@@ -268,7 +268,7 @@ pub enum TokenType {
 }
 
 impl TokenType {
-	pub(crate) fn is_whitespace(&self) -> bool {
+	pub(crate) const fn is_whitespace(self) -> bool {
 		matches!(self, TokenType::Whitespace | TokenType::Comment)
 	}
 
@@ -359,8 +359,7 @@ impl TokenType {
 	///
 	/// # Returns
 	/// The matched text of the token type in the given code, or `None` if no match was found.
-
-	pub(crate) fn get_match(&self, code: &str) -> Option<String> {
+	pub(crate) fn get_match(self, code: &str) -> Option<String> {
 		self.pattern().find(code).map(|m| m.as_str().to_owned())
 	}
 
@@ -371,7 +370,6 @@ impl TokenType {
 	///
 	/// # Returns
 	/// The first token type that matches the given code, along with the matched text.
-
 	fn find_match(code: &str) -> Option<(Self, String)> {
 		for token_type in Self::iter() {
 			if let Some(matched) = token_type.get_match(code) {
@@ -484,7 +482,7 @@ pub(crate) fn tokenize_string(string: &str) -> VecDeque<Token> {
 	// We only read tokens from the start of a string, so we repeatedly loop over the code and remove the tokenized text when we find tokens.
 	// This means we can just iterate while code isn't empty.
 	while !code.is_empty() {
-		let (token_type, value) = TokenType::find_match(&code).unwrap_or((TokenType::Unknown, code.chars().next().unwrap().to_string()));
+		let (token_type, value) = TokenType::find_match(&code).unwrap_or_else(|| (TokenType::Unknown, code.chars().next().unwrap().to_string()));
 		let length = value.len();
 
 		let value = if token_type == TokenType::Comment {

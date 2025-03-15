@@ -40,13 +40,11 @@ impl CompileTime for Parameter {
 	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
 		let evaluated = self.parameter_type.evaluate_to_literal(context);
 
-		let parameter = EvaluatedParameter {
+		EvaluatedParameter {
 			name: self.name.clone(),
 			parameter_type: Type::Literal(evaluated),
 			span: self.span,
-		};
-
-		parameter
+		}
 	}
 }
 
@@ -82,11 +80,11 @@ impl Spanned for EvaluatedParameter {
 }
 
 impl EvaluatedParameter {
-	pub(crate) fn parameter_type(&self) -> &Type {
+	pub(crate) const fn parameter_type(&self) -> &Type {
 		&self.parameter_type
 	}
 
-	pub(crate) fn name(&self) -> &Name {
+	pub(crate) const fn name(&self) -> &Name {
 		&self.name
 	}
 }

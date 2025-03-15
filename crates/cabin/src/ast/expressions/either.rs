@@ -19,7 +19,7 @@ use crate::{
 	io::{IoReader, IoWriter},
 	lexer::TokenType,
 	parse_list,
-	parser::{ListType, Parse, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	scope::ScopeType,
 	typechecker::Type,
 	Span,
@@ -83,7 +83,7 @@ impl TryParse for Either {
 					span = span.to(parameter_type.span(context));
 					parameter_type
 				})
-				.unwrap_or(Expression::Name(Name::new("Anything", context, name.span(context))).store_in_memory(context));
+				.unwrap_or_else(|| Expression::Name(Name::new("Anything", context, name.span(context))).store_in_memory(context));
 				let error = Expression::error(Span::unknown(), context);
 				if let Err(error) = context.scope_tree.declare_new_variable(name.clone(), error) {
 					context.add_diagnostic(Diagnostic {

@@ -91,9 +91,7 @@ impl CompileTime for ForEachLoop {
 			let elements = pointer.evaluated_literal(context).try_as::<LiteralList>().cloned().unwrap_or_else(|_| LiteralList::empty());
 
 			for element in &*elements {
-				context
-					.scope_tree
-					.reassign_variable_from_id(&self.binding_name, element.clone().into(), self.inner_scope_id);
+				context.scope_tree.reassign_variable_from_id(&self.binding_name, (*element).into(), self.inner_scope_id);
 				let _value = self.body.clone().evaluate_at_compile_time(context);
 			}
 		}

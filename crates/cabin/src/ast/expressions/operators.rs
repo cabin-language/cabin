@@ -15,7 +15,6 @@ use crate::{
 			if_expression::IfExpression,
 			name::Name,
 			object::ObjectConstructor,
-			run::RunExpression,
 			Expression,
 		},
 		sugar::{list::List, string::CabinString},
@@ -73,7 +72,7 @@ fn parse_binary_expression<Input: IoReader, Output: IoWriter, Error: IoWriter>(
 	while tokens.next_is_one_of(operation.token_types) {
 		let operator_token = tokens.pop(tokens.peek_type(context)?, context)?;
 		let right = operation.parse_precedent(tokens, context)?;
-		expression = Expression::FunctionCall(FunctionCall::from_binary_operation(context, expression, right, operator_token)?).store_in_memory(context);
+		expression = Expression::FunctionCall(FunctionCall::from_binary_operation(context, expression, right, operator_token)).store_in_memory(context);
 	}
 
 	Ok(expression)

@@ -5,7 +5,7 @@ use crate::{
 		expressions::literal::Object,
 		statements::{declaration::Declaration, Statement},
 	},
-	comptime::{memory::LiteralPointer, CompileTime},
+	comptime::CompileTime,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	io::{IoReader, IoWriter},
 	parser::{Parse, ParseError, TokenQueue, TokenQueueFunctionality as _},
@@ -37,10 +37,10 @@ impl Parse for Module {
 					declarations.push(declaration);
 				},
 				Statement::Error(_span) => {},
-				statement => context.add_diagnostic(Diagnostic {
+				other_statement => context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
-					span: statement.span(context),
-					info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::InvalidTopLevelStatement { statement })),
+					span: other_statement.span(context),
+					info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::InvalidTopLevelStatement { statement: other_statement })),
 				}),
 			};
 		}
@@ -54,11 +54,10 @@ impl CompileTime for Module {
 	type Output = Module;
 
 	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
-		let evaluated = Self {
+		Self {
 			declarations: self.declarations.into_iter().map(|statement| statement.evaluate_at_compile_time(context)).collect(),
 			inner_scope_id: self.inner_scope_id,
-		};
-		evaluated
+		}
 	}
 }
 

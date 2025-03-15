@@ -27,6 +27,7 @@ impl TryParse for List {
 	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
 		let mut list = Vec::new();
 		let end = parse_list!(tokens, context, ListType::Bracketed, { list.push(Expression::parse(tokens, context)) }).span;
+
 		Ok(List {
 			elements: list,
 			span: Span::unknown(),

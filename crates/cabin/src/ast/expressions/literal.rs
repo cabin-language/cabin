@@ -30,23 +30,23 @@ use crate::{
 };
 
 #[derive(Clone, Debug)]
-pub enum Literal<'a> {
-	Evaluated(&'a EvaluatedLiteral),
-	Unevaluated(&'a UnevaluatedLiteral),
+pub enum Literal<'context> {
+	Evaluated(&'context EvaluatedLiteral),
+	Unevaluated(&'context UnevaluatedLiteral),
 }
 
 impl Literal<'_> {
-	pub fn as_evaluated(&self) -> Option<&EvaluatedLiteral> {
+	pub const fn as_evaluated(&self) -> Option<&EvaluatedLiteral> {
 		match self {
 			Literal::Evaluated(evaluated) => Some(evaluated),
-			_ => None,
+			Literal::Unevaluated(_) => None,
 		}
 	}
 }
 
-pub enum LiteralMut<'a> {
-	Evaluated(&'a mut EvaluatedLiteral),
-	Unevaluated(&'a mut UnevaluatedLiteral),
+pub enum LiteralMut<'context> {
+	Evaluated(&'context mut EvaluatedLiteral),
+	Unevaluated(&'context mut UnevaluatedLiteral),
 }
 
 #[derive(Debug, Clone, try_as::macros::TryAsRef)]
@@ -59,7 +59,7 @@ pub enum UnevaluatedLiteral {
 }
 
 impl UnevaluatedLiteral {
-	pub(crate) fn kind_name(&self) -> &'static str {
+	pub(crate) const fn kind_name(&self) -> &'static str {
 		match self {
 			Self::Group(_) => "Group",
 			Self::FunctionDeclaration(_) => "Function",
@@ -110,7 +110,7 @@ pub enum EvaluatedLiteral {
 }
 
 impl EvaluatedLiteral {
-	pub(crate) fn kind_name(&self) -> &'static str {
+	pub(crate) const fn kind_name(&self) -> &'static str {
 		match self {
 			Self::Group(_) => "Group",
 			Self::Object(_) => "Object",
@@ -165,7 +165,7 @@ impl Object {
 		}
 	}
 
-	pub(crate) fn type_name(&self) -> &Name {
+	pub(crate) const fn type_name(&self) -> &Name {
 		&self.type_name
 	}
 

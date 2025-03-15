@@ -1,4 +1,4 @@
-use std::io::{Stderr, Stdin, Stdout, Write};
+use std::io::{Stderr, Stdin, Stdout, Write as _};
 
 use colored::{ColoredString, Colorize as _};
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -51,6 +51,7 @@ impl From<&StyledString> for ColoredString {
 	}
 }
 
+#[allow(clippy::multiple_inherent_impl, reason = "these must be separate because one is #[wasm_bindgen] and one is not")]
 impl StyledString {
 	pub fn plain<S: AsRef<str>>(value: S) -> Self {
 		StyledString {
@@ -65,7 +66,7 @@ impl StyledString {
 }
 
 pub trait IoReader {
-	fn read(&mut self) -> String;
+	fn read_line(&mut self) -> String;
 }
 
 pub trait IoWriter {
@@ -113,13 +114,14 @@ impl IoWriter for Stderr {
 }
 
 impl IoReader for Stdin {
-	fn read(&mut self) -> String {
+	fn read_line(&mut self) -> String {
 		let mut line = String::new();
 		let _ = std::io::stdin().read_line(&mut line).unwrap();
 		line = line.get(0..line.len() - 1).unwrap().to_owned();
 		line
 	}
 }
+
 pub struct Io<Input: IoReader, Output: IoWriter, Error: IoWriter> {
 	pub input: Input,
 	pub output: Output,

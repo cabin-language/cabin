@@ -95,6 +95,9 @@ impl TryParse for PostfixOperators {
 			let arguments = if_then_else_default!(tokens.next_is(TokenType::LeftParenthesis), {
 				let mut arguments = Vec::new();
 				end = parse_list!(tokens, context, ListType::Parenthesized, {
+					if tokens.next_is(TokenType::KeywordLet) {
+						let _ = tokens.pop(TokenType::KeywordLet, context).unwrap();
+					}
 					arguments.push(Expression::parse(tokens, context));
 				})
 				.span;
@@ -226,12 +229,12 @@ impl CompileTime for FunctionCall {
 			if let Some(block) = function_declaration.body() {
 				// Add compile-time arguments
 				for (argument, parameter) in compile_time_arguments.iter().zip(function_declaration.compile_time_parameters().iter()) {
-					context.scope_tree.reassign_variable_from_id(parameter.name(), argument.clone(), block.inner_scope_id());
+					context.scope_tree.reassign_variable_from_id(parameter.name(), *argument, block.inner_scope_id());
 				}
 
 				// Add arguments
 				for (argument, parameter) in arguments.iter().zip(function_declaration.parameters().iter()) {
-					context.scope_tree.reassign_variable_from_id(parameter.name(), argument.clone(), block.inner_scope_id());
+					context.scope_tree.reassign_variable_from_id(parameter.name(), *argument, block.inner_scope_id());
 				}
 
 				// Return value
@@ -239,18 +242,42 @@ impl CompileTime for FunctionCall {
 				return ExpressionOrPointer::Expression(Expression::Block(return_value));
 			}
 			// Builtin function
-			else {
-				let mut builtin_name = None;
-				let mut runtime = None;
+			let mut builtin_name = None;
 
-				// Get builtin and side effect tags
-				for tag in &function_declaration.tags().values {
-					if let Ok(literal) = tag.try_as_literal(context) {
-						let object = literal.evaluated_literal(context).try_as::<Object>().unwrap();
-						if object.type_name() == &Name::from("BuiltinTag") {
-							builtin_name = Some(
+			// TODO: runtime tag
+			#[allow(clippy::collection_is_never_read, reason = "will do later")]
+			let mut runtime = None;
+
+			// Get builtin and side effect tags
+			for tag in &function_declaration.tags().values {
+				if let Ok(tag_literal) = tag.try_as_literal(context) {
+					let object = tag_literal.evaluated_literal(context).try_as::<Object>().unwrap();
+					if object.type_name() == &Name::from("BuiltinTag") {
+						builtin_name = Some(
+							object
+								.get_field("internal_name")
+								.unwrap()
+								.evaluated_literal(context)
+								.try_as::<CabinString>()
+								.unwrap()
+								.value
+								.to_owned(),
+						);
+						continue;
+					}
+				}
+
+				if let Ok(tag_pointer) = tag.try_as_literal(context) {
+					if let Ok(object) = tag_pointer.evaluated_literal(context).try_as::<Object>() {
+						if object.type_name() == &"RuntimeTag".into() {
+							runtime = Some(
 								object
-									.get_field("internal_name")
+									.get_field("reason")
+									.unwrap()
+									.evaluated_literal(context)
+									.try_as::<Object>()
+									.unwrap()
+									.get_field("internal_value")
 									.unwrap()
 									.evaluated_literal(context)
 									.try_as::<CabinString>()
@@ -258,48 +285,25 @@ impl CompileTime for FunctionCall {
 									.value
 									.to_owned(),
 							);
-							continue;
-						}
-					}
-
-					if let Ok(pointer) = tag.try_as_literal(context) {
-						if let Ok(object) = pointer.evaluated_literal(context).try_as::<Object>() {
-							if object.type_name() == &"RuntimeTag".into() {
-								runtime = Some(
-									object
-										.get_field("reason")
-										.unwrap()
-										.evaluated_literal(context)
-										.try_as::<Object>()
-										.unwrap()
-										.get_field("internal_value")
-										.unwrap()
-										.evaluated_literal(context)
-										.try_as::<CabinString>()
-										.unwrap()
-										.value
-										.to_owned(),
-								);
-							}
 						}
 					}
 				}
-
-				// Call builtin function
-				if let Some(internal_name) = builtin_name {
-					// if !system_side_effects || context.side_effects {
-					// 	if let Some(_runtime_reason) = runtime {
-					// 		// TODO: runtime tag
-					// 	}
-
-					return ExpressionOrPointer::Pointer(call_builtin_at_compile_time(&internal_name, context, arguments, self.span));
-					// }
-
-					// return ExpressionOrPointer::Pointer(Expression::error(Span::unknown(), context));
-				}
-
-				return ExpressionOrPointer::Pointer(Expression::error(span, context));
 			}
+
+			// Call builtin function
+			if let Some(internal_name) = builtin_name {
+				// if !system_side_effects || context.side_effects {
+				// 	if let Some(_runtime_reason) = runtime {
+				// 		// TODO: runtime tag
+				// 	}
+
+				return ExpressionOrPointer::Pointer(call_builtin_at_compile_time(&internal_name, context, arguments, self.span));
+				// }
+
+				// return ExpressionOrPointer::Pointer(Expression::error(Span::unknown(), context));
+			}
+
+			return ExpressionOrPointer::Pointer(Expression::error(span, context));
 		}
 
 		ExpressionOrPointer::Expression(Expression::FunctionCall(FunctionCall {
@@ -390,7 +394,7 @@ impl FunctionCall {
 		left: ExpressionPointer,
 		right: ExpressionPointer,
 		operation: Token,
-	) -> Result<FunctionCall, Diagnostic> {
+	) -> FunctionCall {
 		let function_name = match operation.token_type {
 			TokenType::Asterisk => "times",
 			TokenType::DoubleEquals => "equals",
@@ -406,17 +410,17 @@ impl FunctionCall {
 		let middle = operation.span;
 		let end = right.span(context);
 
-		Ok(FunctionCall {
+		FunctionCall {
 			function: Expression::FieldAccess(FieldAccess::new(left, Name::from(function_name), context.scope_tree.unique_id(), start.to(middle))).store_in_memory(context),
 			arguments: vec![right],
 			compile_time_arguments: Vec::new(),
 			scope_id: context.scope_tree.unique_id(),
 			span: start.to(end),
 			tags: TagList::default(),
-		})
+		}
 	}
 
-	pub(crate) fn basic<Input: IoReader, Output: IoWriter, Error: IoWriter>(function: ExpressionPointer, context: &mut Context<Input, Output, Error>) -> FunctionCall {
+	pub(crate) fn basic<Input: IoReader, Output: IoWriter, Error: IoWriter>(function: ExpressionPointer, context: &Context<Input, Output, Error>) -> FunctionCall {
 		FunctionCall {
 			function,
 			arguments: Vec::new(),

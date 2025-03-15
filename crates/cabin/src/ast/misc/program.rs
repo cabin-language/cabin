@@ -37,11 +37,10 @@ impl CompileTime for Program {
 	type Output = Program;
 
 	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
-		let evaluated = Self {
+		Self {
 			statements: self.statements.into_iter().map(|statement| statement.evaluate_at_compile_time(context)).collect(),
 			inner_scope_id: self.inner_scope_id,
-		};
-		evaluated
+		}
 	}
 }
 
@@ -49,11 +48,10 @@ impl Runtime for Program {
 	type Output = Program;
 
 	fn evaluate_at_runtime<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
-		let evaluated = Self {
+		Self {
 			statements: self.statements.into_iter().map(|statement| statement.evaluate_at_runtime(context)).collect(),
 			inner_scope_id: self.inner_scope_id,
-		};
-		evaluated
+		}
 	}
 }
 

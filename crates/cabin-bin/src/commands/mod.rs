@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use build::BuildCommand;
 use cabin::{
 	diagnostics::{DiagnosticInfo, Diagnostics},
 	theme::CatppuccinMocha,
@@ -12,6 +13,7 @@ use run::RunCommand;
 
 use crate::{snippet::show_snippet, wrap};
 
+mod build;
 mod check;
 mod interactive;
 mod new;
@@ -26,6 +28,7 @@ pub trait CabinCommand {
 #[derive(clap::Subcommand)]
 #[enum_dispatch::enum_dispatch(CabinCommand)]
 pub enum SubCommand {
+	Build(BuildCommand),
 	Run(RunCommand),
 	New(NewCommand),
 	Check(CheckCommand),

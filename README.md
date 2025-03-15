@@ -51,7 +51,9 @@ Cabin has had special care given to its error messages, providing detailed, read
 
 ### Simple Syntax
 
-Cabin is designed to be dead simple. The language only has 17 keywords, and the grammar is absolutely tiny; [The Tree-Sitter grammar](./crates/tree-sitter-cabin/grammar.js) is only about ~200 lines. The language intentionally avoids adding sugar for existing syntax; There's almost always just one way to do something.
+Cabin is designed to be dead simple. The language only has 17 keywords, and the grammar is absolutely tiny; [The Extended Backus-Naur Form grammar](https://cabin-language.org/reference/syntax) is **less than 100 lines**. For reference, [an EBNF grammar for C](https://gist.github.com/Chubek/52884d1fa766fa16ae8d8f226ba105ad) is 360+ lines, [one for JavaScript](https://gist.github.com/Chubek/0ab33e40b01a029a7195326e89646ec5) is 370+, and [one for Python](https://docs.python.org/3/reference/grammar.html) is 830+. Obviously, these metrics don't mean too much, given how affected they are by whitespace and preferential rule splitting, but it's food for thought.
+
+The language intentionally avoids adding sugar for existing syntax; There's almost always just one way to do something.
 
 ## Philosophy
 

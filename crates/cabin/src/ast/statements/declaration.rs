@@ -65,52 +65,18 @@ impl TryParse for Declaration {
 
 		let expression = value.expression_mut(context);
 		expression.set_name(name.clone());
-		let expression = value.expression(context);
+		let expression_value = value.expression(context);
 
-		match expression {
-			Expression::Literal(literal) => match literal {
-				UnevaluatedLiteral::Group(_) | UnevaluatedLiteral::Either(_) | UnevaluatedLiteral::Extend(_) => {
-					if !name.unmangled_name().is_case(Case::Pascal) {
-						context.add_diagnostic(Diagnostic {
-							file: context.file.clone(),
-							span: name.span(context),
-							info: DiagnosticInfo::Warning(Warning::NonPascalCaseGroup {
-								original_name: name.unmangled_name().to_owned(),
-								type_name: expression.kind_name().to_owned(),
-							}),
-						});
-					}
-				},
-				_ => {
-					if !name.unmangled_name().is_case(Case::Snake) {
-						context.add_diagnostic(Diagnostic {
-							file: context.file.clone(),
-							span: name.span(context),
-							info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
-								original_name: name.unmangled_name().to_owned(),
-							}),
-						})
-					}
-				},
-			},
-			Expression::EvaluatedLiteral(literal) => {
-				if matches!(literal, EvaluatedLiteral::Group(_) | EvaluatedLiteral::Either(_) | EvaluatedLiteral::Extend(_)) {
-					if !name.unmangled_name().is_case(Case::Pascal) {
-						context.add_diagnostic(Diagnostic {
-							file: context.file.clone(),
-							span: name.span(context),
-							info: DiagnosticInfo::Warning(Warning::NonPascalCaseGroup {
-								original_name: name.unmangled_name().to_owned(),
-								type_name: literal.kind_name().to_owned(),
-							}),
-						});
-					}
-				} else if !name.unmangled_name().is_case(Case::Snake) {
+		match expression_value {
+			Expression::Literal(UnevaluatedLiteral::Group(_) | UnevaluatedLiteral::Either(_) | UnevaluatedLiteral::Extend(_))
+			| Expression::EvaluatedLiteral(EvaluatedLiteral::Group(_) | EvaluatedLiteral::Extend(_) | EvaluatedLiteral::Either(_)) => {
+				if !name.unmangled_name().is_case(Case::Pascal) {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span: name.span(context),
-						info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
+						info: DiagnosticInfo::Warning(Warning::NonPascalCaseGroup {
 							original_name: name.unmangled_name().to_owned(),
+							type_name: expression_value.kind_name().to_owned(),
 						}),
 					});
 				}
@@ -152,7 +118,7 @@ impl CompileTime for Declaration {
 	type Output = Declaration;
 
 	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
-		let evaluated = self.value(context).clone().evaluate_at_compile_time(context); // TODO: use a mapping function instead of cloning
+		let evaluated = self.value(context).evaluate_at_compile_time(context); // TODO: use a mapping function instead of cloning
 		context.scope_tree.reassign_variable_from_id(&self.name, evaluated, self.scope_id);
 		self
 	}
@@ -162,7 +128,7 @@ impl Runtime for Declaration {
 	type Output = Declaration;
 
 	fn evaluate_at_runtime<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
-		let evaluated = self.value(context).clone().evaluate_at_runtime(context);
+		let evaluated = self.value(context).evaluate_at_runtime(context);
 		context.scope_tree.reassign_variable_from_id(&self.name, evaluated, self.scope_id);
 		self
 	}

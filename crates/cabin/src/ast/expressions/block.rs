@@ -65,6 +65,10 @@ impl Block {
 			span: start.to(end),
 		})
 	}
+
+	pub(crate) const fn inner_scope_id(&self) -> ScopeId {
+		self.inner_scope_id
+	}
 }
 
 impl TryParse for Block {
@@ -112,11 +116,5 @@ impl TranspileToC for Block {
 impl Spanned for Block {
 	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
 		self.span.to_owned()
-	}
-}
-
-impl Block {
-	pub(crate) fn inner_scope_id(&self) -> ScopeId {
-		self.inner_scope_id
 	}
 }

@@ -1,12 +1,9 @@
 use crate::{
 	api::context::Context,
-	ast::expressions::{Expression, Spanned},
+	ast::expressions::Spanned,
 	comptime::{memory::ExpressionPointer, CompileTime},
-	diagnostics::Diagnostic,
 	interpreter::Runtime,
 	io::{IoReader, IoWriter},
-	lexer::TokenType,
-	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
 	Span,
 };
@@ -45,10 +42,8 @@ impl CompileTime for RunExpression {
 	type Output = RunExpression;
 
 	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, _context: &mut Context<Input, Output, Error>) -> Self::Output {
-		RunExpression {
-			expression: self.expression,
-			span: self.span,
-		}
+		// TODO: evaluate subexpressions
+		self
 	}
 }
 
@@ -75,6 +70,6 @@ impl Spanned for RunExpression {
 /// Indicates that this type of expression can be prefixed by the `run` keyword. In this case,
 /// the expression needs to implement how the `run` keyword should act on it via
 /// `evaluate_subexpressions_at_compile_time()`.
-pub trait RuntimeableExpression: Sized {
+pub trait RuntimeableExpression {
 	fn evaluate_subexpressions_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self;
 }
