@@ -15,7 +15,7 @@ use crate::{
 	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	if_then_else_default,
 	if_then_some,
-	io::{IoReader, IoWriter},
+	io::Io,
 	lexer::{Token, TokenType},
 	parse_list,
 	parser::{ListType, Parse as _, ParseError, TokenQueueFunctionality as _, TryParse},
@@ -48,10 +48,7 @@ pub struct GroupDeclaration {
 impl TryParse for GroupDeclaration {
 	type Output = GroupDeclaration;
 
-	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(
-		tokens: &mut VecDeque<Token>,
-		context: &mut Context<Input, Output, Error>,
-	) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<System: Io>(tokens: &mut VecDeque<Token>, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordGroup, context)?.span;
 		context.scope_tree.enter_new_scope(ScopeType::Group);
 
@@ -143,7 +140,7 @@ impl TryParse for GroupDeclaration {
 impl CompileTime for GroupDeclaration {
 	type Output = EvaluatedGroupDeclaration;
 
-	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
 		let mut fields = HashMap::new();
 
 		for (name, field) in self.fields {
@@ -177,7 +174,7 @@ impl CompileTime for GroupDeclaration {
 }
 
 impl Spanned for GroupDeclaration {
-	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
+	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
 		self.span
 	}
 }

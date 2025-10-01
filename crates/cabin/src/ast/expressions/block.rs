@@ -6,7 +6,7 @@ use crate::{
 	ast::statements::Statement,
 	comptime::CompileTime,
 	diagnostics::Diagnostic,
-	io::{IoReader, IoWriter},
+	io::Io,
 	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
@@ -41,11 +41,7 @@ impl Block {
 	/// # Errors
 	///
 	/// If an unexpected token was encountered.
-	pub fn parse_with_scope_type<Input: IoReader, Output: IoWriter, Error: IoWriter>(
-		tokens: &mut TokenQueue,
-		context: &mut Context<Input, Output, Error>,
-		scope_type: ScopeType,
-	) -> Result<Block, Diagnostic> {
+	pub fn parse_with_scope_type<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>, scope_type: ScopeType) -> Result<Block, Diagnostic> {
 		context.scope_tree.enter_new_scope(scope_type);
 		let scope_id = context.scope_tree.unique_id();
 		let start = tokens.pop(TokenType::LeftBrace, context)?.span;
@@ -74,7 +70,7 @@ impl Block {
 impl TryParse for Block {
 	type Output = Block;
 
-	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
 		Block::parse_with_scope_type(tokens, context, ScopeType::Block)
 	}
 }
@@ -86,7 +82,7 @@ impl CompileTime for Block {
 	/// statement was present.
 	type Output = Block;
 
-	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
 		let mut statements = Vec::new();
 
 		for statement in self.statements {
@@ -103,7 +99,7 @@ impl CompileTime for Block {
 }
 
 impl TranspileToC for Block {
-	fn to_c<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>, _output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c<System: Io>(&self, context: &mut Context<System>, _output: Option<String>) -> Result<String, TranspileError> {
 		let mut builder = vec!["{".to_owned()];
 		for statement in &self.statements {
 			builder.push(format!("\t{}", statement.to_c(context, None)?));
@@ -114,7 +110,7 @@ impl TranspileToC for Block {
 }
 
 impl Spanned for Block {
-	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
+	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
 		self.span.to_owned()
 	}
 }

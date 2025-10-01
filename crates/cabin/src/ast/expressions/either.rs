@@ -16,7 +16,7 @@ use crate::{
 	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	if_then_else_default,
 	if_then_some,
-	io::{IoReader, IoWriter},
+	io::Io,
 	lexer::TokenType,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -66,7 +66,7 @@ pub struct EitherVariant {
 impl TryParse for Either {
 	type Output = Either;
 
-	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordEither, context)?.span;
 		let mut variants = Vec::new();
 
@@ -136,7 +136,7 @@ impl TryParse for Either {
 impl CompileTime for Either {
 	type Output = EvaluatedEither;
 
-	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(mut self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn evaluate_at_compile_time<System: Io>(mut self, context: &mut Context<System>) -> Self::Output {
 		// Tags
 		self.tags = self.tags.evaluate_at_compile_time(context);
 
@@ -172,13 +172,13 @@ impl CompileTime for Either {
 }
 
 impl Spanned for Either {
-	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
+	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
 		self.span.to_owned()
 	}
 }
 
 impl Dot for EvaluatedEither {
-	fn dot<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, name: &Name, _context: &mut Context<Input, Output, Error>) -> ExpressionPointer {
+	fn dot<System: Io>(&self, name: &Name, _context: &mut Context<System>) -> ExpressionPointer {
 		self.variants
 			.iter()
 			.find_map(|variant| (name == &variant.name).then_some(variant.value))

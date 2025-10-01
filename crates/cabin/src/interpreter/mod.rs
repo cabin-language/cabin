@@ -1,9 +1,6 @@
-use crate::{
-	io::{IoReader, IoWriter},
-	Context,
-};
+use crate::{io::Io, Context};
 
 pub trait Runtime {
 	type Output;
-	fn evaluate_at_runtime<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output;
+	fn evaluate_at_runtime<System: Io>(self, context: &mut Context<System>) -> Self::Output;
 }

@@ -7,7 +7,7 @@ use crate::{
 	},
 	comptime::{memory::ExpressionPointer, CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	io::{IoReader, IoWriter},
+	io::Io,
 	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	Span,
@@ -37,7 +37,7 @@ pub struct ForEachLoop {
 impl TryParse for ForEachLoop {
 	type Output = ForEachLoop;
 
-	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordForEach, context)?.span;
 
 		let binding_name = Name::try_parse(tokens, context)?;
@@ -74,7 +74,7 @@ impl TryParse for ForEachLoop {
 impl CompileTime for ForEachLoop {
 	type Output = ExpressionOrPointer;
 
-	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(mut self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn evaluate_at_compile_time<System: Io>(mut self, context: &mut Context<System>) -> Self::Output {
 		self.iterable = self.iterable.evaluate_at_compile_time(context);
 
 		let literal = self.iterable.try_as_literal(context);
@@ -101,7 +101,7 @@ impl CompileTime for ForEachLoop {
 }
 
 impl Spanned for ForEachLoop {
-	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
+	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
 		self.span
 	}
 }

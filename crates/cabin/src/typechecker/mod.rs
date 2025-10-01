@@ -1,9 +1,6 @@
-use crate::{
-	ast::expressions::literal::EvaluatedLiteral,
-	comptime::memory::LiteralPointer,
-	io::{IoReader, IoWriter},
-	Context,
-};
+use std::fmt::Write as _;
+
+use crate::{ast::expressions::literal::EvaluatedLiteral, comptime::memory::LiteralPointer, io::Io, Context};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Type {
@@ -11,11 +8,11 @@ pub enum Type {
 }
 
 pub trait Typed {
-	fn get_type<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Type;
+	fn get_type<System: Io>(&self, context: &mut Context<System>) -> Type;
 }
 
 impl Type {
-	pub(crate) fn is_assignable_to<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, other: &Type, context: &mut Context<Input, Output, Error>) -> bool {
+	pub(crate) fn is_assignable_to<System: Io>(&self, other: &Type, context: &mut Context<System>) -> bool {
 		let Type::Literal(source) = self;
 		let Type::Literal(target) = other;
 
@@ -38,14 +35,15 @@ impl Type {
 		source == target
 	}
 
-	pub fn name<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> String {
+	pub fn name<System: Io>(&self, context: &mut Context<System>) -> String {
 		match self {
 			Type::Literal(literal) => match literal.evaluated_literal(context).to_owned() {
 				EvaluatedLiteral::Group(group) => group.name.as_ref().map_or_else(|| "Unknown".to_owned(), |name| name.unmangled_name().to_owned()),
 				EvaluatedLiteral::FunctionDeclaration(function) => {
 					let mut result = "action".to_owned();
 					if !function.compile_time_parameters().is_empty() {
-						result += &format!(
+						write!(
+							result,
 							"<{}>",
 							function
 								.compile_time_parameters()
@@ -53,10 +51,12 @@ impl Type {
 								.map(|parameter| parameter.name().unmangled_name().to_owned())
 								.collect::<Vec<_>>()
 								.join(", "),
-						);
+						)
+						.unwrap();
 					}
 					if !function.parameters().is_empty() {
-						result += &format!(
+						write!(
+							result,
 							"({})",
 							function
 								.parameters()
@@ -64,10 +64,11 @@ impl Type {
 								.map(|parameter| format!("{}: {}", parameter.name().unmangled_name(), parameter.parameter_type().name(context)))
 								.collect::<Vec<_>>()
 								.join(", "),
-						);
+						)
+						.unwrap();
 					}
 					if let Some(return_type) = function.return_type() {
-						result += &format!(": {}", return_type.name(context));
+						write!(result, ": {}", return_type.name(context)).unwrap();
 					}
 					result
 				},
@@ -78,5 +79,5 @@ impl Type {
 }
 
 pub trait Check {
-	fn is_valid<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> bool;
+	fn is_valid<System: Io>(&self, context: &mut Context<System>) -> bool;
 }

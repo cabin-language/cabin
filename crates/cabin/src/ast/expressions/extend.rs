@@ -15,7 +15,7 @@ use crate::{
 	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	if_then_else_default,
 	if_then_some,
-	io::{IoReader, IoWriter},
+	io::Io,
 	lexer::TokenType,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -59,7 +59,7 @@ pub struct Extend {
 impl TryParse for Extend {
 	type Output = Extend;
 
-	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordExtend, context)?.span;
 
 		context.scope_tree.enter_new_scope(ScopeType::Extend);
@@ -129,7 +129,7 @@ impl TryParse for Extend {
 impl CompileTime for Extend {
 	type Output = EvaluatedExtend;
 
-	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
 		let type_to_extend = Type::Literal(self.type_to_extend.evaluate_to_literal(context));
 		let type_to_be = self.type_to_be.map(|to_be| Type::Literal(to_be.evaluate_to_literal(context)));
 
@@ -193,7 +193,7 @@ impl CompileTime for Extend {
 }
 
 impl Spanned for Extend {
-	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
+	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
 		self.span
 	}
 }

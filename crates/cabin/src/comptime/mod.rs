@@ -1,9 +1,4 @@
-use crate::{
-	api::context::Context,
-	diagnostics::DiagnosticInfo,
-	io::{IoReader, IoWriter},
-	typechecker::Type,
-};
+use crate::{api::context::Context, diagnostics::DiagnosticInfo, io::Io, typechecker::Type};
 
 pub mod memory;
 
@@ -20,7 +15,7 @@ pub trait CompileTime {
 	///
 	/// An error can occur during compile-time evaluation for any number of reasons, such as the user writing a
 	/// variable name that doesn't exist. The specific error returned by this is implementation-specific.
-	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output;
+	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output;
 }
 
 #[derive(thiserror::Error, Debug, Clone, Hash, PartialEq, Eq)]

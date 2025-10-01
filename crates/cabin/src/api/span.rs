@@ -1,4 +1,4 @@
-use super::io::{IoReader, IoWriter};
+use super::io::Io;
 use crate::Context;
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Hash)]
@@ -109,5 +109,5 @@ pub trait Spanned {
 	/// # Returns
 	///
 	/// The second of the program's source code that this expression spans.
-	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &Context<Input, Output, Error>) -> Span;
+	fn span<System: Io>(&self, context: &Context<System>) -> Span;
 }

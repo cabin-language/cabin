@@ -1,11 +1,7 @@
-use std::{
-	fmt::Display,
-	io::{stderr, stdin, stdout, Stderr, Stdin, Stdout},
-	path::PathBuf,
-};
+use std::{fmt::Display, path::PathBuf};
 
 use super::{
-	io::{Io, IoReader, IoWriter, StyledString},
+	io::{Io, StyledString, SystemIo},
 	traits::TryAs as _,
 };
 use crate::{
@@ -21,7 +17,7 @@ use crate::{
 };
 
 /// `Context` with the standard system IO streams (`stdin`, `stdout`, and `stderr`).
-pub type StandardContext = Context<Stdin, Stdout, Stderr>;
+pub type StandardContext = Context<SystemIo>;
 
 /// Global(ish) data about the state of the compiler. The context holds the program's scope data,
 /// as well as memory where expressions are stored, among some other metadata like the file path
@@ -38,7 +34,7 @@ pub type StandardContext = Context<Stdin, Stdout, Stderr>;
 /// - `Input` - The input stream to read from when calling `input()` in Cabin
 /// - `Output` - The output stream to read from when calling `print()` in Cabin
 /// - `Error` - The error stream to read from when printing an error in Cabin
-pub struct Context<Input: IoReader, Output: IoWriter, Error: IoWriter> {
+pub struct Context<System: Io> {
 	/// Scope information about the program. Scopes are stored in this tree, with each scope
 	/// containing a map between variable names and their values (as `ExpressionPointers`)
 	///
@@ -51,7 +47,7 @@ pub struct Context<Input: IoReader, Output: IoWriter, Error: IoWriter> {
 	/// different places in the user's code.
 	pub(crate) virtual_memory: VirtualMemory,
 
-	pub(crate) io: Io<Input, Output, Error>,
+	pub(crate) system_io: System,
 
 	/// Whether Cabin is currently being run as an interactive REPL.
 	pub(crate) interactive: bool,
@@ -87,11 +83,7 @@ pub struct Context<Input: IoReader, Output: IoWriter, Error: IoWriter> {
 
 impl Default for StandardContext {
 	fn default() -> Self {
-		Context::with_io(Io {
-			input: stdin(),
-			output: stdout(),
-			error: stderr(),
-		})
+		Context::with_io(SystemIo)
 	}
 }
 
@@ -104,8 +96,8 @@ impl StandardContext {
 	}
 }
 
-impl<Input: IoReader, Output: IoWriter, Error: IoWriter> Context<Input, Output, Error> {
-	pub fn with_io(io: Io<Input, Output, Error>) -> Self {
+impl<System: Io> Context<System> {
+	pub fn with_io(io: System) -> Self {
 		let mut context = Context {
 			scope_tree: ScopeTree::global(),
 			virtual_memory: VirtualMemory::empty(),
@@ -115,7 +107,7 @@ impl<Input: IoReader, Output: IoWriter, Error: IoWriter> Context<Input, Output, 
 			file: "stdlib".into(),
 			name_query: None,
 			name_query_result: None,
-			io,
+			system_io: io,
 			interactive: false,
 		};
 
@@ -234,14 +226,18 @@ impl<Input: IoReader, Output: IoWriter, Error: IoWriter> Context<Input, Output, 
 	}
 
 	pub fn print<S: Display>(&mut self, text: S) {
-		self.io.output.write(&StyledString::plain(format!("{text}")));
+		self.system_io.write(&StyledString::plain(format!("{text}")));
 	}
 
-	pub fn eprint<S: Display>(&mut self, text: S) {
-		self.io.error.write(&StyledString::plain(format!("{text}")));
+	pub fn println<S: Display>(&mut self, text: S) {
+		self.system_io.writeln(&StyledString::plain(format!("{text}")));
+	}
+
+	pub fn eprintln<S: Display>(&mut self, text: S) {
+		self.system_io.error_writeln(&StyledString::plain(format!("{text}")));
 	}
 
 	pub fn input(&mut self) -> String {
-		self.io.input.read_line()
+		self.system_io.read_line()
 	}
 }

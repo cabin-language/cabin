@@ -15,7 +15,7 @@ use crate::{
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	if_then_some,
-	io::{IoReader, IoWriter},
+	io::Io,
 	lexer::TokenType,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -35,7 +35,7 @@ pub struct ObjectConstructor {
 impl TryParse for ObjectConstructor {
 	type Output = ObjectConstructor;
 
-	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordNew, context)?.span;
 
 		// Name
@@ -104,7 +104,7 @@ impl TryParse for ObjectConstructor {
 impl CompileTime for ObjectConstructor {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(mut self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn evaluate_at_compile_time<System: Io>(mut self, context: &mut Context<System>) -> Self::Output {
 		self.tags = self.tags.evaluate_at_compile_time(context);
 
 		// Explicit fields
@@ -162,17 +162,17 @@ impl CompileTime for ObjectConstructor {
 }
 
 impl Typed for ObjectConstructor {
-	fn get_type<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Type {
+	fn get_type<System: Io>(&self, context: &mut Context<System>) -> Type {
 		Type::Literal(self.type_name.value(context).map_or(LiteralPointer::ERROR, |value| value.as_literal(context)))
 	}
 }
 
 impl TranspileToC for ObjectConstructor {
-	fn to_c<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &mut Context<Input, Output, Error>, _output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c<System: Io>(&self, _context: &mut Context<System>, _output: Option<String>) -> Result<String, TranspileError> {
 		Ok("NULL".to_owned()) // TODO: obj constr c
 	}
 
-	fn c_prelude<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Result<String, TranspileError> {
+	fn c_prelude<System: Io>(&self, context: &mut Context<System>) -> Result<String, TranspileError> {
 		let mut builder = vec![format!("({}) {{", self.type_name.to_c(context, None)?)];
 		for (name, value) in &self.fields {
 			builder.push(format!("\t.{} = {}", name.to_c(context, None)?, value.to_c(context, None)?));
@@ -184,13 +184,13 @@ impl TranspileToC for ObjectConstructor {
 }
 
 impl Spanned for ObjectConstructor {
-	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
+	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
 		self.span
 	}
 }
 
 impl ObjectConstructor {
-	pub(crate) fn try_into_literal<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Result<Object, ()> {
+	pub(crate) fn try_into_literal<System: Io>(&self, context: &mut Context<System>) -> Result<Object, ()> {
 		let mut fields = HashMap::new();
 		for (field_name, field_value) in &self.fields {
 			if let Ok(literal) = field_value.try_as_literal(context) {

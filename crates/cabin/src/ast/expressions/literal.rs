@@ -22,7 +22,7 @@ use crate::{
 		CompileTimeError,
 	},
 	diagnostics::Diagnostic,
-	io::{IoReader, IoWriter},
+	io::Io,
 	typechecker::{Type, Typed},
 	Context,
 	Span,
@@ -73,7 +73,7 @@ impl UnevaluatedLiteral {
 impl CompileTime for UnevaluatedLiteral {
 	type Output = EvaluatedLiteral;
 
-	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
 		match self {
 			Self::FunctionDeclaration(function) => EvaluatedLiteral::FunctionDeclaration(function.evaluate_at_compile_time(context)),
 			Self::Either(either) => EvaluatedLiteral::Either(either.evaluate_at_compile_time(context)),
@@ -85,7 +85,7 @@ impl CompileTime for UnevaluatedLiteral {
 }
 
 impl Spanned for UnevaluatedLiteral {
-	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &Context<Input, Output, Error>) -> Span {
+	fn span<System: Io>(&self, context: &Context<System>) -> Span {
 		match self {
 			Self::String(string) => string.span(context),
 			Self::FunctionDeclaration(function) => function.span(context),
@@ -126,7 +126,7 @@ impl EvaluatedLiteral {
 }
 
 impl Typed for EvaluatedLiteral {
-	fn get_type<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Type {
+	fn get_type<System: Io>(&self, context: &mut Context<System>) -> Type {
 		match self {
 			Self::String(_) => Type::Literal(context.scope_tree.get_builtin("Text").unwrap().try_as_literal(context).unwrap_or(LiteralPointer::ERROR)),
 			Self::Number(_) => Type::Literal(context.scope_tree.get_builtin("Number").unwrap().try_as_literal(context).unwrap_or(LiteralPointer::ERROR)),
@@ -138,7 +138,7 @@ impl Typed for EvaluatedLiteral {
 }
 
 impl Dot for EvaluatedLiteral {
-	fn dot<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, name: &Name, context: &mut Context<Input, Output, Error>) -> ExpressionPointer {
+	fn dot<System: Io>(&self, name: &Name, context: &mut Context<System>) -> ExpressionPointer {
 		match self {
 			EvaluatedLiteral::Object(object) => object.dot(name, context),
 			EvaluatedLiteral::Either(either) => either.dot(name, context),
@@ -178,7 +178,7 @@ impl Object {
 }
 
 impl Dot for Object {
-	fn dot<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, name: &Name, context: &mut Context<Input, Output, Error>) -> ExpressionPointer {
+	fn dot<System: Io>(&self, name: &Name, context: &mut Context<System>) -> ExpressionPointer {
 		self.fields
 			.get(name)
 			.unwrap_or_else(|| {
@@ -195,7 +195,7 @@ impl Dot for Object {
 }
 
 impl Spanned for EvaluatedLiteral {
-	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &Context<Input, Output, Error>) -> Span {
+	fn span<System: Io>(&self, context: &Context<System>) -> Span {
 		match self {
 			Self::String(string) => string.span(context),
 			_ => Span::unknown(),

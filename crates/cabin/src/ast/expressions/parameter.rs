@@ -5,7 +5,7 @@ use crate::{
 	ast::expressions::{name::Name, Expression, Spanned},
 	comptime::{memory::ExpressionPointer, CompileTime},
 	diagnostics::Diagnostic,
-	io::{IoReader, IoWriter},
+	io::Io,
 	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	typechecker::Type,
@@ -22,7 +22,7 @@ pub struct Parameter {
 impl TryParse for Parameter {
 	type Output = Parameter;
 
-	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
 		let name = Name::try_parse(tokens, context)?;
 		let _ = tokens.pop(TokenType::Colon, context)?;
 		let parameter_type = Expression::parse(tokens, context);
@@ -37,7 +37,7 @@ impl TryParse for Parameter {
 impl CompileTime for Parameter {
 	type Output = EvaluatedParameter;
 
-	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
 		let evaluated = self.parameter_type.evaluate_to_literal(context);
 
 		EvaluatedParameter {
@@ -49,7 +49,7 @@ impl CompileTime for Parameter {
 }
 
 impl Spanned for Parameter {
-	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
+	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
 		self.span.to_owned()
 	}
 }
@@ -74,7 +74,7 @@ pub struct EvaluatedParameter {
 }
 
 impl Spanned for EvaluatedParameter {
-	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
+	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
 		self.span.to_owned()
 	}
 }

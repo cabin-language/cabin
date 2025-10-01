@@ -7,7 +7,7 @@ use strum::IntoEnumIterator as _;
 use crate::{
 	api::context::Context,
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	io::{IoReader, IoWriter},
+	io::Io,
 	Span,
 };
 
@@ -412,7 +412,7 @@ pub struct Token {
 ///
 /// # Errors
 /// If the given code string is not syntactically valid Cabin code. It needn't be semantically valid, but it must be comprised of the proper tokens.
-pub(crate) fn tokenize<Input: IoReader, Output: IoWriter, Error: IoWriter>(code: &str, context: &mut Context<Input, Output, Error>) -> VecDeque<Token> {
+pub(crate) fn tokenize<System: Io>(code: &str, context: &mut Context<System>) -> VecDeque<Token> {
 	let mut code = code.to_owned();
 
 	let mut tokens = Vec::new();

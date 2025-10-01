@@ -5,8 +5,11 @@ edition = "2021"
 
 [dependencies]
 wasm-bindgen = "0.2.100"
-cabin = { path = "../cabin" }
 js-sys = "0.3.77"
+cabin = { path = "../cabin" }
+console_error_panic_hook = "0.1.7"
+web-sys = "0.3.77"
+wasm-fields = { path = "../wasm-fields/" }
 
 [lib]
 crate-type = ["cdylib"]

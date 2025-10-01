@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use crate::{
 	ast::statements::Statement,
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	io::{IoReader, IoWriter},
+	io::Io,
 	lexer::{Token, TokenType},
 	Context,
 	Span,
@@ -47,11 +47,11 @@ pub(crate) trait TokenQueueFunctionality {
 	///
 	/// # Returns
 	/// A `Result` containing either the value of the popped token or an `Error`.
-	fn pop<Input: IoReader, Output: IoWriter, Error: IoWriter>(&mut self, token_type: TokenType, context: &Context<Input, Output, Error>) -> Result<Token, Diagnostic>;
+	fn pop<System: Io>(&mut self, token_type: TokenType, context: &Context<System>) -> Result<Token, Diagnostic>;
 
-	fn peek_type<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &Context<Input, Output, Error>) -> Result<TokenType, Diagnostic>;
+	fn peek_type<System: Io>(&self, context: &Context<System>) -> Result<TokenType, Diagnostic>;
 
-	fn peek_type2<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &Context<Input, Output, Error>) -> Result<TokenType, Diagnostic>;
+	fn peek_type2<System: Io>(&self, context: &Context<System>) -> Result<TokenType, Diagnostic>;
 
 	/// Returns whether the next token in the queue matches the given token type.
 	fn next_is(&self, token_type: TokenType) -> bool;
@@ -73,7 +73,7 @@ pub(crate) trait TokenQueueFunctionality {
 }
 
 impl TokenQueueFunctionality for TokenQueue {
-	fn peek_type<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &Context<Input, Output, Error>) -> Result<TokenType, Diagnostic> {
+	fn peek_type<System: Io>(&self, context: &Context<System>) -> Result<TokenType, Diagnostic> {
 		let mut index = 0;
 		let mut next = self.get(index).ok_or_else(|| Diagnostic {
 			file: context.file.clone(),
@@ -108,7 +108,7 @@ impl TokenQueueFunctionality for TokenQueue {
 		next.token_type == token_type
 	}
 
-	fn peek_type2<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &Context<Input, Output, Error>) -> Result<TokenType, Diagnostic> {
+	fn peek_type2<System: Io>(&self, context: &Context<System>) -> Result<TokenType, Diagnostic> {
 		let mut index = 0;
 
 		// The one time I'd enjoy a do-while loop
@@ -148,7 +148,7 @@ impl TokenQueueFunctionality for TokenQueue {
 		self.iter().all(|token| token.token_type.is_whitespace())
 	}
 
-	fn pop<Input: IoReader, Output: IoWriter, Error: IoWriter>(&mut self, token_type: TokenType, context: &Context<Input, Output, Error>) -> Result<Token, Diagnostic> {
+	fn pop<System: Io>(&mut self, token_type: TokenType, context: &Context<System>) -> Result<Token, Diagnostic> {
 		let mut maybe_whitespace = TokenType::Whitespace;
 		while maybe_whitespace.is_whitespace() {
 			if let Some(token) = self.pop_front() {
@@ -215,13 +215,13 @@ impl ListType {
 pub(crate) trait TryParse {
 	type Output;
 
-	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic>;
+	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic>;
 }
 
 pub(crate) trait Parse {
 	type Output;
 
-	fn parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Self::Output;
+	fn parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Self::Output;
 }
 
 pub(crate) type TokenQueue = VecDeque<Token>;

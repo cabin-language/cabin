@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use super::io::{IoReader, IoWriter};
+use super::io::Io;
 use crate::{
 	api::traits::TryAs as _,
 	ast::{
@@ -33,12 +33,7 @@ use crate::{
 /// If there is no built-in function with the given name, an error is returned.
 ///
 /// Also, if the built-in function throws an error while being called, that error is returned as well.
-pub fn call_builtin_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(
-	name: &str,
-	context: &mut Context<Input, Output, Error>,
-	arguments: Vec<ExpressionPointer>,
-	span: Span,
-) -> ExpressionPointer {
+pub fn call_builtin_at_compile_time<System: Io>(name: &str, context: &mut Context<System>, arguments: Vec<ExpressionPointer>, span: Span) -> ExpressionPointer {
 	match name {
 		"terminal.print" => {
 			let mut arguments = VecDeque::from(arguments);

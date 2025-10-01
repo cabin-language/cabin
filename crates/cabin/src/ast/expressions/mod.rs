@@ -27,7 +27,7 @@ use crate::{
 	comptime::{memory::ExpressionPointer, CompileTime, CompileTimeError},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	interpreter::Runtime,
-	io::{IoReader, IoWriter},
+	io::Io,
 	parser::{Parse, TokenQueue, TokenQueueFunctionality as _, TryParse as _},
 	transpiler::{TranspileError, TranspileToC},
 	typechecker::{Type, Typed},
@@ -72,7 +72,7 @@ pub enum Expression {
 impl Parse for Expression {
 	type Output = ExpressionPointer;
 
-	fn parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Self::Output {
 		let start = tokens.front().unwrap().span;
 		let result = BinaryExpression::try_parse(tokens, context);
 		match result {
@@ -98,7 +98,7 @@ pub enum ExpressionOrPointer {
 impl CompileTime for Expression {
 	type Output = ExpressionOrPointer;
 
-	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
 		match self {
 			Self::Block(block) => ExpressionOrPointer::Expression(Expression::Block(block.evaluate_at_compile_time(context))),
 			Self::FieldAccess(field_access) => field_access.evaluate_at_compile_time(context),
@@ -119,7 +119,7 @@ impl CompileTime for Expression {
 impl Runtime for Expression {
 	type Output = ExpressionOrPointer;
 
-	fn evaluate_at_runtime<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn evaluate_at_runtime<System: Io>(self, context: &mut Context<System>) -> Self::Output {
 		match self {
 			Self::Run(run_expression) => ExpressionOrPointer::Pointer(run_expression.evaluate_at_runtime(context)),
 			expression => expression.evaluate_at_compile_time(context),
@@ -128,11 +128,11 @@ impl Runtime for Expression {
 }
 
 impl TranspileToC for Expression {
-	fn to_c<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &mut Context<Input, Output, Error>, _output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c<System: Io>(&self, _context: &mut Context<System>, _output: Option<String>) -> Result<String, TranspileError> {
 		todo!()
 	}
 
-	fn c_prelude<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Result<String, TranspileError> {
+	fn c_prelude<System: Io>(&self, context: &mut Context<System>) -> Result<String, TranspileError> {
 		match self {
 			Expression::ObjectConstructor(object) => object.c_prelude(context),
 			_ => Ok(String::new()),
@@ -141,7 +141,7 @@ impl TranspileToC for Expression {
 }
 
 impl Typed for Expression {
-	fn get_type<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) -> Type {
+	fn get_type<System: Io>(&self, context: &mut Context<System>) -> Type {
 		match self {
 			Expression::EvaluatedLiteral(literal) => literal.get_type(context),
 			Expression::Name(name) => name.get_type(context),
@@ -151,11 +151,11 @@ impl Typed for Expression {
 }
 
 impl Expression {
-	pub(crate) fn error<Input: IoReader, Output: IoWriter, Error: IoWriter>(span: Span, context: &mut Context<Input, Output, Error>) -> ExpressionPointer {
+	pub(crate) fn error<System: Io>(span: Span, context: &mut Context<System>) -> ExpressionPointer {
 		Expression::EvaluatedLiteral(EvaluatedLiteral::ErrorLiteral(span)).store_in_memory(context)
 	}
 
-	pub(crate) fn store_in_memory<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> ExpressionPointer {
+	pub(crate) fn store_in_memory<System: Io>(self, context: &mut Context<System>) -> ExpressionPointer {
 		context.virtual_memory.store(self)
 	}
 
@@ -223,7 +223,7 @@ impl Expression {
 }
 
 impl Spanned for Expression {
-	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &Context<Input, Output, Error>) -> Span {
+	fn span<System: Io>(&self, context: &Context<System>) -> Span {
 		match self {
 			Expression::Name(name) => name.span(context),
 			Expression::Run(run_expression) => run_expression.span(context),
@@ -243,7 +243,7 @@ impl Spanned for Expression {
 }
 
 impl RuntimeableExpression for Expression {
-	fn evaluate_subexpressions_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self {
+	fn evaluate_subexpressions_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self {
 		match self {
 			Self::FunctionCall(function_call) => Expression::FunctionCall(function_call.evaluate_subexpressions_at_compile_time(context)),
 			_ => {

@@ -8,7 +8,7 @@ use crate::{
 		CompileTime,
 	},
 	diagnostics::Diagnostic,
-	io::{IoReader, IoWriter},
+	io::Io,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TryParse},
 	Span,
@@ -24,7 +24,7 @@ pub struct List {
 impl TryParse for List {
 	type Output = List;
 
-	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
 		let mut list = Vec::new();
 		let end = parse_list!(tokens, context, ListType::Bracketed, { list.push(Expression::parse(tokens, context)) }).span;
 
@@ -38,7 +38,7 @@ impl TryParse for List {
 impl CompileTime for List {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
 		let items = self.elements.into_iter().map(|item| item.evaluate_at_compile_time(context)).collect::<Vec<_>>();
 		if items.iter().all(|item| item.is_literal(context)) {
 			Expression::EvaluatedLiteral(EvaluatedLiteral::List(LiteralList(items.into_iter().map(|item| item.as_literal(context)).collect())))
@@ -49,7 +49,7 @@ impl CompileTime for List {
 }
 
 impl Spanned for List {
-	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
+	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
 		self.span
 	}
 }

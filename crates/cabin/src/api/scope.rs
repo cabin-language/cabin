@@ -4,7 +4,7 @@ use std::{
 	ops::{Deref, DerefMut},
 };
 
-use super::io::{IoReader, IoWriter};
+use super::io::Io;
 use crate::{api::context::Context, ast::expressions::name::Name, comptime::memory::ExpressionPointer, parser::ParseError};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScopeId(usize);
@@ -498,7 +498,7 @@ impl Levenshtein for str {
 pub struct ScopeReverter(ScopeId);
 
 impl ScopeReverter {
-	pub fn revert<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>) {
+	pub fn revert<System: Io>(&self, context: &mut Context<System>) {
 		context.scope_tree.current_scope = self.0 .0;
 	}
 }

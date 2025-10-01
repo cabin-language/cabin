@@ -3,7 +3,7 @@ use crate::{
 	ast::expressions::Spanned,
 	comptime::{memory::ExpressionPointer, CompileTime},
 	interpreter::Runtime,
-	io::{IoReader, IoWriter},
+	io::Io,
 	transpiler::{TranspileError, TranspileToC},
 	Span,
 };
@@ -41,7 +41,7 @@ pub struct RunExpression {
 impl CompileTime for RunExpression {
 	type Output = RunExpression;
 
-	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, _context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn evaluate_at_compile_time<System: Io>(self, _context: &mut Context<System>) -> Self::Output {
 		// TODO: evaluate subexpressions
 		self
 	}
@@ -50,19 +50,19 @@ impl CompileTime for RunExpression {
 impl Runtime for RunExpression {
 	type Output = ExpressionPointer;
 
-	fn evaluate_at_runtime<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn evaluate_at_runtime<System: Io>(self, context: &mut Context<System>) -> Self::Output {
 		self.expression.evaluate_at_runtime(context)
 	}
 }
 
 impl TranspileToC for RunExpression {
-	fn to_c<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, context: &mut Context<Input, Output, Error>, output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c<System: Io>(&self, context: &mut Context<System>, output: Option<String>) -> Result<String, TranspileError> {
 		self.expression.to_c(context, output)
 	}
 }
 
 impl Spanned for RunExpression {
-	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
+	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
 		self.span.to_owned()
 	}
 }
@@ -71,5 +71,5 @@ impl Spanned for RunExpression {
 /// the expression needs to implement how the `run` keyword should act on it via
 /// `evaluate_subexpressions_at_compile_time()`.
 pub trait RuntimeableExpression {
-	fn evaluate_subexpressions_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self;
+	fn evaluate_subexpressions_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self;
 }

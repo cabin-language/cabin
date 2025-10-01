@@ -7,7 +7,7 @@ use crate::{
 	},
 	comptime::CompileTime,
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	io::{IoReader, IoWriter},
+	io::Io,
 	parser::{Parse, ParseError, TokenQueue, TokenQueueFunctionality as _},
 	scope::{ScopeId, ScopeType},
 	Context,
@@ -24,7 +24,7 @@ pub struct Module {
 impl Parse for Module {
 	type Output = Self;
 
-	fn parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Self::Output {
 		context.scope_tree.enter_new_scope(ScopeType::File);
 		let inner_scope_id = context.scope_tree.unique_id();
 		let mut declarations = Vec::new();
@@ -53,7 +53,7 @@ impl Parse for Module {
 impl CompileTime for Module {
 	type Output = Module;
 
-	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
 		Self {
 			declarations: self.declarations.into_iter().map(|statement| statement.evaluate_at_compile_time(context)).collect(),
 			inner_scope_id: self.inner_scope_id,
@@ -62,7 +62,7 @@ impl CompileTime for Module {
 }
 
 impl Module {
-	pub(crate) fn into_object<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Object {
+	pub(crate) fn into_object<System: Io>(self, context: &mut Context<System>) -> Object {
 		let mut fields = HashMap::new();
 		for declaration in self.declarations {
 			let _ = fields.insert(declaration.name().to_owned(), declaration.value(context).evaluate_to_literal(context));

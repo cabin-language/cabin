@@ -1,109 +1,78 @@
-use cabin::{comptime::CompileTime, interpreter::Runtime};
-use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+use wasm_fields::wasm_fields;
 
 #[wasm_bindgen(js_name = "runCode")]
-pub fn run_code(code: &str, input: js_sys::Function, output: js_sys::Function, error: js_sys::Function) {
-	let mut context = cabin::Context::with_io(
-		JsRunOptions {
-			io: JsIo {
-				input: JsReader { read: input },
-				output: JsWriter { write: output },
-				error: JsWriter { write: error },
-			},
-		}
-		.io
-		.into(),
-	);
-
-	context.print("Running compile-time code...\n");
-
-	let program = cabin::parse_program(code, &mut context);
-	let evaluated_program = program.evaluate_at_compile_time(&mut context);
-
-	context.print("Running runtime code...\n");
-
-	let _ = evaluated_program.evaluate_at_runtime(&mut context);
-}
-
-#[wasm_bindgen(js_name = "Io")]
-#[derive(Clone)]
-pub struct JsIo {
-	input: JsReader,
-	output: JsWriter,
-	error: JsWriter,
-}
-
-#[wasm_bindgen()]
-impl JsIo {
-	#[wasm_bindgen(constructor)]
-	pub fn new(input: JsReader, output: JsWriter, error: JsWriter) -> Self {
-		Self { input, output, error }
-	}
-}
-
-impl From<JsIo> for cabin::io::Io<JsReader, JsWriter, JsWriter> {
-	fn from(io: JsIo) -> Self {
-		cabin::io::Io {
-			input: io.input,
-			output: io.output,
-			error: io.error,
-		}
-	}
-}
-
-#[wasm_bindgen(js_name = "RunOptions")]
-pub struct JsRunOptions {
-	io: JsIo,
+pub fn run_code(code: &str, io: Io) {
+	let mut context = cabin::Context::with_io(io);
+	cabin::interpret_with_logs(code, &mut context);
 }
 
 #[wasm_bindgen]
-impl JsRunOptions {
-	#[wasm_bindgen(constructor)]
-	pub fn new(io: JsIo) -> Self {
-		Self { io }
-	}
-}
-
-#[wasm_bindgen(js_name = "IoReader")]
-#[derive(Clone)]
-pub struct JsReader {
-	read: js_sys::Function,
-}
-
-#[wasm_bindgen]
-impl JsReader {
-	#[wasm_bindgen(constructor)]
-	pub fn new(read: js_sys::Function) -> Self {
-		Self { read }
-	}
-}
-
-impl cabin::io::IoReader for JsReader {
-	fn read(&mut self) -> String {
-		let output = self.read.call0(&wasm_bindgen::JsValue::NULL).unwrap();
-		let Some(string) = output.as_string() else {
-			return String::new();
-		};
-		string
-	}
-}
-
-#[wasm_bindgen(js_name = "IoWriter")]
-#[derive(Clone)]
-pub struct JsWriter {
+#[wasm_fields]
+pub struct Io {
 	write: js_sys::Function,
+	read_line: js_sys::Function,
+	error_write: js_sys::Function,
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const IIO: &'static str = r#"
+interface IIo {
+	write: (value: string) => void,
+	error_write: (value: string) => void,
+	read_line: () => string,
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+	#[wasm_bindgen(typescript_type = "IJsIo")]
+	pub type IIo;
 }
 
 #[wasm_bindgen]
-impl JsWriter {
+impl Io {
 	#[wasm_bindgen(constructor)]
-	pub fn new(write: js_sys::Function) -> Self {
-		Self { write }
+	pub fn new(io: IIo) -> Io {
+		let value: JsValue = io.into();
+		Io {
+			write: js_sys::Reflect::get(&value, &"write".into()).unwrap().into(),
+			error_write: js_sys::Reflect::get(&value, &"error_write".into()).unwrap().into(),
+			read_line: js_sys::Reflect::get(&value, &"read_line".into()).unwrap().into(),
+		}
 	}
 }
 
-impl cabin::io::IoWriter for JsWriter {
+impl cabin::io::Io for Io {
+	fn read_line(&mut self) -> String {
+		self.read_line.call0(&JsValue::NULL).unwrap().as_string().unwrap()
+	}
+
 	fn write(&mut self, value: &cabin::io::StyledString) {
-		self.write.call1(&wasm_bindgen::JsValue::NULL, &wasm_bindgen::JsValue::from_str(&value.value)).unwrap();
+		self.write.call1(&JsValue::NULL, &JsValue::from_str(&value.value)).unwrap();
+	}
+
+	fn error_write(&mut self, value: &cabin::io::StyledString) {
+		todo!()
+	}
+
+	fn get_environment_variable(&mut self, name: &str) -> Option<String> {
+		todo!()
+	}
+
+	fn set_environment_variable(&mut self, name: &str, value: &str) {
+		todo!()
+	}
+
+	fn read_file(&mut self, path: &str) -> Option<String> {
+		todo!()
+	}
+
+	fn write_file(&mut self, path: &str, contents: &str) {
+		todo!()
+	}
+
+	fn delete_file(&mut self, path: &str) {
+		todo!()
 	}
 }

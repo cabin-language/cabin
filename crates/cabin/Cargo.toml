@@ -35,7 +35,6 @@ wasm-bindgen = "0.2.100"
 # https://crates.io/crates/cargo-cmd
 [package.metadata.commands]
 run = "cargo run -q -- run"
-run-prelude = "cargo run -q -- run std/prelude.cabin"
 
 [lints.rust]
 absolute_paths_not_starting_with_crate = "warn"

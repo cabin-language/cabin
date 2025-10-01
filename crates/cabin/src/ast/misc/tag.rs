@@ -5,7 +5,7 @@ use crate::{
 	ast::expressions::Expression,
 	comptime::{memory::ExpressionPointer, CompileTime},
 	diagnostics::Diagnostic,
-	io::{IoReader, IoWriter},
+	io::Io,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TryParse},
 };
@@ -24,7 +24,7 @@ impl TagList {
 impl TryParse for TagList {
 	type Output = TagList;
 
-	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
 		let mut tags = Vec::new();
 		let _ = parse_list!(tokens, context, ListType::Tag, {
 			tags.push(Expression::parse(tokens, context));
@@ -36,7 +36,7 @@ impl TryParse for TagList {
 impl CompileTime for TagList {
 	type Output = TagList;
 
-	fn evaluate_at_compile_time<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> Self::Output {
+	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
 		let mut values = Vec::new();
 		for value in self.values {
 			let evaluated = value.evaluate_at_compile_time(context);

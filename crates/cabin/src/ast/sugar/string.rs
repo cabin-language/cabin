@@ -14,7 +14,7 @@ use crate::{
 	},
 	comptime::memory::ExpressionPointer,
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	io::{IoReader, IoWriter},
+	io::Io,
 	lexer::{tokenize_string, Token, TokenType},
 	parser::{Parse as _, ParseError, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	Span,
@@ -55,7 +55,7 @@ pub(crate) enum StringPart {
 }
 
 impl StringPart {
-	pub(crate) fn into_expression<Input: IoReader, Output: IoWriter, Error: IoWriter>(self, context: &mut Context<Input, Output, Error>) -> ExpressionPointer {
+	pub(crate) fn into_expression<System: Io>(self, context: &mut Context<System>) -> ExpressionPointer {
 		match self {
 			StringPart::Expression(expression) => expression,
 			StringPart::Literal(literal) => Expression::EvaluatedLiteral(EvaluatedLiteral::String(literal)).store_in_memory(context),
@@ -74,7 +74,7 @@ pub struct CabinString {
 impl TryParse for CabinString {
 	type Output = ExpressionPointer;
 
-	fn try_parse<Input: IoReader, Output: IoWriter, Error: IoWriter>(tokens: &mut TokenQueue, context: &mut Context<Input, Output, Error>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
 		let token = tokens.pop(TokenType::String, context)?;
 		let span = token.span;
 		let with_quotes = token.value;
@@ -152,13 +152,13 @@ impl TryParse for CabinString {
 }
 
 impl Spanned for CabinString {
-	fn span<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, _context: &Context<Input, Output, Error>) -> Span {
+	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
 		self.span
 	}
 }
 
 impl Dot for CabinString {
-	fn dot<Input: IoReader, Output: IoWriter, Error: IoWriter>(&self, name: &Name, context: &mut Context<Input, Output, Error>) -> ExpressionPointer {
+	fn dot<System: Io>(&self, name: &Name, context: &mut Context<System>) -> ExpressionPointer {
 		match name.unmangled_name() {
 			_ => ExpressionPointer::ERROR,
 		}

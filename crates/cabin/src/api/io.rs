@@ -1,4 +1,4 @@
-use std::io::{Stderr, Stdin, Stdout, Write as _};
+use std::io::Write as _;
 
 use colored::{ColoredString, Colorize as _};
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -31,26 +31,6 @@ impl StyledString {
 	}
 }
 
-impl From<&StyledString> for ColoredString {
-	fn from(value: &StyledString) -> Self {
-		let mut result = value.value.normal();
-		if let Some(Color { red, green, blue }) = value.color {
-			result = result.truecolor(red, green, blue);
-		}
-		if value.bold {
-			result = result.bold();
-		}
-
-		if value.italic {
-			result = result.italic();
-		}
-		if value.underline {
-			result = result.underline();
-		}
-		result
-	}
-}
-
 #[allow(clippy::multiple_inherent_impl, reason = "these must be separate because one is #[wasm_bindgen] and one is not")]
 impl StyledString {
 	pub fn plain<S: AsRef<str>>(value: S) -> Self {
@@ -65,12 +45,62 @@ impl StyledString {
 	}
 }
 
-pub trait IoReader {
-	fn read_line(&mut self) -> String;
+impl From<&StyledString> for ColoredString {
+	fn from(value: &StyledString) -> Self {
+		let mut result = value.value.normal();
+
+		if let Some(Color { red, green, blue }) = value.color {
+			result = result.truecolor(red, green, blue);
+		}
+
+		if value.bold {
+			result = result.bold();
+		}
+
+		if value.italic {
+			result = result.italic();
+		}
+
+		if value.underline {
+			result = result.underline();
+		}
+
+		result
+	}
 }
 
-pub trait IoWriter {
+/// A generic system input-output interaction interface. The entire Cabin compiler is generic over
+/// this interface, meaning that arbitrary virtual systems can be used in conjunction with the
+/// compiler.
+///
+/// The `Io` trait provides methods for interacting with a "system". on the system-level. It
+/// includes functions for reading input, writing output, interacting with files and environment
+/// variables, etc.
+///
+/// For the standard `SystemIo`, these are implemented with their standard values: Reading from
+/// `stdin`, writing to `stdout` and `stderr`, interacting with files and environment variables
+/// straight from the system.
+///
+/// Other systems can manually implement `Io` to specify how to interact with them. For example, on
+/// the Cabin website, there's a playground that allows running arbitrary Cabin code. This uses a
+/// "virtual system" that keeps track of environment variables and files on the front-end. The
+/// front-end provides an implementation of this trait, and handles system interaction accordingly.
+pub trait Io {
+	fn read_line(&mut self) -> String;
 	fn write(&mut self, value: &StyledString);
+	fn error_write(&mut self, value: &StyledString);
+
+	fn get_environment_variable(&mut self, name: &str) -> Option<String>;
+	fn set_environment_variable(&mut self, name: &str, value: &str);
+
+	fn read_file(&mut self, path: &str) -> Option<String>;
+	fn write_file(&mut self, path: &str, contents: &str);
+	fn delete_file(&mut self, path: &str);
+
+	fn append_file(&mut self, path: &str, contents: &str) {
+		let contents = self.read_file(path).unwrap() + contents;
+		self.write_file(path, &contents);
+	}
 
 	fn writeln(&mut self, value: &StyledString) {
 		self.write(value);
@@ -95,35 +125,80 @@ pub trait IoWriter {
 			self.writeln(value);
 		}
 	}
-}
 
-impl IoWriter for Stdout {
-	fn write(&mut self, value: &StyledString) {
-		let colored: ColoredString = value.into();
-		print!("{colored}");
-		self.flush().unwrap();
+	fn error_writeln(&mut self, value: &StyledString) {
+		self.write(value);
+		self.write(&StyledString::plain("\n"));
+	}
+
+	fn error_write_all(&mut self, values: &[StyledString]) {
+		for value in values {
+			self.write(value);
+		}
+	}
+
+	fn error_write_all_line(&mut self, values: &[StyledString]) {
+		for value in values {
+			self.write(value);
+		}
+		self.write(&StyledString::plain("\n"));
+	}
+
+	fn error_write_lines(&mut self, values: &[StyledString]) {
+		for value in values {
+			self.writeln(value);
+		}
+	}
+
+	fn file_exists(&mut self, path: &str) -> bool {
+		self.read_file(path).is_some()
 	}
 }
 
-impl IoWriter for Stderr {
-	fn write(&mut self, value: &StyledString) {
-		let colored: ColoredString = value.into();
-		eprint!("{colored}");
-		self.flush().unwrap();
-	}
-}
+/// A standard system implementation of [`Io`]. This uses the standard input, output, and error
+/// streams for reading and writing, and interacts with the system's literal file system,
+/// environment variables, etc.
+///
+/// When creating a [`StandardContext`](crate::context::StandardContext), this is the `Io`
+/// implementation used.
+pub struct SystemIo;
 
-impl IoReader for Stdin {
+impl Io for SystemIo {
 	fn read_line(&mut self) -> String {
 		let mut line = String::new();
 		let _ = std::io::stdin().read_line(&mut line).unwrap();
-		line = line.get(0..line.len() - 1).unwrap().to_owned();
 		line
 	}
-}
 
-pub struct Io<Input: IoReader, Output: IoWriter, Error: IoWriter> {
-	pub input: Input,
-	pub output: Output,
-	pub error: Error,
+	fn write(&mut self, value: &StyledString) {
+		let colored: ColoredString = value.into();
+		print!("{colored}");
+		std::io::stdout().flush().unwrap();
+	}
+
+	fn error_write(&mut self, value: &StyledString) {
+		let colored: ColoredString = value.into();
+		eprint!("{colored}");
+		std::io::stdout().flush().unwrap();
+	}
+
+	fn get_environment_variable(&mut self, name: &str) -> Option<String> {
+		std::env::var(name).ok()
+	}
+
+	fn set_environment_variable(&mut self, name: &str, value: &str) {
+		std::env::set_var(name, value);
+	}
+
+	fn read_file(&mut self, path: &str) -> Option<String> {
+		std::fs::read_to_string(path).ok()
+	}
+
+	fn write_file(&mut self, path: &str, contents: &str) {
+		std::fs::write(path, contents).unwrap();
+	}
+
+	fn delete_file(&mut self, path: &str) {
+		std::fs::remove_file(path).unwrap();
+	}
 }
