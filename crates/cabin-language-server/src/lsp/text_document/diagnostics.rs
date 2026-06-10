@@ -1,4 +1,5 @@
 use cabin::{diagnostics::DiagnosticInfo, Spanned as _};
+use gag::Gag;
 
 use super::Range;
 use crate::{lsp::State, Logger};
@@ -28,16 +29,32 @@ fn diagnostic_code(diagnostic: &cabin::diagnostics::Diagnostic) -> u8 {
 pub fn get_diagnostics(state: &State, logger: &mut Logger, uri: &str) -> anyhow::Result<Vec<Diagnostic>> {
 	logger.log("\n*Checking for diagnostics...*")?;
 
-	let code = state.files.get(uri).unwrap();
+	let code = state.files.get(uri).unwrap_or_else(|| {
+		logger.log(format!("\n**ERROR:** could not find file for diagnostics")).unwrap();
+		unreachable!()
+	});
 
-	let path = url::Url::parse(uri).unwrap().to_file_path().unwrap();
+	let path = url::Url::parse(uri)
+		.unwrap_or_else(|error| {
+			logger.log(format!("\n**ERROR:** could not parse URI for diagnostics: {error}")).unwrap();
+			unreachable!()
+		})
+		.to_file_path()
+		.unwrap_or_else(|_error| {
+			logger.log(format!("\n**ERROR:** could not convert URI to file path")).unwrap();
+			unreachable!()
+		});
 	logger.log(format!("\n*Checking project for* `{}`", path.display()))?;
 	let mut project = match cabin::Project::from_child(path) {
 		Ok(project) => project,
 		Err(error) => anyhow::bail!(error),
 	};
 
-	let diagnostics = project.check();
+	let diagnostics = {
+		let _stdout_gag = Gag::stdout()?;
+		let _stderr_gag = Gag::stderr()?;
+		project.check()
+	};
 
 	logger.log("\n*Done checking. Reporting diagnostics.*")?;
 

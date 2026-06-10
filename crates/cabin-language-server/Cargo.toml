@@ -12,6 +12,8 @@ cabin = { path = "../cabin" }
 shellexpand = "3.1.0"
 indoc = "2.0.5"
 url = "2.5.4"
+directories = "6.0.0"
+gag = "1.0.0"
 
 [profile.release]
 lto = true

@@ -53,6 +53,9 @@ pub enum RequestData {
 
 	#[serde(rename = "textDocument/didSave")]
 	DidSave {},
+
+	#[serde(rename = "shutdown")]
+	Shutdown,
 }
 
 #[derive(serde::Deserialize)]
@@ -88,50 +91,58 @@ impl Request {
 				})
 			},
 			RequestData::TextDocumentDidOpen { text_document } => {
-				logger.log(format!("\n*Opened `{}`*\n", text_document.uri))?;
-				state.files.insert(text_document.uri.clone(), text_document.text.clone());
-				let diagnostics = get_diagnostics(state, logger, &text_document.uri)?;
+				let norm_uri = normalize_uri(&text_document.uri)?;
+				logger.log(format!("\n*Opened `{}`*\n", norm_uri))?;
+				state.files.insert(norm_uri.clone(), text_document.text.clone());
+				let diagnostics = get_diagnostics(state, logger, &norm_uri)?;
 				diagnostics.is_empty().not().then_some(Response {
-					id: self.id,
+					id: None,
 					jsonrpc: "2.0",
 					data: ResponseData::Diagnostics {
 						method: "textDocument/publishDiagnostics".to_owned(),
-						params: PublishDiagnosticParams {
-							uri: text_document.uri.clone(),
-							diagnostics,
-						},
+						params: PublishDiagnosticParams { uri: norm_uri, diagnostics },
 					},
 				})
 			},
 
 			RequestData::TextDocumentDidChange { text_document, content_changes } => {
-				logger.log(format!("\n*Changed `{}`*\n", text_document.uri))?;
-				for change in content_changes {
-					state.files.insert(text_document.uri.clone(), change.text.clone());
+				let norm_uri = normalize_uri(&text_document.uri)?;
+				logger.log(format!("\n*Changed `{}`*\n", norm_uri))?;
+				if let Some(last_change) = content_changes.last() {
+					state.files.insert(norm_uri.clone(), last_change.text.clone());
 				}
-				let diagnostics = get_diagnostics(state, logger, &text_document.uri)?;
+				let diagnostics = get_diagnostics(state, logger, &norm_uri)?;
 				Some(Response {
-					id: self.id,
+					id: None,
 					jsonrpc: "2.0",
 					data: ResponseData::Diagnostics {
 						method: "textDocument/publishDiagnostics".to_owned(),
-						params: PublishDiagnosticParams {
-							uri: text_document.uri.clone(),
-							diagnostics,
-						},
+						params: PublishDiagnosticParams { uri: norm_uri, diagnostics },
 					},
 				})
 			},
 
 			RequestData::TextDocumentDidHover { position, text_document } => {
-				let code = state.files.get(&text_document.uri).unwrap();
+				let code = state.files.get(&text_document.uri).unwrap_or_else(|| {
+					logger.log(format!("\n**ERROR:** Could not find file for hover")).unwrap();
+					unreachable!()
+				});
 				let tokens = cabin::tokenize(code).0;
 				let span = position.to_span(code);
 				let token = tokens.iter().find(|token| token.span.contains(span.start()));
 				let hover_text = token
 					.map(|token| match token.token_type {
 						TokenType::Identifier => {
-							let path = url::Url::parse(&text_document.uri).unwrap().to_file_path().unwrap();
+							let path = url::Url::parse(&text_document.uri)
+								.unwrap_or_else(|error| {
+									logger.log(format!("\n**ERROR:** Could not parse URL for hover: {error}")).unwrap();
+									unreachable!()
+								})
+								.to_file_path()
+								.unwrap_or_else(|_error| {
+									logger.log(format!("\n**ERROR:** Could not convert URL to file path for hover")).unwrap();
+									unreachable!()
+								});
 							if let Ok(mut project) = cabin::Project::from_child(path) {
 								let name = project.name_at(span.start);
 								name.map(|name| {
@@ -147,8 +158,8 @@ impl Request {
 										.unwrap_or(String::new());
 									format!(
 										"```cabin\n{}: {}\n```{}",
-										name.unmangled_name(),
-										name.get_type(project.context_mut()).name(project.context()),
+										name.source_identifier(),
+										name.get_type(project.context_mut()).name(project.context_mut()),
 										documentation
 									)
 								})
@@ -443,12 +454,14 @@ impl Request {
 
 			RequestData::Initialized {} => None,
 			RequestData::DidSave {} => None,
+			RequestData::Shutdown {} => None,
 		})
 	}
 }
 
 #[derive(serde::Serialize)]
 pub struct Response {
+	#[serde(skip_serializing_if = "Option::is_none")]
 	id: Option<u32>,
 	jsonrpc: &'static str,
 	#[serde(flatten)]
@@ -495,4 +508,14 @@ struct ServerCapabilities {
 struct ServerInfo {
 	name: &'static str,
 	version: &'static str,
+}
+
+use url::Url;
+
+fn normalize_uri(uri_str: &str) -> anyhow::Result<String> {
+	let url = Url::parse(uri_str).map_err(|e| anyhow::anyhow!("Failed to parse URI '{uri_str}': {e}"))?;
+	let path = url.to_file_path().map_err(|_| anyhow::anyhow!("URI is not a valid file path: {uri_str}"))?;
+	let normalized_url = Url::from_file_path(path).map_err(|_| anyhow::anyhow!("Failed to reconstruct URL from path"))?;
+
+	Ok(normalized_url.to_string())
 }
