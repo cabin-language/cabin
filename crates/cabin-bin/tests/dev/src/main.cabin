@@ -8,6 +8,6 @@ let john = new Person {
 	last_name = "smith"
 };
 
-print(john.first_name);
+debug(john.first_name);
 
 

@@ -111,7 +111,6 @@ impl Context {
 
 		// Add stdlib
 		let stdlib_ast = crate::parse_library(STDLIB, &mut context);
-		dbg!(&stdlib_ast);
 		let stdlib_pointer = Expression::EvaluatedLiteral(EvaluatedLiteral::Object(stdlib_ast.into_object(&mut context))).store_in_memory(&mut context);
 		context.scope.declare_new_variable(Identifier::create_virtual("builtin", &context), stdlib_pointer).unwrap();
 		let Expression::EvaluatedLiteral(EvaluatedLiteral::Object(stdlib)) = stdlib_pointer.expression(&context).to_owned() else {

@@ -51,7 +51,7 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, arguments
 			// Add hint diagnostic
 			if pointer != ExpressionPointer::ERROR && !context.interactive {
 				context.add_diagnostic(Diagnostic {
-					span: pointer.span(context),
+					span,
 					info: DiagnosticInfo::Info(string_value),
 					file: context.file.clone(),
 				});
@@ -76,7 +76,7 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, arguments
 			// Add hint diagnostic
 			if pointer != ExpressionPointer::ERROR && !context.interactive {
 				context.add_diagnostic(Diagnostic {
-					span: pointer.span(context),
+					span,
 					info: DiagnosticInfo::Info(string_value),
 					file: context.file.clone(),
 				});
