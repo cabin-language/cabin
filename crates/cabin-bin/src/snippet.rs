@@ -103,7 +103,7 @@ pub(crate) fn show_snippet<CurrentTheme: cabin::theme::Theme>(diagnostic: &Diagn
 					format!(
 						"{}{} here{}",
 						" ".repeat(leftmost_column + format!(" {line}  ").len()),
-						"^".repeat(rightmost_column - leftmost_column + 1),
+						"⮬".repeat(rightmost_column - leftmost_column + 1),
 						" ".repeat(max_columns - (rightmost_column + 1) - " here".len() - format!(" {line}  ").len())
 					)
 					.truecolor(comment_r, comment_g, comment_b),
@@ -123,7 +123,7 @@ pub(crate) fn show_snippet<CurrentTheme: cabin::theme::Theme>(diagnostic: &Diagn
 					"{}{}{}{}",
 					" ".repeat(5).on_truecolor(bg_r, bg_g, bg_b),
 					"".truecolor(error_bg_r, error_bg_g, error_bg_b).on_truecolor(bg_r, bg_g, bg_b),
-					format!("{icon} {info}",)
+					format!(" {icon}  {info} ",)
 						.on_truecolor(error_bg_r, error_bg_g, error_bg_b)
 						.truecolor(error_r, error_g, error_b),
 					"".truecolor(error_bg_r, error_bg_g, error_bg_b).on_truecolor(bg_r, bg_g, bg_b),

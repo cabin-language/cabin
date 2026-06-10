@@ -5,8 +5,9 @@ let Person = group {
 
 let john = new Person {
 	first_name = "john",
-	lsat_name = "smith"
+	last_name = "smith"
 };
 
-debug(john.first_name);
+print(john.first_name);
+
 

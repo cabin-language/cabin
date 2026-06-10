@@ -11,7 +11,7 @@ pub struct InteractiveCommand {}
 impl CabinCommand for InteractiveCommand {
 	fn execute(self) {
 		println!("Cabin interpreter {}\n", "(Press Ctrl+C to exit)".dimmed());
-		let mut context = cabin::context::StandardContext::interactive();
+		let mut context = cabin::context::Context::interactive();
 		loop {
 			print!("> ");
 			std::io::stdout().flush().unwrap();

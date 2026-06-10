@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use build::BuildCommand;
 use cabin::{
 	diagnostics::{DiagnosticInfo, Diagnostics},
-	theme::CatppuccinMocha,
+	theme::{CatppuccinMocha, Theme},
 };
 use check::CheckCommand;
 use colored::Colorize as _;
@@ -41,15 +41,17 @@ pub fn check_errors(diagnostics: Diagnostics, project: &mut cabin::Project, show
 	let max_columns = 100;
 
 	if has_errors || (show_warnings && !diagnostics.warnings().is_empty()) {
-		eprintln!("\n{}\n", "-".repeat(max_columns).bold());
+		eprintln!("\n{}\n", "―".repeat(max_columns).bold());
 	}
 
 	for diagnostic in &diagnostics {
 		if let DiagnosticInfo::Error(error) = &diagnostic.info {
+			let ((error_r, error_g, error_b), (error_bg_r, error_bg_g, error_bg_b), icon) = (CatppuccinMocha::error(), CatppuccinMocha::error_background(), "");
+
 			eprintln!(
 				"{} {}\n",
-				"Error:".bold().red(),
-				wrap(&format!("Error: {error}"), max_columns).trim_start_matches("Error: ")
+				" ERROR: ".bold().truecolor(error_r, error_g, error_b).on_truecolor(error_bg_r, error_bg_g, error_bg_b),
+				wrap(&format!(" ERROR:  {error}"), max_columns).trim_start_matches(" ERROR:  ")
 			);
 			show_snippet::<CatppuccinMocha>(&diagnostic, max_columns);
 			let (line, _) = diagnostic.start_line_column();
@@ -59,7 +61,7 @@ pub fn check_errors(diagnostics: Diagnostics, project: &mut cabin::Project, show
 				format!("{}", pathdiff::diff_paths(&diagnostic.file, project.root_directory()).unwrap().display())
 			};
 			eprintln!("In {} on line {}\n", path.bold().cyan(), (line + 1).to_string().bold().cyan());
-			eprintln!("{}\n", "-".repeat(max_columns).bold());
+			eprintln!("{}\n", "―".repeat(max_columns).bold());
 		}
 	}
 
@@ -71,10 +73,11 @@ pub fn check_errors(diagnostics: Diagnostics, project: &mut cabin::Project, show
 	else if show_warnings {
 		for diagnostic in &diagnostics {
 			if let DiagnosticInfo::Warning(warning) = &diagnostic.info {
+				let ((error_r, error_g, error_b), (error_bg_r, error_bg_g, error_bg_b), icon) = (CatppuccinMocha::warning(), CatppuccinMocha::warning_background(), "");
 				eprintln!(
 					"{} {}\n",
-					"Warning:".bold().yellow(),
-					wrap(&format!("Warning: {warning}"), max_columns).trim_start_matches("Warning: ")
+					" WARNING: ".bold().truecolor(error_r, error_g, error_b).on_truecolor(error_bg_r, error_bg_g, error_bg_b),
+					wrap(&format!(" WARNING:  {warning}"), max_columns).trim_start_matches(" WARNING: ")
 				);
 				show_snippet::<CatppuccinMocha>(&diagnostic, max_columns);
 				let (line, _) = diagnostic.start_line_column();
@@ -84,7 +87,7 @@ pub fn check_errors(diagnostics: Diagnostics, project: &mut cabin::Project, show
 					format!("{}", pathdiff::diff_paths(&diagnostic.file, project.root_directory()).unwrap().display())
 				};
 				eprintln!("In {} on line {}\n", path.bold().cyan(), (line + 1).to_string().bold().cyan());
-				eprintln!("{}\n", "-".repeat(max_columns).bold());
+				eprintln!("{}\n", "―".repeat(max_columns).bold());
 			}
 		}
 	}
