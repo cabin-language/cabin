@@ -1,29 +1,28 @@
 use std::fmt::Debug;
 
 use crate::{
+	Span,
 	api::context::Context,
-	ast::expressions::{name::Name, Expression, Spanned},
-	comptime::{memory::ExpressionPointer, CompileTime},
+	ast::expressions::{Expression, Spanned, identifier::Identifier},
+	comptime::{CompileTime, memory::ExpressionPointer},
 	diagnostics::Diagnostic,
-	io::Io,
 	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	typechecker::Type,
-	Span,
 };
 
 #[derive(Clone)]
 pub struct Parameter {
-	pub(crate) name: Name,
-	pub(crate) parameter_type: ExpressionPointer,
-	pub(crate) span: Span,
+	pub name: Identifier,
+	pub parameter_type: ExpressionPointer,
+	pub span: Span,
 }
 
 impl TryParse for Parameter {
 	type Output = Parameter;
 
-	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
-		let name = Name::try_parse(tokens, context)?;
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+		let name = Identifier::try_parse(tokens, context)?;
 		let _ = tokens.pop(TokenType::Colon, context)?;
 		let parameter_type = Expression::parse(tokens, context);
 		Ok(Parameter {
@@ -37,7 +36,7 @@ impl TryParse for Parameter {
 impl CompileTime for Parameter {
 	type Output = EvaluatedParameter;
 
-	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		let evaluated = self.parameter_type.evaluate_to_literal(context);
 
 		EvaluatedParameter {
@@ -49,13 +48,13 @@ impl CompileTime for Parameter {
 }
 
 impl Spanned for Parameter {
-	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span.to_owned()
 	}
 }
 
 impl Parameter {
-	pub(crate) const fn name(&self) -> &Name {
+	pub const fn name(&self) -> &Identifier {
 		&self.name
 	}
 }
@@ -68,23 +67,23 @@ impl Debug for Parameter {
 
 #[derive(Debug, Clone)]
 pub struct EvaluatedParameter {
-	name: Name,
+	name: Identifier,
 	parameter_type: Type,
 	span: Span,
 }
 
 impl Spanned for EvaluatedParameter {
-	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span.to_owned()
 	}
 }
 
 impl EvaluatedParameter {
-	pub(crate) const fn parameter_type(&self) -> &Type {
+	pub const fn parameter_type(&self) -> &Type {
 		&self.parameter_type
 	}
 
-	pub(crate) const fn name(&self) -> &Name {
+	pub const fn name(&self) -> &Identifier {
 		&self.name
 	}
 }

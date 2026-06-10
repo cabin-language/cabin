@@ -1,21 +1,23 @@
-use std::{collections::HashMap, fmt::Debug};
+use std::{
+	collections::{HashMap, hash_map},
+	fmt::Debug,
+};
 
 use super::CompileTimeError;
 use crate::{
+	Span,
+	Spanned,
 	api::context::Context,
 	ast::expressions::{
-		literal::{EvaluatedLiteral, Literal, LiteralMut},
 		Expression,
 		ExpressionOrPointer,
+		literal::{EvaluatedLiteral, LiteralMut, LiteralRef},
 	},
 	comptime::CompileTime,
 	diagnostics::Diagnostic,
 	interpreter::Runtime,
-	io::Io,
 	transpiler::{TranspileError, TranspileToC},
 	typechecker::{Type, Typed},
-	Span,
-	Spanned,
 };
 
 /// A pointer to a `LiteralObject` in `VirtualMemory`.
@@ -34,10 +36,10 @@ use crate::{
 ///
 /// This internally just wraps a `usize`, so cloning and copying is incredibly cheap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ExpressionPointer(usize);
+pub struct ExpressionPointer(pub usize);
 
 impl ExpressionPointer {
-	pub(crate) const ERROR: ExpressionPointer = ExpressionPointer(0);
+	pub const ERROR: ExpressionPointer = ExpressionPointer(0);
 
 	/// Retrieves the `LiteralObject` value that this pointer points to.
 	///
@@ -50,30 +52,30 @@ impl ExpressionPointer {
 	/// # Returns
 	///
 	/// A reference to the `LiteralObject` that this `VirtualPointer` points to.
-	pub fn expression<System: Io>(self, context: &Context<System>) -> &Expression {
+	pub fn expression(self, context: &Context) -> &Expression {
 		context.virtual_memory.get(self)
 	}
 
-	pub(crate) fn expression_mut<System: Io>(self, context: &mut Context<System>) -> &mut Expression {
+	pub fn expression_mut(self, context: &mut Context) -> &mut Expression {
 		context.virtual_memory.memory.get_mut(&self.0).unwrap()
 	}
 
-	pub(crate) fn is_literal<System: Io>(self, context: &mut Context<System>) -> bool {
+	pub fn is_literal(self, context: &mut Context) -> bool {
 		match self.expression(context).to_owned() {
 			Expression::EvaluatedLiteral(_) => true,
-			Expression::Name(name) => name.value(context).is_some_and(|value| value.is_literal(context)),
+			Expression::Identifier(name) => name.value(context).is_some_and(|value| value.is_literal(context)),
 			_ => false,
 		}
 	}
 
-	pub(crate) fn evaluate_to_literal<System: Io>(self, context: &mut Context<System>) -> LiteralPointer {
+	pub fn evaluate_to_literal(self, context: &mut Context) -> LiteralPointer {
 		self.evaluate_at_compile_time(context).as_literal(context)
 	}
 
-	pub(crate) fn try_as_literal<System: Io>(self, context: &mut Context<System>) -> Result<LiteralPointer, ()> {
+	pub fn try_as_literal(self, context: &mut Context) -> Result<LiteralPointer, ()> {
 		match self.expression(context).to_owned() {
 			Expression::EvaluatedLiteral(_) | Expression::Literal(_) => Ok(LiteralPointer(self)),
-			Expression::Name(name) => name.value(context).unwrap_or(ExpressionPointer::ERROR).try_as_literal(context),
+			Expression::Identifier(name) => name.value(context).unwrap_or(ExpressionPointer::ERROR).try_as_literal(context),
 			expression => {
 				dbg!(expression);
 				Err(())
@@ -81,7 +83,7 @@ impl ExpressionPointer {
 		}
 	}
 
-	pub(crate) fn as_literal<System: Io>(self, context: &mut Context<System>) -> LiteralPointer {
+	pub fn as_literal(self, context: &mut Context) -> LiteralPointer {
 		self.try_as_literal(context).unwrap_or_else(|_| {
 			context.add_diagnostic(Diagnostic {
 				file: context.file.clone(),
@@ -99,10 +101,10 @@ pub struct LiteralPointer(ExpressionPointer);
 impl LiteralPointer {
 	pub const ERROR: LiteralPointer = LiteralPointer(ExpressionPointer::ERROR);
 
-	pub fn get_literal<System: Io>(self, context: &Context<System>) -> Literal {
+	pub fn get_literal(self, context: &Context) -> LiteralRef<'_> {
 		match self.0.expression(context) {
-			Expression::EvaluatedLiteral(literal) => Literal::Evaluated(literal),
-			Expression::Literal(literal) => Literal::Unevaluated(literal),
+			Expression::EvaluatedLiteral(literal) => LiteralRef::Evaluated(literal),
+			Expression::Literal(literal) => LiteralRef::Unevaluated(literal),
 			_ => unreachable!(),
 		}
 	}
@@ -122,19 +124,21 @@ impl LiteralPointer {
 	/// # Returns
 	///
 	/// A reference to the (now) evaluated literal that this pointer points to.
-	pub fn evaluated_literal<System: Io>(self, context: &mut Context<System>) -> &EvaluatedLiteral {
-		if matches!(self.get_literal(context), Literal::Evaluated(_)) {
-			let Literal::Evaluated(evaluated)  = self.get_literal(context) else { unreachable!() };
+	pub fn evaluated_literal(self, context: &mut Context) -> &EvaluatedLiteral {
+		if matches!(self.get_literal(context), LiteralRef::Evaluated(_)) {
+			let LiteralRef::Evaluated(evaluated) = self.get_literal(context) else { unreachable!() };
 			return evaluated;
 		}
 
-		let Literal::Unevaluated(unevaluated) = self.get_literal(context) else { unreachable!() };
+		let LiteralRef::Unevaluated(unevaluated) = self.get_literal(context) else {
+			unreachable!()
+		};
 		let evaluated = unevaluated.clone().evaluate_at_compile_time(context);
-		let _ = context.virtual_memory.memory.insert(self.0 .0, Expression::EvaluatedLiteral(evaluated));
+		let _ = context.virtual_memory.memory.insert(self.0.0, Expression::EvaluatedLiteral(evaluated));
 		self.evaluated_literal(context)
 	}
 
-	pub fn literal_mut<System: Io>(self, context: &mut Context<System>) -> LiteralMut {
+	pub fn literal_mut(self, context: &mut Context) -> LiteralMut<'_> {
 		match self.0.expression_mut(context) {
 			Expression::EvaluatedLiteral(literal) => LiteralMut::Evaluated(literal),
 			Expression::Literal(literal) => LiteralMut::Unevaluated(literal),
@@ -152,7 +156,7 @@ impl From<LiteralPointer> for ExpressionPointer {
 impl CompileTime for ExpressionPointer {
 	type Output = ExpressionPointer;
 
-	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		let evaluated = context.virtual_memory.get(self).clone().evaluate_at_compile_time(context);
 		match evaluated {
 			ExpressionOrPointer::Expression(expression) => {
@@ -167,7 +171,7 @@ impl CompileTime for ExpressionPointer {
 impl Runtime for ExpressionPointer {
 	type Output = ExpressionPointer;
 
-	fn evaluate_at_runtime<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_runtime(self, context: &mut Context) -> Self::Output {
 		let evaluated = context.virtual_memory.get(self).clone().evaluate_at_runtime(context);
 		match evaluated {
 			ExpressionOrPointer::Expression(expression) => {
@@ -180,21 +184,24 @@ impl Runtime for ExpressionPointer {
 }
 
 impl Typed for ExpressionPointer {
-	fn get_type<System: Io>(&self, context: &mut Context<System>) -> Type {
+	fn get_type(&self, context: &mut Context) -> Type {
 		self.expression(context).clone().get_type(context)
 	}
 }
 
 impl TranspileToC for ExpressionPointer {
-	fn to_c<System: Io>(&self, _context: &mut Context<System>, output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c(&self, _context: &mut Context, output: Option<String>) -> Result<String, TranspileError> {
 		Ok(format!("{}&literal_{}", output.map(|name| format!("{name} = ")).unwrap_or_default(), self.0))
 	}
 
-	fn c_prelude<System: Io>(&self, context: &mut Context<System>) -> Result<String, TranspileError> {
-		self.expression(context).to_owned().c_prelude(context)
+	fn c_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
+		let mut code = String::new();
+		code += &self.expression(context).to_owned().c_prelude(context)?;
+		code += &format!("void literal_{} = {}", self.0, self.expression(context).clone().to_c(context, None)?);
+		Ok(code)
 	}
 
-	fn c_type_prelude<System: Io>(&self, context: &mut Context<System>) -> Result<String, TranspileError> {
+	fn c_type_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
 		self.expression(context).to_owned().c_type_prelude(context)
 	}
 }
@@ -213,7 +220,7 @@ impl std::fmt::Display for ExpressionPointer {
 }
 
 impl Spanned for ExpressionPointer {
-	fn span<System: Io>(&self, context: &Context<System>) -> Span {
+	fn span(&self, context: &Context) -> Span {
 		self.expression(context).span(context)
 	}
 }
@@ -231,6 +238,15 @@ pub struct VirtualMemory {
 	memory: HashMap<usize, Expression>,
 }
 
+impl<'a> IntoIterator for &'a VirtualMemory {
+	type IntoIter = hash_map::Iter<'a, usize, Expression>;
+	type Item = (&'a usize, &'a Expression);
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.memory.iter()
+	}
+}
+
 impl VirtualMemory {
 	/// Creates an empty virtual memory with no entries. This should be called once at the beginning of compilation, when the compiler's
 	/// `context` is created.
@@ -240,7 +256,7 @@ impl VirtualMemory {
 	/// The created empty virtual memory.
 	pub fn empty() -> VirtualMemory {
 		VirtualMemory {
-			memory: HashMap::from([(0, Expression::EvaluatedLiteral(EvaluatedLiteral::ErrorLiteral(Span::unknown())))]),
+			memory: HashMap::from([(0, Expression::EvaluatedLiteral(EvaluatedLiteral::Error(Span::none())))]),
 		}
 	}
 
@@ -259,7 +275,7 @@ impl VirtualMemory {
 	/// # Returns
 	///
 	/// A `VirtualPointer` that points to the object that was stored.
-	pub(crate) fn store(&mut self, value: Expression) -> ExpressionPointer {
+	pub fn store(&mut self, value: Expression) -> ExpressionPointer {
 		let address = self.next_unused_virtual_address();
 		let _ = self.memory.insert(address, value);
 		ExpressionPointer(address)
@@ -275,7 +291,7 @@ impl VirtualMemory {
 	/// # Parameters
 	///
 	/// - `address` - A `VirtualPointer` to the location to get the `LiteralObject` from in virtual memory.
-	pub(crate) fn get(&self, address: ExpressionPointer) -> &Expression {
+	pub fn get(&self, address: ExpressionPointer) -> &Expression {
 		self.memory.get(&address.0).unwrap()
 	}
 

@@ -4,21 +4,20 @@ use std::collections::VecDeque;
 use try_as::traits as try_as_traits;
 
 use crate::{
+	Span,
+	Spanned,
 	api::{context::Context, traits::TryAs as _},
 	ast::expressions::{
-		field_access::{Dot, FieldAccess},
-		function_call::FunctionCall,
-		literal::EvaluatedLiteral,
-		name::Name,
 		Expression,
+		field_access::{DoubleColon, FieldAccess},
+		function_call::FunctionCall,
+		identifier::Identifier,
+		literal::EvaluatedLiteral,
 	},
 	comptime::memory::ExpressionPointer,
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	io::Io,
-	lexer::{tokenize_string, Token, TokenType},
+	lexer::{Token, TokenType, tokenize_string},
 	parser::{Parse as _, ParseError, TokenQueue, TokenQueueFunctionality as _, TryParse},
-	Span,
-	Spanned,
 };
 
 /// A part of a formatted string literal. Each part is either just a regular string value, or an
@@ -46,19 +45,19 @@ use crate::{
 /// ]
 /// ```
 #[derive(Debug, try_as::macros::TryAsRef)]
-pub(crate) enum StringPart {
+pub enum StringPart {
 	/// A literal string part.
-	Literal(CabinString),
+	Literal(Text),
 
 	/// An interpolated expression string part.
 	Expression(ExpressionPointer),
 }
 
 impl StringPart {
-	pub(crate) fn into_expression<System: Io>(self, context: &mut Context<System>) -> ExpressionPointer {
+	pub fn into_expression(self, context: &mut Context) -> ExpressionPointer {
 		match self {
 			StringPart::Expression(expression) => expression,
-			StringPart::Literal(literal) => Expression::EvaluatedLiteral(EvaluatedLiteral::String(literal)).store_in_memory(context),
+			StringPart::Literal(literal) => Expression::EvaluatedLiteral(EvaluatedLiteral::Text(literal)).store_in_memory(context),
 		}
 	}
 }
@@ -66,15 +65,15 @@ impl StringPart {
 /// A wrapper for implementing `Parse` for parsing string literals. In Cabin, all strings are
 /// formatted strings by default, so they require special logic for parsing.
 #[derive(Debug, Clone)]
-pub struct CabinString {
-	pub(crate) span: Span,
-	pub(crate) value: String,
+pub struct Text {
+	pub span: Span,
+	pub value: String,
 }
 
-impl TryParse for CabinString {
+impl TryParse for Text {
 	type Output = ExpressionPointer;
 
-	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let token = tokens.pop(TokenType::String, context)?;
 		let span = token.span;
 		let with_quotes = token.value;
@@ -86,7 +85,7 @@ impl TryParse for CabinString {
 			match without_quotes.chars().next().unwrap() {
 				'{' => {
 					if !builder.is_empty() {
-						parts.push(StringPart::Literal(CabinString { value: builder, span }));
+						parts.push(StringPart::Literal(Text { value: builder, span }));
 						builder = String::new();
 					}
 					// Pop the opening brace
@@ -117,12 +116,12 @@ impl TryParse for CabinString {
 			}
 		}
 		if !builder.is_empty() {
-			parts.push(StringPart::Literal(CabinString { value: builder, span }));
+			parts.push(StringPart::Literal(Text { value: builder, span }));
 		}
 
 		if parts.iter().all(|part| matches!(part, StringPart::Literal(_))) {
-			return Ok(Expression::EvaluatedLiteral(EvaluatedLiteral::String(CabinString {
-				value: parts.into_iter().map(|part| part.try_as::<CabinString>().unwrap().value.clone()).collect::<String>(),
+			return Ok(Expression::EvaluatedLiteral(EvaluatedLiteral::Text(Text {
+				value: parts.into_iter().map(|part| part.try_as::<Text>().unwrap().value.clone()).collect::<String>(),
 				span,
 			}))
 			.store_in_memory(context));
@@ -135,7 +134,7 @@ impl TryParse for CabinString {
 		for part in parts {
 			let mut right = part.into_expression(context);
 			right = Expression::FunctionCall(FunctionCall::basic(
-				Expression::FieldAccess(FieldAccess::new(right, "to_text".into(), context.scope_tree.unique_id(), span)).store_in_memory(context),
+				Expression::FieldAccess(FieldAccess::new(right, Identifier::create_virtual("to_text", context), context.scope.unique_id(), span)).store_in_memory(context),
 				context,
 			))
 			.store_in_memory(context);
@@ -151,15 +150,15 @@ impl TryParse for CabinString {
 	}
 }
 
-impl Spanned for CabinString {
-	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
+impl Spanned for Text {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }
 
-impl Dot for CabinString {
-	fn dot<System: Io>(&self, name: &Name, context: &mut Context<System>) -> ExpressionPointer {
-		match name.unmangled_name() {
+impl DoubleColon for Text {
+	fn double_colon(&self, name: &Identifier, _context: &mut Context) -> ExpressionPointer {
+		match name.source_identifier() {
 			_ => ExpressionPointer::ERROR,
 		}
 	}

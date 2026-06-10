@@ -3,9 +3,8 @@ use std::{fmt::Debug, ops::Deref};
 use crate::{
 	api::context::Context,
 	ast::expressions::Expression,
-	comptime::{memory::ExpressionPointer, CompileTime},
+	comptime::{CompileTime, memory::ExpressionPointer},
 	diagnostics::Diagnostic,
-	io::Io,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TryParse},
 };
@@ -24,7 +23,7 @@ impl TagList {
 impl TryParse for TagList {
 	type Output = TagList;
 
-	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let mut tags = Vec::new();
 		let _ = parse_list!(tokens, context, ListType::Tag, {
 			tags.push(Expression::parse(tokens, context));
@@ -36,7 +35,7 @@ impl TryParse for TagList {
 impl CompileTime for TagList {
 	type Output = TagList;
 
-	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		let mut values = Vec::new();
 		for value in self.values {
 			let evaluated = value.evaluate_at_compile_time(context);

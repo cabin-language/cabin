@@ -1,12 +1,11 @@
 use crate::{
+	Context,
 	ast::statements::Statement,
 	comptime::CompileTime,
 	interpreter::Runtime,
-	io::Io,
 	parser::{Parse, TokenQueue, TokenQueueFunctionality as _},
 	scope::{ScopeId, ScopeType},
 	transpiler::{TranspileError, TranspileToC},
-	Context,
 };
 
 #[derive(Debug)]
@@ -18,16 +17,16 @@ pub struct Program {
 impl Parse for Program {
 	type Output = Self;
 
-	fn parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Self::Output {
-		context.scope_tree.enter_new_scope(ScopeType::File);
-		let inner_scope_id = context.scope_tree.unique_id();
+	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
+		context.scope.enter_new_scope(ScopeType::File);
+		let inner_scope_id = context.scope.unique_id();
 		let mut statements = Vec::new();
 
 		while !tokens.is_all_whitespace() {
 			statements.push(Statement::parse(tokens, context));
 		}
 
-		context.scope_tree.exit_scope().unwrap();
+		context.scope.exit_scope().unwrap();
 
 		Program { statements, inner_scope_id }
 	}
@@ -36,7 +35,7 @@ impl Parse for Program {
 impl CompileTime for Program {
 	type Output = Program;
 
-	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		Self {
 			statements: self.statements.into_iter().map(|statement| statement.evaluate_at_compile_time(context)).collect(),
 			inner_scope_id: self.inner_scope_id,
@@ -47,7 +46,7 @@ impl CompileTime for Program {
 impl Runtime for Program {
 	type Output = Program;
 
-	fn evaluate_at_runtime<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_runtime(self, context: &mut Context) -> Self::Output {
 		Self {
 			statements: self.statements.into_iter().map(|statement| statement.evaluate_at_runtime(context)).collect(),
 			inner_scope_id: self.inner_scope_id,
@@ -56,7 +55,7 @@ impl Runtime for Program {
 }
 
 impl TranspileToC for Program {
-	fn to_c<System: Io>(&self, context: &mut Context<System>, _output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c(&self, context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
 		let type_prelude = self
 			.statements
 			.iter()

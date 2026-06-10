@@ -1,21 +1,20 @@
 use super::ExpressionOrPointer;
 use crate::{
+	Span,
+	Spanned,
 	api::{context::Context, scope::ScopeId},
-	ast::expressions::{name::Name, operators::PrimaryExpression, Expression},
-	comptime::{memory::ExpressionPointer, CompileTime},
+	ast::expressions::{Expression, identifier::Identifier, operators::PrimaryExpression},
+	comptime::{CompileTime, memory::ExpressionPointer},
 	diagnostics::Diagnostic,
-	io::Io,
 	lexer::TokenType,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
-	Span,
-	Spanned,
 };
 
 #[derive(Debug, Clone)]
 pub struct FieldAccess {
 	left: ExpressionPointer,
-	right: Name,
+	right: Identifier,
 	scope_id: ScopeId,
 	span: Span,
 }
@@ -23,17 +22,17 @@ pub struct FieldAccess {
 impl TryParse for FieldAccess {
 	type Output = ExpressionPointer;
 
-	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let mut expression = PrimaryExpression::try_parse(tokens, context)?;
 		let start = expression.span(context);
 		while tokens.next_is(TokenType::Dot) {
 			let _ = tokens.pop(TokenType::Dot, context)?;
-			let right = Name::try_parse(tokens, context)?;
+			let right = Identifier::try_parse(tokens, context)?;
 			let end = right.span(context);
 			expression = Expression::FieldAccess(Self {
 				left: expression,
 				right,
-				scope_id: context.scope_tree.unique_id(),
+				scope_id: context.scope.unique_id(),
 				span: start.to(end),
 			})
 			.store_in_memory(context);
@@ -46,13 +45,13 @@ impl TryParse for FieldAccess {
 impl CompileTime for FieldAccess {
 	type Output = ExpressionOrPointer;
 
-	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		let left_evaluated = self.left.evaluate_at_compile_time(context);
 
 		// Resolvable at compile-time
 		if let Ok(pointer) = left_evaluated.try_as_literal(context) {
 			let literal = pointer.evaluated_literal(context).to_owned();
-			let field_value = literal.dot(&self.right, context);
+			let field_value = literal.double_colon(&self.right, context);
 			ExpressionOrPointer::Pointer(field_value)
 		}
 		// Not resolvable at compile-time - return the original expression
@@ -68,7 +67,7 @@ impl CompileTime for FieldAccess {
 }
 
 impl TranspileToC for FieldAccess {
-	fn to_c<System: Io>(&self, context: &mut Context<System>, output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c(&self, context: &mut Context, output: Option<String>) -> Result<String, TranspileError> {
 		Ok(format!(
 			"void* left;{}{}->{};",
 			self.left.to_c(context, Some("left".to_owned()))?,
@@ -79,17 +78,17 @@ impl TranspileToC for FieldAccess {
 }
 
 impl Spanned for FieldAccess {
-	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }
 
 impl FieldAccess {
-	pub(crate) const fn new(left: ExpressionPointer, right: Name, scope_id: ScopeId, span: Span) -> FieldAccess {
+	pub const fn new(left: ExpressionPointer, right: Identifier, scope_id: ScopeId, span: Span) -> FieldAccess {
 		FieldAccess { left, right, scope_id, span }
 	}
 }
 
-pub trait Dot {
-	fn dot<System: Io>(&self, name: &Name, context: &mut Context<System>) -> ExpressionPointer;
+pub trait DoubleColon {
+	fn double_colon(&self, name: &Identifier, context: &mut Context) -> ExpressionPointer;
 }

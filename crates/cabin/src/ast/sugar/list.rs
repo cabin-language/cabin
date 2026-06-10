@@ -1,18 +1,17 @@
 use std::ops::Deref;
 
 use crate::{
-	api::context::Context,
-	ast::expressions::{literal::EvaluatedLiteral, Expression},
-	comptime::{
-		memory::{ExpressionPointer, LiteralPointer},
-		CompileTime,
-	},
-	diagnostics::Diagnostic,
-	io::Io,
-	parse_list,
-	parser::{ListType, Parse as _, TokenQueue, TryParse},
 	Span,
 	Spanned,
+	api::context::Context,
+	ast::expressions::{Expression, literal::EvaluatedLiteral},
+	comptime::{
+		CompileTime,
+		memory::{ExpressionPointer, LiteralPointer},
+	},
+	diagnostics::Diagnostic,
+	parse_list,
+	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality, TryParse},
 };
 
 #[derive(Debug, Clone)]
@@ -24,13 +23,14 @@ pub struct List {
 impl TryParse for List {
 	type Output = List;
 
-	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let mut list = Vec::new();
+		let start = tokens.current_position().unwrap();
 		let end = parse_list!(tokens, context, ListType::Bracketed, { list.push(Expression::parse(tokens, context)) }).span;
 
 		Ok(List {
 			elements: list,
-			span: Span::unknown(),
+			span: start.to(end),
 		})
 	}
 }
@@ -38,7 +38,7 @@ impl TryParse for List {
 impl CompileTime for List {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		let items = self.elements.into_iter().map(|item| item.evaluate_at_compile_time(context)).collect::<Vec<_>>();
 		if items.iter().all(|item| item.is_literal(context)) {
 			Expression::EvaluatedLiteral(EvaluatedLiteral::List(LiteralList(items.into_iter().map(|item| item.as_literal(context)).collect())))
@@ -49,7 +49,7 @@ impl CompileTime for List {
 }
 
 impl Spanned for List {
-	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }
@@ -66,7 +66,7 @@ impl Deref for List {
 pub struct LiteralList(Vec<LiteralPointer>);
 
 impl LiteralList {
-	pub(crate) fn empty() -> LiteralList {
+	pub fn empty() -> LiteralList {
 		LiteralList(Vec::new())
 	}
 }

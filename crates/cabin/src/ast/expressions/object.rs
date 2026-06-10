@@ -2,62 +2,42 @@ use std::collections::HashMap;
 
 use super::literal::{EvaluatedLiteral, Object};
 use crate::{
+	Span,
 	api::context::Context,
 	ast::{
-		expressions::{name::Name, parameter::Parameter, Expression, Spanned},
+		expressions::{Expression, Spanned, identifier::Identifier},
 		misc::tag::TagList,
 	},
 	comptime::{
-		memory::{ExpressionPointer, LiteralPointer},
 		CompileTime,
 		CompileTimeError,
+		memory::{ExpressionPointer, LiteralPointer},
 	},
-	diagnostics::{Diagnostic, DiagnosticInfo},
-	if_then_else_default,
+	diagnostics::Diagnostic,
 	if_then_some,
-	io::Io,
 	lexer::TokenType,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
 	typechecker::{Type, Typed},
-	Span,
 };
 
 #[derive(Debug, Clone)]
-pub struct ObjectConstructor {
-	pub type_name: Name,
-	pub fields: HashMap<Name, ExpressionPointer>,
+pub struct NewExpression {
+	pub type_name: Identifier,
+	pub fields: HashMap<Identifier, ExpressionPointer>,
 	pub span: Span,
 	pub tags: TagList,
 }
 
-impl TryParse for ObjectConstructor {
-	type Output = ObjectConstructor;
+impl TryParse for NewExpression {
+	type Output = NewExpression;
 
-	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordNew, context)?.span;
 
 		// Name
-		let name = Name::try_parse(tokens, context)?;
-
-		let _compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
-			let mut compile_time_parameters = Vec::new();
-			let _ = parse_list!(tokens, context, ListType::AngleBracketed, {
-				let parameter = Parameter::try_parse(tokens, context)?;
-				let parameter_name = parameter.name();
-				let error = Expression::error(Span::unknown(), context);
-				if let Err(error) = context.scope_tree.declare_new_variable(parameter_name.clone(), error) {
-					context.add_diagnostic(Diagnostic {
-						file: context.file.clone(),
-						span: parameter_name.span(context),
-						info: DiagnosticInfo::Error(error),
-					});
-				}
-				compile_time_parameters.push(parameter);
-			});
-			compile_time_parameters
-		});
+		let name = Identifier::try_parse(tokens, context)?;
 
 		// Fields
 		let mut fields = HashMap::new();
@@ -72,7 +52,7 @@ impl TryParse for ObjectConstructor {
 			}
 
 			// Name
-			let mut field_name = Name::try_parse(tokens, context)?;
+			let mut field_name = Identifier::try_parse(tokens, context)?;
 			field_name.documentation = documentation.clone();
 
 			// Value
@@ -92,7 +72,7 @@ impl TryParse for ObjectConstructor {
 		.span;
 
 		// Return
-		Ok(ObjectConstructor {
+		Ok(NewExpression {
 			type_name: name,
 			fields,
 			span: start.to(end),
@@ -101,10 +81,10 @@ impl TryParse for ObjectConstructor {
 	}
 }
 
-impl CompileTime for ObjectConstructor {
+impl CompileTime for NewExpression {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time<System: Io>(mut self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_compile_time(mut self, context: &mut Context) -> Self::Output {
 		self.tags = self.tags.evaluate_at_compile_time(context);
 
 		// Explicit fields
@@ -114,7 +94,7 @@ impl CompileTime for ObjectConstructor {
 		}
 
 		// Validate fields
-		if self.type_name != "Object".into() {
+		if self.type_name.source_identifier() != "Any" {
 			let object_type = self.get_type(context);
 			let Type::Literal(type_literal) = object_type;
 			if let EvaluatedLiteral::Group(group) = type_literal.evaluated_literal(context).to_owned() {
@@ -134,7 +114,7 @@ impl CompileTime for ObjectConstructor {
 					else {
 						context.add_diagnostic(Diagnostic {
 							span: self.span.to(self.type_name.span(context)),
-							info: CompileTimeError::MissingField(field_name.unmangled_name().to_owned()).into(),
+							info: CompileTimeError::MissingField(field_name.source_identifier().to_owned()).into(),
 							file: context.file.clone(),
 						});
 					}
@@ -145,7 +125,7 @@ impl CompileTime for ObjectConstructor {
 					if !group.fields.contains_key(field_name) {
 						context.add_diagnostic(Diagnostic {
 							span: field_name.span(context),
-							info: CompileTimeError::ExtraField(field_name.unmangled_name().to_owned()).into(),
+							info: CompileTimeError::ExtraField(field_name.source_identifier().to_owned()).into(),
 							file: context.file.clone(),
 						});
 					}
@@ -161,18 +141,18 @@ impl CompileTime for ObjectConstructor {
 	}
 }
 
-impl Typed for ObjectConstructor {
-	fn get_type<System: Io>(&self, context: &mut Context<System>) -> Type {
+impl Typed for NewExpression {
+	fn get_type(&self, context: &mut Context) -> Type {
 		Type::Literal(self.type_name.value(context).map_or(LiteralPointer::ERROR, |value| value.as_literal(context)))
 	}
 }
 
-impl TranspileToC for ObjectConstructor {
-	fn to_c<System: Io>(&self, _context: &mut Context<System>, _output: Option<String>) -> Result<String, TranspileError> {
+impl TranspileToC for NewExpression {
+	fn to_c(&self, _context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
 		Ok("NULL".to_owned()) // TODO: obj constr c
 	}
 
-	fn c_prelude<System: Io>(&self, context: &mut Context<System>) -> Result<String, TranspileError> {
+	fn c_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
 		let mut builder = vec![format!("({}) {{", self.type_name.to_c(context, None)?)];
 		for (name, value) in &self.fields {
 			builder.push(format!("\t.{} = {}", name.to_c(context, None)?, value.to_c(context, None)?));
@@ -183,14 +163,14 @@ impl TranspileToC for ObjectConstructor {
 	}
 }
 
-impl Spanned for ObjectConstructor {
-	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
+impl Spanned for NewExpression {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }
 
-impl ObjectConstructor {
-	pub(crate) fn try_into_literal<System: Io>(&self, context: &mut Context<System>) -> Result<Object, ()> {
+impl NewExpression {
+	pub fn try_into_literal(&self, context: &mut Context) -> Result<Object, ()> {
 		let mut fields = HashMap::new();
 		for (field_name, field_value) in &self.fields {
 			if let Ok(literal) = field_value.try_as_literal(context) {

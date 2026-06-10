@@ -5,6 +5,8 @@ use literal::UnevaluatedLiteral;
 use try_as::traits::{self as try_as_traits, TryAsMut};
 
 use crate::{
+	Span,
+	Spanned,
 	api::context::Context,
 	ast::{
 		expressions::{
@@ -12,10 +14,10 @@ use crate::{
 			field_access::FieldAccess,
 			foreach::ForEachLoop,
 			function_call::FunctionCall,
+			identifier::Identifier,
 			if_expression::IfExpression,
 			literal::EvaluatedLiteral,
-			name::Name,
-			object::ObjectConstructor,
+			object::NewExpression,
 			operators::BinaryExpression,
 			parameter::Parameter,
 			run::{RunExpression, RuntimeableExpression},
@@ -24,15 +26,12 @@ use crate::{
 		misc::tag::TagList,
 		sugar::list::List,
 	},
-	comptime::{memory::ExpressionPointer, CompileTime, CompileTimeError},
+	comptime::{CompileTime, CompileTimeError, memory::ExpressionPointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	interpreter::Runtime,
-	io::Io,
 	parser::{Parse, TokenQueue, TokenQueueFunctionality as _, TryParse as _},
 	transpiler::{TranspileError, TranspileToC},
 	typechecker::{Type, Typed},
-	Span,
-	Spanned,
 };
 
 pub mod block;
@@ -41,16 +40,17 @@ pub mod extend;
 pub mod field_access;
 pub mod foreach;
 pub mod function_call;
-pub mod function_declaration;
+pub mod action;
 pub mod group;
+pub mod identifier;
 pub mod if_expression;
 pub mod literal;
-pub mod name;
 pub mod object;
 pub mod operators;
 pub mod parameter;
 pub mod run;
 pub mod unary;
+pub mod while_loop;
 
 #[derive(Debug, Clone, try_as::macros::From, try_as::macros::TryInto, try_as::macros::TryAsRef, try_as::macros::TryAsMut)]
 pub enum Expression {
@@ -58,8 +58,8 @@ pub enum Expression {
 	FieldAccess(FieldAccess),
 	FunctionCall(FunctionCall),
 	If(IfExpression),
-	Name(Name),
-	ObjectConstructor(ObjectConstructor),
+	Identifier(Identifier),
+	ObjectConstructor(NewExpression),
 	ForEachLoop(ForEachLoop),
 	Run(RunExpression),
 	Unary(UnaryOperation),
@@ -72,7 +72,7 @@ pub enum Expression {
 impl Parse for Expression {
 	type Output = ExpressionPointer;
 
-	fn parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Self::Output {
+	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
 		let start = tokens.front().unwrap().span;
 		let result = BinaryExpression::try_parse(tokens, context);
 		match result {
@@ -98,13 +98,13 @@ pub enum ExpressionOrPointer {
 impl CompileTime for Expression {
 	type Output = ExpressionOrPointer;
 
-	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		match self {
 			Self::Block(block) => ExpressionOrPointer::Expression(Expression::Block(block.evaluate_at_compile_time(context))),
 			Self::FieldAccess(field_access) => field_access.evaluate_at_compile_time(context),
 			Self::FunctionCall(function_call) => function_call.evaluate_at_compile_time(context),
 			Self::If(if_expression) => if_expression.evaluate_at_compile_time(context),
-			Self::Name(name) => ExpressionOrPointer::Expression(Expression::Name(name.evaluate_at_compile_time(context))),
+			Self::Identifier(name) => ExpressionOrPointer::Expression(Expression::Identifier(name.evaluate_at_compile_time(context))),
 			Self::ObjectConstructor(constructor) => ExpressionOrPointer::Expression(constructor.evaluate_at_compile_time(context)),
 			Self::ForEachLoop(for_loop) => for_loop.evaluate_at_compile_time(context),
 			Self::Run(run_expression) => ExpressionOrPointer::Expression(Expression::Run(run_expression.evaluate_at_compile_time(context))),
@@ -119,7 +119,7 @@ impl CompileTime for Expression {
 impl Runtime for Expression {
 	type Output = ExpressionOrPointer;
 
-	fn evaluate_at_runtime<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_runtime(self, context: &mut Context) -> Self::Output {
 		match self {
 			Self::Run(run_expression) => ExpressionOrPointer::Pointer(run_expression.evaluate_at_runtime(context)),
 			expression => expression.evaluate_at_compile_time(context),
@@ -128,11 +128,11 @@ impl Runtime for Expression {
 }
 
 impl TranspileToC for Expression {
-	fn to_c<System: Io>(&self, _context: &mut Context<System>, _output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c(&self, _context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
 		todo!()
 	}
 
-	fn c_prelude<System: Io>(&self, context: &mut Context<System>) -> Result<String, TranspileError> {
+	fn c_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
 		match self {
 			Expression::ObjectConstructor(object) => object.c_prelude(context),
 			_ => Ok(String::new()),
@@ -141,35 +141,35 @@ impl TranspileToC for Expression {
 }
 
 impl Typed for Expression {
-	fn get_type<System: Io>(&self, context: &mut Context<System>) -> Type {
+	fn get_type(&self, context: &mut Context) -> Type {
 		match self {
 			Expression::EvaluatedLiteral(literal) => literal.get_type(context),
-			Expression::Name(name) => name.get_type(context),
+			Expression::Identifier(name) => name.get_type(context),
 			value => todo!("{value:?}"),
 		}
 	}
 }
 
 impl Expression {
-	pub(crate) fn error<System: Io>(span: Span, context: &mut Context<System>) -> ExpressionPointer {
-		Expression::EvaluatedLiteral(EvaluatedLiteral::ErrorLiteral(span)).store_in_memory(context)
+	pub fn error(span: Span, context: &mut Context) -> ExpressionPointer {
+		Expression::EvaluatedLiteral(EvaluatedLiteral::Error(span)).store_in_memory(context)
 	}
 
-	pub(crate) fn store_in_memory<System: Io>(self, context: &mut Context<System>) -> ExpressionPointer {
+	pub fn store_in_memory(self, context: &mut Context) -> ExpressionPointer {
 		context.virtual_memory.store(self)
 	}
 
-	pub(crate) fn set_tags(&mut self, tags: TagList) {
+	pub fn set_tags(&mut self, tags: TagList) {
 		match self {
 			Expression::Literal(literal) => match literal {
-				UnevaluatedLiteral::FunctionDeclaration(function) => function.set_tags(tags),
+				UnevaluatedLiteral::Action(function) => function.set_tags(tags),
 				_ => {},
 			},
 			_ => {},
 		}
 	}
 
-	pub(crate) fn set_name(&mut self, name: Name) {
+	pub fn set_name(&mut self, name: Identifier) {
 		match self {
 			Expression::Literal(literal) => match literal {
 				UnevaluatedLiteral::Group(function) => function.name = Some(name),
@@ -179,10 +179,10 @@ impl Expression {
 		}
 	}
 
-	pub(crate) fn set_documentation(&mut self, documentation: &str) {
+	pub fn set_documentation(&mut self, documentation: &str) {
 		match self {
 			Expression::Literal(literal) => match literal {
-				UnevaluatedLiteral::FunctionDeclaration(function) => function.documentation = Some(documentation.to_owned()),
+				UnevaluatedLiteral::Action(function) => function.documentation = Some(documentation.to_owned()),
 				_ => {},
 			},
 			_ => {},
@@ -192,24 +192,24 @@ impl Expression {
 	pub fn get_documentation(&self) -> Option<&str> {
 		match self {
 			Expression::Literal(literal) => match literal {
-				UnevaluatedLiteral::FunctionDeclaration(function) => function.documentation.as_ref().map(|doc| doc.as_str()),
+				UnevaluatedLiteral::Action(function) => function.documentation.as_ref().map(|doc| doc.as_str()),
 				_ => None,
 			},
 			Self::EvaluatedLiteral(literal) => match literal {
-				EvaluatedLiteral::FunctionDeclaration(function) => function.documentation.as_ref().map(|doc| doc.as_str()),
+				EvaluatedLiteral::Action(function) => function.documentation.as_ref().map(|doc| doc.as_str()),
 				_ => None,
 			},
 			_ => None,
 		}
 	}
 
-	pub(crate) fn kind_name(&self) -> &'static str {
+	pub fn kind_name(&self) -> &'static str {
 		match self {
 			Expression::Block(_) => "block",
 			Expression::FieldAccess(_) => "field access",
 			Expression::FunctionCall(_) => "function call",
 			Expression::If(_) => "if expression",
-			Expression::Name(_) => "name",
+			Expression::Identifier(_) => "name",
 			Expression::ObjectConstructor(_) => "object constructor",
 			Expression::ForEachLoop(_) => "for loop",
 			Expression::Run(_) => "run expression",
@@ -223,9 +223,9 @@ impl Expression {
 }
 
 impl Spanned for Expression {
-	fn span<System: Io>(&self, context: &Context<System>) -> Span {
+	fn span(&self, context: &Context) -> Span {
 		match self {
-			Expression::Name(name) => name.span(context),
+			Expression::Identifier(name) => name.span(context),
 			Expression::Run(run_expression) => run_expression.span(context),
 			Expression::Block(block) => block.span(context),
 			Expression::ObjectConstructor(object_constructor) => object_constructor.span(context),
@@ -243,7 +243,7 @@ impl Spanned for Expression {
 }
 
 impl RuntimeableExpression for Expression {
-	fn evaluate_subexpressions_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self {
+	fn evaluate_subexpressions_at_compile_time(self, context: &mut Context) -> Self {
 		match self {
 			Self::FunctionCall(function_call) => Expression::FunctionCall(function_call.evaluate_subexpressions_at_compile_time(context)),
 			_ => {

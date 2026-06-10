@@ -5,19 +5,17 @@ use super::{
 	traits::TryAs as _,
 };
 use crate::{
-	api::{diagnostics::Diagnostic, scope::ScopeTree},
-	ast::expressions::{
-		literal::{EvaluatedLiteral, Object},
-		name::Name,
-		Expression,
-	},
-	comptime::memory::VirtualMemory,
 	Diagnostics,
 	STDLIB,
+	api::{diagnostics::Diagnostic, scope::ScopeTree},
+	ast::expressions::{
+		Expression,
+		identifier::Identifier,
+		literal::{EvaluatedLiteral, Object},
+	},
+	comptime::memory::{ExpressionPointer, VirtualMemory},
+	scope::ScopeId,
 };
-
-/// `Context` with the standard system IO streams (`stdin`, `stdout`, and `stderr`).
-pub type StandardContext = Context<SystemIo>;
 
 /// Global(ish) data about the state of the compiler. The context holds the program's scope data,
 /// as well as memory where expressions are stored, among some other metadata like the file path
@@ -34,23 +32,23 @@ pub type StandardContext = Context<SystemIo>;
 /// - `Input` - The input stream to read from when calling `input()` in Cabin
 /// - `Output` - The output stream to read from when calling `print()` in Cabin
 /// - `Error` - The error stream to read from when printing an error in Cabin
-pub struct Context<System: Io> {
+pub struct Context {
 	/// Scope information about the program. Scopes are stored in this tree, with each scope
 	/// containing a map between variable names and their values (as `ExpressionPointers`)
 	///
 	/// This should never be reassigned, only mutated with the methods on it for declaring and
 	/// reassigning variables.
-	pub(crate) scope_tree: ScopeTree,
+	pub scope: ScopeTree,
 
 	/// Storage for expressions. All expressions are stored in `VirtualMemory`, and can be accessed
 	/// with an `ExpressionPointer`, allowing one expression to be reused and mutated globally from
 	/// different places in the user's code.
-	pub(crate) virtual_memory: VirtualMemory,
+	pub virtual_memory: VirtualMemory,
 
-	pub(crate) system_io: System,
+	pub system_io: Box<dyn Io>,
 
 	/// Whether Cabin is currently being run as an interactive REPL.
-	pub(crate) interactive: bool,
+	pub interactive: bool,
 
 	/// Whether the AST is currently being evaluated "with side effects".
 	///
@@ -63,32 +61,32 @@ pub struct Context<System: Io> {
 	///
 	/// Certain builtin functions, such as `print`, will simply not run (or have their behavior
 	/// affected) when this is `false`.
-	pub(crate) side_effects: bool,
+	pub side_effects: bool,
 
 	/// The path to the file currently being acted upon (tokenized/parsed/evaluated/transpiled etc.)
-	pub(crate) file: PathBuf,
+	pub file: PathBuf,
 
 	/// Whether the user has printed to stdout or stderr at compile-time. This is stored because
 	/// when the first line is printed (and the first line only), an additional empty line should
 	/// be printed before it. Additionally, if any lines are printed, an additional newline is
 	/// printed after compile-time evaluation.
-	pub(crate) has_printed: bool,
+	pub has_printed: bool,
 
 	/// Diagnostic information about the user's code, such as warnings, errors, hints, etc.
 	diagnostics: Diagnostics,
 
-	pub(crate) name_query_result: Option<Name>,
-	pub(crate) name_query: Option<usize>,
+	pub name_query_result: Option<Identifier>,
+	pub name_query: Option<usize>,
 }
 
-impl Default for StandardContext {
+impl Default for Context {
 	fn default() -> Self {
 		Context::with_io(SystemIo)
 	}
 }
 
-impl StandardContext {
-	pub fn interactive() -> StandardContext {
+impl Context {
+	pub fn interactive() -> Context {
 		Context {
 			interactive: true,
 			..Default::default()
@@ -96,10 +94,10 @@ impl StandardContext {
 	}
 }
 
-impl<System: Io> Context<System> {
-	pub fn with_io(io: System) -> Self {
+impl Context {
+	pub fn with_io<System: Io + 'static>(io: System) -> Self {
 		let mut context = Context {
-			scope_tree: ScopeTree::global(),
+			scope: ScopeTree::global(),
 			virtual_memory: VirtualMemory::empty(),
 			diagnostics: Diagnostics::empty(),
 			side_effects: true,
@@ -107,23 +105,32 @@ impl<System: Io> Context<System> {
 			file: "stdlib".into(),
 			name_query: None,
 			name_query_result: None,
-			system_io: io,
+			system_io: Box::new(io),
 			interactive: false,
 		};
 
 		// Add stdlib
-		let stdlib_pointer =
-			Expression::EvaluatedLiteral(EvaluatedLiteral::Object(crate::parse_library(STDLIB, &mut context).into_object(&mut context))).store_in_memory(&mut context);
-		context.scope_tree.declare_new_variable("builtin", stdlib_pointer).unwrap();
-		let Expression::EvaluatedLiteral(EvaluatedLiteral::Object(stdlib)) = stdlib_pointer.expression(&context).to_owned() else { unreachable!() };
+		let stdlib_ast = crate::parse_library(STDLIB, &mut context);
+		dbg!(&stdlib_ast);
+		let stdlib_pointer = Expression::EvaluatedLiteral(EvaluatedLiteral::Object(stdlib_ast.into_object(&mut context))).store_in_memory(&mut context);
+		context.scope.declare_new_variable(Identifier::create_virtual("builtin", &context), stdlib_pointer).unwrap();
+		let Expression::EvaluatedLiteral(EvaluatedLiteral::Object(stdlib)) = stdlib_pointer.expression(&context).to_owned() else {
+			unreachable!()
+		};
 
 		// Bring some stdib items into scope
-		context.scope_tree.declare_new_variable("Text", stdlib.get_field("Text").unwrap().into()).unwrap();
-		context.scope_tree.declare_new_variable("Number", stdlib.get_field("Number").unwrap().into()).unwrap();
 		context
-			.scope_tree
+			.scope
+			.declare_new_variable(Identifier::create_virtual("Text", &context), stdlib.get_field("Text").unwrap().into())
+			.unwrap();
+		context
+			.scope
+			.declare_new_variable(Identifier::create_virtual("Number", &context), stdlib.get_field("Number").unwrap().into())
+			.unwrap();
+		context
+			.scope
 			.declare_new_variable(
-				"print",
+				Identifier::create_virtual("print", &context),
 				stdlib
 					.get_field("system")
 					.unwrap()
@@ -145,9 +152,9 @@ impl<System: Io> Context<System> {
 			)
 			.unwrap();
 		context
-			.scope_tree
+			.scope
 			.declare_new_variable(
-				"debug",
+				Identifier::create_virtual("debug", &context),
 				stdlib
 					.get_field("system")
 					.unwrap()
@@ -169,9 +176,9 @@ impl<System: Io> Context<System> {
 			)
 			.unwrap();
 		context
-			.scope_tree
+			.scope
 			.declare_new_variable(
-				"input",
+				Identifier::create_virtual("input", &context),
 				stdlib
 					.get_field("system")
 					.unwrap()
@@ -222,7 +229,7 @@ impl<System: Io> Context<System> {
 	}
 
 	pub const fn scope_tree(&self) -> &ScopeTree {
-		&self.scope_tree
+		&self.scope
 	}
 
 	pub fn print<S: Display>(&mut self, text: S) {
@@ -239,5 +246,17 @@ impl<System: Io> Context<System> {
 
 	pub fn input(&mut self) -> String {
 		self.system_io.read_line()
+	}
+
+	pub fn get_false(&self) -> ExpressionPointer {
+		self.scope.get_variable_from_id("false", ScopeId::global()).unwrap()
+	}
+
+	pub fn get_true(&self) -> ExpressionPointer {
+		self.scope.get_variable_from_id("true", ScopeId::global()).unwrap()
+	}
+
+	pub fn none(&self) -> ExpressionPointer {
+		self.scope.get_variable_from_id("none", ScopeId::global()).unwrap()
 	}
 }

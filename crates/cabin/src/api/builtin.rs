@@ -1,17 +1,16 @@
 use std::collections::VecDeque;
 
-use super::io::Io;
 use crate::{
-	api::traits::TryAs as _,
-	ast::{
-		expressions::{literal::EvaluatedLiteral, Expression},
-		sugar::string::CabinString,
-	},
-	comptime::memory::ExpressionPointer,
-	diagnostics::{Diagnostic, DiagnosticInfo},
 	Context,
 	Span,
 	Spanned as _,
+	api::traits::TryAs as _,
+	ast::{
+		expressions::{Expression, literal::EvaluatedLiteral},
+		sugar::string::Text,
+	},
+	comptime::memory::ExpressionPointer,
+	diagnostics::{Diagnostic, DiagnosticInfo},
 };
 
 /// Calls a built-in function at compile-time. Built-in functions are called at compiled time with Rust code. This is used in
@@ -33,19 +32,13 @@ use crate::{
 /// If there is no built-in function with the given name, an error is returned.
 ///
 /// Also, if the built-in function throws an error while being called, that error is returned as well.
-pub fn call_builtin_at_compile_time<System: Io>(name: &str, context: &mut Context<System>, arguments: Vec<ExpressionPointer>, span: Span) -> ExpressionPointer {
+pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, arguments: Vec<ExpressionPointer>, span: Span) -> ExpressionPointer {
 	match name {
 		"terminal.print" => {
 			let mut arguments = VecDeque::from(arguments);
 			let pointer = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
-			let returned_object = call_builtin_at_compile_time("Anything.to_string", context, vec![pointer], span);
-			let string_value = returned_object
-				.as_literal(context)
-				.evaluated_literal(context)
-				.try_as::<CabinString>()
-				.unwrap()
-				.value
-				.to_owned();
+			let returned_object = call_builtin_at_compile_time("Any.to_string", context, vec![pointer], span);
+			let string_value = returned_object.as_literal(context).evaluated_literal(context).try_as::<Text>().unwrap().value.to_owned();
 
 			if context.side_effects {
 				if !context.has_printed && !context.interactive {
@@ -64,19 +57,13 @@ pub fn call_builtin_at_compile_time<System: Io>(name: &str, context: &mut Contex
 				});
 			}
 
-			Expression::error(Span::unknown(), context)
+			Expression::error(Span::none(), context)
 		},
 		"terminal.debug" => {
 			let mut arguments = VecDeque::from(arguments);
 			let pointer = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
-			let returned_object = call_builtin_at_compile_time("Anything.to_string", context, vec![pointer], span);
-			let string_value = returned_object
-				.as_literal(context)
-				.evaluated_literal(context)
-				.try_as::<CabinString>()
-				.unwrap()
-				.value
-				.to_owned();
+			let returned_object = call_builtin_at_compile_time("Any.to_string", context, vec![pointer], span);
+			let string_value = returned_object.as_literal(context).evaluated_literal(context).try_as::<Text>().unwrap().value.to_owned();
 
 			if context.side_effects {
 				if !context.has_printed && !context.interactive {
@@ -95,17 +82,21 @@ pub fn call_builtin_at_compile_time<System: Io>(name: &str, context: &mut Contex
 				});
 			}
 
-			Expression::error(Span::unknown(), context)
+			Expression::error(Span::none(), context)
 		},
 		"Text.plus" => {
 			let mut arguments = VecDeque::from(arguments);
 			let this = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
 			let other = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
 
-			let EvaluatedLiteral::String(string) = this.as_literal(context).evaluated_literal(context).to_owned() else { unreachable!() };
-			let EvaluatedLiteral::String(string2) = other.as_literal(context).evaluated_literal(context) else { unreachable!() };
+			let EvaluatedLiteral::Text(string) = this.as_literal(context).evaluated_literal(context).to_owned() else {
+				unreachable!()
+			};
+			let EvaluatedLiteral::Text(string2) = other.as_literal(context).evaluated_literal(context) else {
+				unreachable!()
+			};
 
-			Expression::EvaluatedLiteral(EvaluatedLiteral::String(CabinString {
+			Expression::EvaluatedLiteral(EvaluatedLiteral::Text(Text {
 				value: string.value + &string2.value,
 				span,
 			}))
@@ -115,14 +106,10 @@ pub fn call_builtin_at_compile_time<System: Io>(name: &str, context: &mut Contex
 			let mut line = String::new();
 			let _ = std::io::stdin().read_line(&mut line).unwrap();
 			line = line.get(0..line.len() - 1).unwrap().to_owned();
-			Expression::EvaluatedLiteral(EvaluatedLiteral::String(CabinString {
-				value: line,
-				span: Span::unknown(),
-			}))
-			.store_in_memory(context)
+			Expression::EvaluatedLiteral(EvaluatedLiteral::Text(Text { value: line, span: Span::none() })).store_in_memory(context)
 		},
 
-		"Anything.to_string" => {
+		"Any.to_string" => {
 			#[allow(clippy::or_fun_call, reason = "False positive; Returning reference")]
 			let this = arguments
 				.first()
@@ -130,11 +117,11 @@ pub fn call_builtin_at_compile_time<System: Io>(name: &str, context: &mut Contex
 				.as_literal(context)
 				.evaluated_literal(context);
 
-			Expression::EvaluatedLiteral(EvaluatedLiteral::String(CabinString {
-				span: Span::unknown(),
+			Expression::EvaluatedLiteral(EvaluatedLiteral::Text(Text {
+				span: Span::none(),
 				value: match this {
 					EvaluatedLiteral::Number(number) => number.to_string(),
-					EvaluatedLiteral::String(string) => string.value.clone(),
+					EvaluatedLiteral::Text(string) => string.value.clone(),
 					_ => "<object>".to_owned(),
 				},
 			}))

@@ -2,26 +2,25 @@ use std::collections::HashMap;
 
 use super::{literal::EvaluatedLiteral, parameter::EvaluatedParameter};
 use crate::{
+	Span,
+	Spanned,
 	api::{context::Context, scope::ScopeType},
 	ast::{
-		expressions::{name::Name, parameter::Parameter, Expression},
+		expressions::{Expression, identifier::Identifier, parameter::Parameter},
 		misc::tag::TagList,
 	},
 	comptime::{
-		memory::{ExpressionPointer, LiteralPointer},
 		CompileTime,
 		CompileTimeError,
+		memory::{ExpressionPointer, LiteralPointer},
 	},
 	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	if_then_else_default,
 	if_then_some,
-	io::Io,
 	lexer::TokenType,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	typechecker::Type,
-	Span,
-	Spanned,
 };
 
 ///
@@ -51,7 +50,7 @@ use crate::{
 pub struct Extend {
 	type_to_extend: ExpressionPointer,
 	type_to_be: Option<ExpressionPointer>,
-	fields: HashMap<Name, ExpressionPointer>,
+	fields: HashMap<Identifier, ExpressionPointer>,
 	span: Span,
 	compile_time_parameters: Vec<Parameter>,
 }
@@ -59,18 +58,18 @@ pub struct Extend {
 impl TryParse for Extend {
 	type Output = Extend;
 
-	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordExtend, context)?.span;
 
-		context.scope_tree.enter_new_scope(ScopeType::Extend);
+		context.scope.enter_new_scope(ScopeType::Extend);
 
 		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut parameters = Vec::new();
 			let _ = parse_list!(tokens, context, ListType::AngleBracketed, {
 				let parameter = Parameter::try_parse(tokens, context)?;
 				let name = parameter.name().to_owned();
-				let error = Expression::error(Span::unknown(), context);
-				if let Err(error) = context.scope_tree.declare_new_variable(name.clone(), error) {
+				let error = Expression::error(Span::none(), context);
+				if let Err(error) = context.scope.declare_new_variable(name.clone(), error) {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span: name.span(context),
@@ -84,8 +83,8 @@ impl TryParse for Extend {
 
 		let type_to_extend = Expression::parse(tokens, context);
 
-		let type_to_be = if_then_some!(tokens.next_is(TokenType::KeywordToBe), {
-			let _ = tokens.pop(TokenType::KeywordToBe, context)?;
+		let type_to_be = if_then_some!(tokens.next_is(TokenType::KeywordAs), {
+			let _ = tokens.pop(TokenType::KeywordAs, context)?;
 			Expression::parse(tokens, context)
 		});
 
@@ -95,7 +94,7 @@ impl TryParse for Extend {
 			let _tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
 
 			// Name
-			let name = Name::try_parse(tokens, context)?;
+			let name = Identifier::try_parse(tokens, context)?;
 
 			// Value
 			let _ = tokens.pop(TokenType::Equal, context)?;
@@ -114,7 +113,7 @@ impl TryParse for Extend {
 			});
 		}
 
-		context.scope_tree.exit_scope().unwrap();
+		context.scope.exit_scope().unwrap();
 
 		Ok(Extend {
 			type_to_extend,
@@ -129,7 +128,7 @@ impl TryParse for Extend {
 impl CompileTime for Extend {
 	type Output = EvaluatedExtend;
 
-	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		let type_to_extend = Type::Literal(self.type_to_extend.evaluate_to_literal(context));
 		let type_to_be = self.type_to_be.map(|to_be| Type::Literal(to_be.evaluate_to_literal(context)));
 
@@ -150,11 +149,11 @@ impl CompileTime for Extend {
 		if let Some(Type::Literal(type_literal)) = &type_to_be {
 			if let EvaluatedLiteral::Group(group) = type_literal.evaluated_literal(context).to_owned() {
 				// Missing fields
-				for (field_name, field_value) in &fields {
+				for (field_name, _field_value) in &fields {
 					if !fields.contains_key(field_name) {
 						context.add_diagnostic(Diagnostic {
 							span: self.span.to(self.type_to_be.as_ref().unwrap().span(context)),
-							info: CompileTimeError::MissingField(field_name.unmangled_name().to_owned()).into(),
+							info: CompileTimeError::MissingField(field_name.source_identifier().to_owned()).into(),
 							file: context.file.clone(),
 						});
 					}
@@ -166,7 +165,7 @@ impl CompileTime for Extend {
 						let literal = field_value.evaluated_literal(context).to_owned();
 						context.add_diagnostic(Diagnostic {
 							span: field_name.span(context).to(literal.span(context)),
-							info: CompileTimeError::ExtraField(field_name.unmangled_name().to_owned()).into(),
+							info: CompileTimeError::ExtraField(field_name.source_identifier().to_owned()).into(),
 							file: context.file.clone(),
 						});
 					}
@@ -193,7 +192,7 @@ impl CompileTime for Extend {
 }
 
 impl Spanned for Extend {
-	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }
@@ -202,7 +201,7 @@ impl Spanned for Extend {
 pub struct EvaluatedExtend {
 	type_to_extend: Type,
 	type_to_be: Option<Type>,
-	fields: HashMap<Name, LiteralPointer>,
+	fields: HashMap<Identifier, LiteralPointer>,
 	span: Span,
 	compile_time_parameters: Vec<EvaluatedParameter>,
 }

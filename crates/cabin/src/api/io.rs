@@ -187,7 +187,10 @@ impl Io for SystemIo {
 	}
 
 	fn set_environment_variable(&mut self, name: &str, value: &str) {
-		std::env::set_var(name, value);
+		#[allow(unsafe_code)]
+		unsafe {
+			std::env::set_var(name, value)
+		};
 	}
 
 	fn read_file(&mut self, path: &str) -> Option<String> {

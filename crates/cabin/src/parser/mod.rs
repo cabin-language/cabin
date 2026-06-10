@@ -1,12 +1,11 @@
 use std::collections::VecDeque;
 
 use crate::{
-	ast::statements::Statement,
-	diagnostics::{Diagnostic, DiagnosticInfo},
-	io::Io,
-	lexer::{Token, TokenType},
 	Context,
 	Span,
+	ast::statements::Statement,
+	diagnostics::{Diagnostic, DiagnosticInfo},
+	lexer::{Token, TokenType},
 };
 
 #[derive(Clone, Debug, thiserror::Error, Hash, PartialEq, Eq)]
@@ -38,7 +37,7 @@ pub enum ParseError {
 
 /// A trait for treating a collection of tokens as a queue of tokens that can be parsed. This is
 /// traditionally implemented for `VecDeque<Token>`.
-pub(crate) trait TokenQueueFunctionality {
+pub trait TokenQueueFunctionality {
 	/// Removes and returns the next token's value in the queue if the token matches the given token type. If it
 	/// does not (or the token stream is empty), an error is returned.
 	///
@@ -47,11 +46,11 @@ pub(crate) trait TokenQueueFunctionality {
 	///
 	/// # Returns
 	/// A `Result` containing either the value of the popped token or an `Error`.
-	fn pop<System: Io>(&mut self, token_type: TokenType, context: &Context<System>) -> Result<Token, Diagnostic>;
+	fn pop(&mut self, token_type: TokenType, context: &Context) -> Result<Token, Diagnostic>;
 
-	fn peek_type<System: Io>(&self, context: &Context<System>) -> Result<TokenType, Diagnostic>;
+	fn peek_type(&self, context: &Context) -> Result<TokenType, Diagnostic>;
 
-	fn peek_type2<System: Io>(&self, context: &Context<System>) -> Result<TokenType, Diagnostic>;
+	fn peek_type2(&self, context: &Context) -> Result<TokenType, Diagnostic>;
 
 	/// Returns whether the next token in the queue matches the given token type.
 	fn next_is(&self, token_type: TokenType) -> bool;
@@ -73,18 +72,18 @@ pub(crate) trait TokenQueueFunctionality {
 }
 
 impl TokenQueueFunctionality for TokenQueue {
-	fn peek_type<System: Io>(&self, context: &Context<System>) -> Result<TokenType, Diagnostic> {
+	fn peek_type(&self, context: &Context) -> Result<TokenType, Diagnostic> {
 		let mut index = 0;
 		let mut next = self.get(index).ok_or_else(|| Diagnostic {
 			file: context.file.clone(),
-			span: Span::unknown(),
+			span: Span::none(),
 			info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
 		})?;
 		while next.token_type.is_whitespace() {
 			index += 1;
 			next = self.get(index).ok_or_else(|| Diagnostic {
 				file: context.file.clone(),
-				span: Span::unknown(),
+				span: Span::none(),
 				info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
 			})?;
 		}
@@ -93,7 +92,9 @@ impl TokenQueueFunctionality for TokenQueue {
 
 	fn next_is(&self, token_type: TokenType) -> bool {
 		let mut index = 0;
-		let Some(mut next) = self.get(index) else { return false; };
+		let Some(mut next) = self.get(index) else {
+			return false;
+		};
 		while next.token_type.is_whitespace() {
 			if token_type == TokenType::Comment && next.token_type == TokenType::Comment {
 				return true;
@@ -108,20 +109,20 @@ impl TokenQueueFunctionality for TokenQueue {
 		next.token_type == token_type
 	}
 
-	fn peek_type2<System: Io>(&self, context: &Context<System>) -> Result<TokenType, Diagnostic> {
+	fn peek_type2(&self, context: &Context) -> Result<TokenType, Diagnostic> {
 		let mut index = 0;
 
 		// The one time I'd enjoy a do-while loop
 		let mut next = self.get(index).ok_or_else(|| Diagnostic {
 			file: context.file.clone(),
-			span: Span::unknown(),
+			span: Span::none(),
 			info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
 		})?;
 		index += 1;
 		while next.token_type.is_whitespace() {
 			next = self.get(index).ok_or_else(|| Diagnostic {
 				file: context.file.clone(),
-				span: Span::unknown(),
+				span: Span::none(),
 				info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
 			})?;
 			index += 1;
@@ -129,14 +130,14 @@ impl TokenQueueFunctionality for TokenQueue {
 
 		let mut next_next = self.get(index).ok_or_else(|| Diagnostic {
 			file: context.file.clone(),
-			span: Span::unknown(),
+			span: Span::none(),
 			info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
 		})?;
 		while next_next.token_type.is_whitespace() {
 			index += 1;
 			next_next = self.get(index).ok_or_else(|| Diagnostic {
 				file: context.file.clone(),
-				span: Span::unknown(),
+				span: Span::none(),
 				info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
 			})?;
 		}
@@ -148,7 +149,7 @@ impl TokenQueueFunctionality for TokenQueue {
 		self.iter().all(|token| token.token_type.is_whitespace())
 	}
 
-	fn pop<System: Io>(&mut self, token_type: TokenType, context: &Context<System>) -> Result<Token, Diagnostic> {
+	fn pop(&mut self, token_type: TokenType, context: &Context) -> Result<Token, Diagnostic> {
 		let mut maybe_whitespace = TokenType::Whitespace;
 		while maybe_whitespace.is_whitespace() {
 			if let Some(token) = self.pop_front() {
@@ -173,7 +174,7 @@ impl TokenQueueFunctionality for TokenQueue {
 
 		return Err(Diagnostic {
 			file: context.file.clone(),
-			span: Span::unknown(),
+			span: Span::none(),
 			info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedEOF { expected: token_type })),
 		});
 	}
@@ -183,7 +184,7 @@ impl TokenQueueFunctionality for TokenQueue {
 	}
 }
 
-pub(crate) enum ListType {
+pub enum ListType {
 	AngleBracketed,
 	Braced,
 	Bracketed,
@@ -192,7 +193,7 @@ pub(crate) enum ListType {
 }
 
 impl ListType {
-	pub(crate) const fn opening(&self) -> TokenType {
+	pub const fn opening(&self) -> TokenType {
 		match self {
 			Self::AngleBracketed => TokenType::LeftAngleBracket,
 			Self::Braced => TokenType::LeftBrace,
@@ -202,7 +203,7 @@ impl ListType {
 		}
 	}
 
-	pub(crate) const fn closing(&self) -> TokenType {
+	pub const fn closing(&self) -> TokenType {
 		match self {
 			Self::AngleBracketed => TokenType::RightAngleBracket,
 			Self::Braced => TokenType::RightBrace,
@@ -212,16 +213,16 @@ impl ListType {
 	}
 }
 
-pub(crate) trait TryParse {
+pub trait TryParse {
 	type Output;
 
-	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic>;
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic>;
 }
 
-pub(crate) trait Parse {
+pub trait Parse {
 	type Output;
 
-	fn parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Self::Output;
+	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output;
 }
 
-pub(crate) type TokenQueue = VecDeque<Token>;
+pub type TokenQueue = VecDeque<Token>;

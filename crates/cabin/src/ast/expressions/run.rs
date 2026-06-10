@@ -1,11 +1,10 @@
 use crate::{
+	Span,
 	api::context::Context,
 	ast::expressions::Spanned,
-	comptime::{memory::ExpressionPointer, CompileTime},
+	comptime::{CompileTime, memory::ExpressionPointer},
 	interpreter::Runtime,
-	io::Io,
 	transpiler::{TranspileError, TranspileToC},
-	Span,
 };
 
 /// A `Run` expression in the language. Run-expressions forcibly run an expression at runtime instead of compile-time. Since
@@ -41,7 +40,7 @@ pub struct RunExpression {
 impl CompileTime for RunExpression {
 	type Output = RunExpression;
 
-	fn evaluate_at_compile_time<System: Io>(self, _context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_compile_time(self, _context: &mut Context) -> Self::Output {
 		// TODO: evaluate subexpressions
 		self
 	}
@@ -50,19 +49,19 @@ impl CompileTime for RunExpression {
 impl Runtime for RunExpression {
 	type Output = ExpressionPointer;
 
-	fn evaluate_at_runtime<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_runtime(self, context: &mut Context) -> Self::Output {
 		self.expression.evaluate_at_runtime(context)
 	}
 }
 
 impl TranspileToC for RunExpression {
-	fn to_c<System: Io>(&self, context: &mut Context<System>, output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c(&self, context: &mut Context, output: Option<String>) -> Result<String, TranspileError> {
 		self.expression.to_c(context, output)
 	}
 }
 
 impl Spanned for RunExpression {
-	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span.to_owned()
 	}
 }
@@ -71,5 +70,5 @@ impl Spanned for RunExpression {
 /// the expression needs to implement how the `run` keyword should act on it via
 /// `evaluate_subexpressions_at_compile_time()`.
 pub trait RuntimeableExpression {
-	fn evaluate_subexpressions_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self;
+	fn evaluate_subexpressions_at_compile_time(self, context: &mut Context) -> Self;
 }

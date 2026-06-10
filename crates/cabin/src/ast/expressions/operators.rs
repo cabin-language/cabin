@@ -5,23 +5,22 @@ use crate::{
 	api::context::Context,
 	ast::{
 		expressions::{
+			Expression,
 			block::Block,
 			either::Either,
 			extend::Extend,
 			foreach::ForEachLoop,
 			function_call::{FunctionCall, PostfixOperators},
-			function_declaration::FunctionDeclaration,
-			group::GroupDeclaration,
+			action::Action,
+			group::Group,
+			identifier::Identifier,
 			if_expression::IfExpression,
-			name::Name,
-			object::ObjectConstructor,
-			Expression,
+			object::NewExpression,
 		},
-		sugar::{list::List, string::CabinString},
+		sugar::{list::List, string::Text},
 	},
 	comptime::memory::ExpressionPointer,
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	io::Io,
 	lexer::{Token, TokenType},
 	parser::{Parse as _, ParseError, TokenQueueFunctionality as _, TryParse},
 };
@@ -31,7 +30,7 @@ use crate::{
 ///
 /// # Parameters
 /// `<'this>` - The lifetime of this operation, to ensure that the contained reference to the precedent operation lives at least that long.
-pub(crate) struct BinaryOperation {
+pub struct BinaryOperation {
 	/// The operation that has the next highest precedence, or `None` if this operation has the highest precedence.
 	precedent: Option<&'static BinaryOperation>,
 	/// The token types that represent this operation, used to parse a binary expression.
@@ -45,7 +44,7 @@ impl BinaryOperation {
 	/// - `tokens` - The token stream to parse
 	/// - `current_scope` - The current scope
 	/// - `debug_info` - The debug information
-	fn parse_precedent<System: Io>(&self, tokens: &mut VecDeque<Token>, context: &mut Context<System>) -> Result<ExpressionPointer, Diagnostic> {
+	fn parse_precedent(&self, tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<ExpressionPointer, Diagnostic> {
 		if let Some(precedent) = self.precedent {
 			parse_binary_expression(precedent, tokens, context)
 		} else {
@@ -56,9 +55,9 @@ impl BinaryOperation {
 
 /// A binary expression node in the abstract syntax tree. This represents an operation that takes two operands in infix notation.
 #[derive(Clone, Debug)]
-pub(crate) struct BinaryExpression;
+pub struct BinaryExpression;
 
-fn parse_binary_expression<System: Io>(operation: &BinaryOperation, tokens: &mut VecDeque<Token>, context: &mut Context<System>) -> Result<ExpressionPointer, Diagnostic> {
+fn parse_binary_expression(operation: &BinaryOperation, tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<ExpressionPointer, Diagnostic> {
 	let mut expression = operation.parse_precedent(tokens, context)?;
 
 	while tokens.next_is_one_of(operation.token_types) {
@@ -73,7 +72,7 @@ fn parse_binary_expression<System: Io>(operation: &BinaryOperation, tokens: &mut
 impl TryParse for BinaryExpression {
 	type Output = ExpressionPointer;
 
-	fn try_parse<System: Io>(tokens: &mut VecDeque<Token>, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		parse_binary_expression(&COMBINATOR, tokens, context)
 	}
 }
@@ -83,7 +82,7 @@ pub struct PrimaryExpression;
 impl TryParse for PrimaryExpression {
 	type Output = ExpressionPointer;
 
-	fn try_parse<System: Io>(tokens: &mut VecDeque<Token>, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		Ok(match tokens.peek_type(context)? {
 			TokenType::LeftParenthesis => {
 				let _ = tokens.pop(TokenType::LeftParenthesis, context).unwrap_or_else(|_| unreachable!());
@@ -93,11 +92,11 @@ impl TryParse for PrimaryExpression {
 				// TODO: this needs to be its own expression type for transpilation/formatting
 			},
 
-			TokenType::KeywordAction => Expression::Literal(UnevaluatedLiteral::FunctionDeclaration(FunctionDeclaration::try_parse(tokens, context)?)).store_in_memory(context),
+			TokenType::KeywordAction => Expression::Literal(UnevaluatedLiteral::Action(Action::try_parse(tokens, context)?)).store_in_memory(context),
 			TokenType::LeftBrace => Expression::Block(Block::try_parse(tokens, context)?).store_in_memory(context),
-			TokenType::Identifier => Expression::Name(Name::try_parse(tokens, context)?).store_in_memory(context),
-			TokenType::KeywordNew => Expression::ObjectConstructor(ObjectConstructor::try_parse(tokens, context)?).store_in_memory(context),
-			TokenType::KeywordGroup => Expression::Literal(UnevaluatedLiteral::Group(GroupDeclaration::try_parse(tokens, context)?)).store_in_memory(context),
+			TokenType::Identifier => Expression::Identifier(Identifier::try_parse(tokens, context)?).store_in_memory(context),
+			TokenType::KeywordNew => Expression::ObjectConstructor(NewExpression::try_parse(tokens, context)?).store_in_memory(context),
+			TokenType::KeywordGroup => Expression::Literal(UnevaluatedLiteral::Group(Group::try_parse(tokens, context)?)).store_in_memory(context),
 			TokenType::KeywordEither => Expression::Literal(UnevaluatedLiteral::Either(Either::try_parse(tokens, context)?)).store_in_memory(context),
 			TokenType::KeywordIf => Expression::If(IfExpression::try_parse(tokens, context)?).store_in_memory(context),
 			TokenType::KeywordForEach => Expression::ForEachLoop(ForEachLoop::try_parse(tokens, context)?).store_in_memory(context),
@@ -106,7 +105,7 @@ impl TryParse for PrimaryExpression {
 			// Syntactic sugar: These below handle cases where syntactic sugar exists for initializing objects of certain types, such as
 			// strings, numbers, lists, etc.:
 			TokenType::LeftBracket => Expression::List(List::try_parse(tokens, context)?).store_in_memory(context),
-			TokenType::String => CabinString::try_parse(tokens, context)?,
+			TokenType::String => Text::try_parse(tokens, context)?,
 			TokenType::Number => {
 				let number_token = tokens.pop(TokenType::Number, context).unwrap();
 				Expression::EvaluatedLiteral(EvaluatedLiteral::Number(number_token.value.parse().unwrap())).store_in_memory(context)
@@ -121,7 +120,7 @@ impl TryParse for PrimaryExpression {
 						expected: "primary expression",
 						actual: token_type,
 					})),
-				})
+				});
 			},
 		})
 	}

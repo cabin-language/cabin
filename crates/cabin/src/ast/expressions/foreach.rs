@@ -1,24 +1,23 @@
 use super::ExpressionOrPointer;
 use crate::{
-	api::{context::Context, scope::ScopeId, traits::TryAs as _},
-	ast::{
-		expressions::{block::Block, name::Name, Expression},
-		sugar::list::LiteralList,
-	},
-	comptime::{memory::ExpressionPointer, CompileTime, CompileTimeError},
-	diagnostics::{Diagnostic, DiagnosticInfo},
-	io::Io,
-	lexer::TokenType,
-	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	Span,
 	Spanned,
+	api::{context::Context, scope::ScopeId, traits::TryAs as _},
+	ast::{
+		expressions::{Expression, block::Block, identifier::Identifier},
+		sugar::list::LiteralList,
+	},
+	comptime::{CompileTime, CompileTimeError, memory::ExpressionPointer},
+	diagnostics::{Diagnostic, DiagnosticInfo},
+	lexer::TokenType,
+	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 };
 
 #[derive(Debug, Clone)]
 pub struct ForEachLoop {
 	/// The name of the variable that acts as the element when iterating. For example, in a loop such as
-	/// `foreach fruit in fruits { ... }`, this would refer to the name `fruit`.
-	binding_name: Name,
+	/// `for fruit in fruits { ... }`, this would refer to the name `fruit`.
+	binding_name: Identifier,
 
 	/// The expression being iterated over. For example, in a loop such as `foreach fruit in fruits { ... }`, this refers to the
 	/// expression `fruits`.
@@ -37,10 +36,10 @@ pub struct ForEachLoop {
 impl TryParse for ForEachLoop {
 	type Output = ForEachLoop;
 
-	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordForEach, context)?.span;
 
-		let binding_name = Name::try_parse(tokens, context)?;
+		let binding_name = Identifier::try_parse(tokens, context)?;
 
 		let _ = tokens.pop(TokenType::KeywordIn, context)?;
 
@@ -52,8 +51,8 @@ impl TryParse for ForEachLoop {
 
 		// Add the binding name to scope
 		let inner_scope_id = body.inner_scope_id();
-		let error = Expression::error(Span::unknown(), context);
-		if let Err(error) = context.scope_tree.declare_new_variable_from_id(binding_name.clone(), error, inner_scope_id) {
+		let error = Expression::error(Span::none(), context);
+		if let Err(error) = context.scope.declare_new_variable_from_id(binding_name.clone(), error, inner_scope_id) {
 			context.add_diagnostic(Diagnostic {
 				file: context.file.clone(),
 				span: binding_name.span(context),
@@ -74,7 +73,7 @@ impl TryParse for ForEachLoop {
 impl CompileTime for ForEachLoop {
 	type Output = ExpressionOrPointer;
 
-	fn evaluate_at_compile_time<System: Io>(mut self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_compile_time(mut self, context: &mut Context) -> Self::Output {
 		self.iterable = self.iterable.evaluate_at_compile_time(context);
 
 		let literal = self.iterable.try_as_literal(context);
@@ -91,7 +90,7 @@ impl CompileTime for ForEachLoop {
 			let elements = pointer.evaluated_literal(context).try_as::<LiteralList>().cloned().unwrap_or_else(|_| LiteralList::empty());
 
 			for element in &*elements {
-				context.scope_tree.reassign_variable_from_id(&self.binding_name, (*element).into(), self.inner_scope_id);
+				context.scope.reassign_variable_from_id(&self.binding_name, (*element).into(), self.inner_scope_id);
 				let _value = self.body.clone().evaluate_at_compile_time(context);
 			}
 		}
@@ -101,7 +100,7 @@ impl CompileTime for ForEachLoop {
 }
 
 impl Spanned for ForEachLoop {
-	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }

@@ -1,4 +1,3 @@
-use super::io::Io;
 use crate::Context;
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Hash)]
@@ -14,7 +13,7 @@ impl Span {
 		Span { start, length }
 	}
 
-	pub const fn unknown() -> Span {
+	pub const fn none() -> Span {
 		Span { start: 0, length: 1 }
 	}
 
@@ -30,11 +29,7 @@ impl Span {
 	}
 
 	pub fn or(self, other: Span) -> Span {
-		if self == Span::unknown() {
-			other
-		} else {
-			self
-		}
+		if self == Span::none() { other } else { self }
 	}
 
 	pub fn contains(&self, position: usize) -> bool {
@@ -109,5 +104,5 @@ pub trait Spanned {
 	/// # Returns
 	///
 	/// The second of the program's source code that this expression spans.
-	fn span<System: Io>(&self, context: &Context<System>) -> Span;
+	fn span(&self, context: &Context) -> Span;
 }

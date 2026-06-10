@@ -15,20 +15,20 @@ use crate::{
 
 /// The `ast` module, short for "abstract syntax tree". This module holds each of the specific
 /// types of AST nodes, each of which is coupled with how it's parsed, evaluated, etc.
-pub(crate) mod ast;
+pub mod ast;
 pub mod comptime;
 pub mod interpreter;
 
 /// The `lexer` module. This module handles tokenization of source code, which is the first step of
 /// compilation. The raw source code is first split into "tokens" in this module, before being sent
 /// off to the `ast` module for parsing.
-pub(crate) mod lexer;
-pub(crate) mod parser;
-pub(crate) mod transpiler;
-pub(crate) mod typechecker;
+pub mod lexer;
+pub mod parser;
+pub mod transpiler;
+pub mod typechecker;
 
 /// The `api` module. This module holds a bunch of utilities and abstractions within the compiler.
-pub(crate) mod api;
+pub mod api;
 
 /// The Cabin standard library. This is a Cabin file that's automatically imported into every Cabin
 /// project or file. It contains definitions for all of the built-in types and objects, such as
@@ -57,7 +57,7 @@ pub const STDLIB: &str = include_str!("../std/stdlib.cabin");
 /// correct permissions), an error is returned. If the file is read successfully, this will return
 /// `Ok`, even if the program isn't formatted correctly or parseable correctly. To check if the
 /// program was syntactically correct, check `context.diagnostics()` on your `context` object.
-pub fn parse_library_file<P: AsRef<Path>, System: Io>(path: P, context: &mut Context<System>) -> Result<Module, std::io::Error> {
+pub fn parse_library_file<P: AsRef<Path>, System: Io>(path: P, context: &mut Context) -> Result<Module, std::io::Error> {
 	let code = std::fs::read_to_string(path.as_ref().join("src/library.cabin"))?;
 	Ok(parse_library(&code, context))
 }
@@ -84,12 +84,12 @@ pub fn parse_library_file<P: AsRef<Path>, System: Io>(path: P, context: &mut Con
 /// correct permissions), an error is returned. If the file is read successfully, this will return
 /// `Ok`, even if the program isn't formatted correctly or parseable correctly. To check if the
 /// program was syntactically correct, check `context.diagnostics()` on your `context` object.
-pub fn parse_library<System: Io>(code: &str, context: &mut Context<System>) -> Module {
+pub fn parse_library(code: &str, context: &mut Context) -> Module {
 	let mut tokens = lexer::tokenize(code, context);
 	Module::parse(&mut tokens, context)
 }
 
-pub fn parse_program<System: Io>(code: &str, context: &mut Context<System>) -> Program {
+pub fn parse_program(code: &str, context: &mut Context) -> Program {
 	let mut tokens = lexer::tokenize(code, context);
 	Program::parse(&mut tokens, context)
 }
@@ -119,14 +119,14 @@ pub fn tokenize(code: &str) -> (VecDeque<Token>, Diagnostics) {
 ///
 /// - `code` - The Cabin source code as a string
 /// - `context` - The program's context; This contains global data about the program. If you're
-pub fn interpret<System: Io>(code: &str, context: &mut Context<System>) {
+pub fn interpret(code: &str, context: &mut Context) {
 	let mut tokens = lexer::tokenize(code, context);
 	let program = Program::parse(&mut tokens, context);
 	let evaluated = program.evaluate_at_compile_time(context);
 	let _ = evaluated.evaluate_at_runtime(context);
 }
 
-pub fn interpret_with_logs<System: Io>(code: &str, context: &mut Context<System>) {
+pub fn interpret_with_logs(code: &str, context: &mut Context) {
 	context.println("Running...");
 	context.println("\tChecking syntax and types...");
 	let mut tokens = lexer::tokenize(code, context);

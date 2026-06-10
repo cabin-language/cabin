@@ -1,6 +1,6 @@
 use std::fmt::Write as _;
 
-use crate::{ast::expressions::literal::EvaluatedLiteral, comptime::memory::LiteralPointer, io::Io, Context};
+use crate::{Context, ast::expressions::literal::EvaluatedLiteral, comptime::memory::LiteralPointer};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Type {
@@ -8,11 +8,11 @@ pub enum Type {
 }
 
 pub trait Typed {
-	fn get_type<System: Io>(&self, context: &mut Context<System>) -> Type;
+	fn get_type(&self, context: &mut Context) -> Type;
 }
 
 impl Type {
-	pub(crate) fn is_assignable_to<System: Io>(&self, other: &Type, context: &mut Context<System>) -> bool {
+	pub fn is_assignable_to(&self, other: &Type, context: &mut Context) -> bool {
 		let Type::Literal(source) = self;
 		let Type::Literal(target) = other;
 
@@ -20,26 +20,26 @@ impl Type {
 			return true;
 		}
 
-		let anything = context
-			.scope_tree
-			.get_builtin("Anything")
+		let any = context
+			.scope
+			.get_builtin("Any")
 			.unwrap()
 			.to_owned()
 			.try_as_literal(context)
 			.unwrap_or(LiteralPointer::ERROR);
 
-		if target == &anything {
+		if target == &any {
 			return true;
 		}
 
 		source == target
 	}
 
-	pub fn name<System: Io>(&self, context: &mut Context<System>) -> String {
+	pub fn name(&self, context: &mut Context) -> String {
 		match self {
 			Type::Literal(literal) => match literal.evaluated_literal(context).to_owned() {
-				EvaluatedLiteral::Group(group) => group.name.as_ref().map_or_else(|| "Unknown".to_owned(), |name| name.unmangled_name().to_owned()),
-				EvaluatedLiteral::FunctionDeclaration(function) => {
+				EvaluatedLiteral::Group(group) => group.name.as_ref().map_or_else(|| "Unknown".to_owned(), |name| name.source_identifier().to_owned()),
+				EvaluatedLiteral::Action(function) => {
 					let mut result = "action".to_owned();
 					if !function.compile_time_parameters().is_empty() {
 						write!(
@@ -48,7 +48,7 @@ impl Type {
 							function
 								.compile_time_parameters()
 								.iter()
-								.map(|parameter| parameter.name().unmangled_name().to_owned())
+								.map(|parameter| parameter.name().source_identifier().to_owned())
 								.collect::<Vec<_>>()
 								.join(", "),
 						)
@@ -61,7 +61,7 @@ impl Type {
 							function
 								.parameters()
 								.iter()
-								.map(|parameter| format!("{}: {}", parameter.name().unmangled_name(), parameter.parameter_type().name(context)))
+								.map(|parameter| format!("{}: {}", parameter.name().source_identifier(), parameter.parameter_type().name(context)))
 								.collect::<Vec<_>>()
 								.join(", "),
 						)
@@ -79,5 +79,5 @@ impl Type {
 }
 
 pub trait Check {
-	fn is_valid<System: Io>(&self, context: &mut Context<System>) -> bool;
+	fn is_valid(&self, context: &mut Context) -> bool;
 }

@@ -1,6 +1,6 @@
-use crate::{io::Io, Context};
+use crate::Context;
 
 pub trait Runtime {
 	type Output;
-	fn evaluate_at_runtime<System: Io>(self, context: &mut Context<System>) -> Self::Output;
+	fn evaluate_at_runtime(self, context: &mut Context) -> Self::Output;
 }

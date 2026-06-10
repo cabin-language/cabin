@@ -1,14 +1,13 @@
-use std::collections::VecDeque;
+use std::{borrow::Cow, collections::VecDeque};
 
 use convert_case::Casing as _;
-use regex_macro::{regex, Regex};
+use regex_macro::{Regex, regex};
 use strum::IntoEnumIterator as _;
 
 use crate::{
+	Span,
 	api::context::Context,
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	io::Io,
-	Span,
 };
 
 /// A type of token in Cabin source code. The first step in Cabin compilation is tokenization, which is the process of splitting a raw String of source code into
@@ -92,7 +91,7 @@ pub enum TokenType {
 	KeywordExtend,
 	KeywordAnd,
 	KeywordOr,
-	KeywordToBe,
+	KeywordAs,
 
 	/// The `if` keyword token type. This is used similar to how it is in other languages: It runs a block of code if some condition is true.
 	///
@@ -129,6 +128,7 @@ pub enum TokenType {
 	/// Like all keywords, this enum variant declaration *must* come before `Identifier`. If it doesn't, then `group` will be tokenized incorrectly as
 	/// identifiers, which will cause issues when parsing. Please be careful when moving around this keyword or the `Identifier` token type!
 	KeywordGroup,
+	KeywordGo,
 
 	KeywordIs,
 
@@ -268,7 +268,7 @@ pub enum TokenType {
 }
 
 impl TokenType {
-	pub(crate) const fn is_whitespace(self) -> bool {
+	pub const fn is_whitespace(self) -> bool {
 		matches!(self, TokenType::Whitespace | TokenType::Comment)
 	}
 
@@ -287,8 +287,8 @@ impl TokenType {
 			Self::KeywordAnd => regex!(r"^and\b"),
 			Self::KeywordOr => regex!(r"^or\b"),
 			Self::KeywordEither => regex!(r"^either\b"),
-			Self::KeywordExtend => regex!(r"^extensionof\b"),
-			Self::KeywordForEach => regex!(r"^foreach\b"),
+			Self::KeywordExtend => regex!(r"^extend\b"),
+			Self::KeywordForEach => regex!(r"^for\b"),
 			Self::KeywordGroup => regex!(r"^group\b"),
 			Self::KeywordIf => regex!(r"^if\b"),
 			Self::KeywordIn => regex!(r"^in\b"),
@@ -297,8 +297,9 @@ impl TokenType {
 			Self::KeywordMatch => regex!(r"^match\b"),
 			Self::KeywordNew => regex!(r"^new\b"),
 			Self::KeywordOtherwise => regex!(r"^otherwise\b"),
-			Self::KeywordToBe => regex!(r"^tobe\b"),
+			Self::KeywordAs => regex!(r"^as\b"),
 			Self::KeywordWhile => regex!(r"^while\b"),
+			Self::KeywordGo => regex!(r"^go\b"),
 
 			// Left opening groupings
 			Self::LeftAngleBracket => regex!("^<"),
@@ -359,7 +360,7 @@ impl TokenType {
 	///
 	/// # Returns
 	/// The matched text of the token type in the given code, or `None` if no match was found.
-	pub(crate) fn get_match(self, code: &str) -> Option<String> {
+	pub fn get_match(self, code: &str) -> Option<String> {
 		self.pattern().find(code).map(|m| m.as_str().to_owned())
 	}
 
@@ -387,7 +388,7 @@ impl std::fmt::Display for TokenType {
 }
 
 /// A token in source code.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
 	/// The type of the token.
 	pub token_type: TokenType,
@@ -396,6 +397,24 @@ pub struct Token {
 	/// a specific token type, refer to the documentation for that specific token type.
 	pub value: String,
 	pub span: Span,
+}
+
+impl Token {
+	pub fn create_virtual<'a, S: Into<Cow<'a, str>>>(token_type: TokenType, value: S) -> Token {
+		Token {
+			token_type,
+			value: value.into().into_owned(),
+			span: Span::none(),
+		}
+	}
+
+	pub fn synthetic<'a, S: Into<Cow<'a, str>>>(token_type: TokenType, value: S, span: Span) -> Token {
+		Token {
+			token_type,
+			value: value.into().into_owned(),
+			span,
+		}
+	}
 }
 
 /// Tokenizes a string of Cabin source code into a vector of tokens. This is the first step in compiling Cabin source code. The returned vector of tokens
@@ -412,7 +431,7 @@ pub struct Token {
 ///
 /// # Errors
 /// If the given code string is not syntactically valid Cabin code. It needn't be semantically valid, but it must be comprised of the proper tokens.
-pub(crate) fn tokenize<System: Io>(code: &str, context: &mut Context<System>) -> VecDeque<Token> {
+pub fn tokenize(code: &str, context: &mut Context) -> VecDeque<Token> {
 	let mut code = code.to_owned();
 
 	let mut tokens = Vec::new();
@@ -473,7 +492,7 @@ pub(crate) fn tokenize<System: Io>(code: &str, context: &mut Context<System>) ->
 /// # Returns
 ///
 /// A token stream of tokenized tokens, possibly including `Unknown` tokens.
-pub(crate) fn tokenize_string(string: &str) -> VecDeque<Token> {
+pub fn tokenize_string(string: &str) -> VecDeque<Token> {
 	let mut code = string.to_owned();
 
 	let mut tokens = Vec::new();

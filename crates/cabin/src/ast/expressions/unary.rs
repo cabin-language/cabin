@@ -1,9 +1,8 @@
 use crate::{
+	Span,
 	api::context::Context,
 	ast::expressions::{Expression, Spanned},
-	comptime::{memory::ExpressionPointer, CompileTime},
-	io::Io,
-	Span,
+	comptime::{CompileTime, memory::ExpressionPointer},
 };
 
 /// A unary operator. These are types of operators that take a single expression and operate on it.
@@ -25,13 +24,13 @@ pub struct UnaryOperation {
 impl CompileTime for UnaryOperation {
 	type Output = Expression;
 
-	fn evaluate_at_compile_time<System: Io>(self, _context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_compile_time(self, _context: &mut Context) -> Self::Output {
 		todo!()
 	}
 }
 
 impl Spanned for UnaryOperation {
-	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }

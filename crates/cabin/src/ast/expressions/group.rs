@@ -3,62 +3,62 @@ use std::collections::{HashMap, VecDeque};
 use convert_case::{Case, Casing as _};
 
 use crate::{
+	Span,
+	Spanned,
 	api::{context::Context, scope::ScopeType},
 	ast::{
-		expressions::{name::Name, parameter::Parameter, Expression},
+		expressions::{Expression, identifier::Identifier, parameter::Parameter},
 		misc::tag::TagList,
 	},
 	comptime::{
-		memory::{ExpressionPointer, LiteralPointer},
 		CompileTime,
+		memory::{ExpressionPointer, LiteralPointer},
 	},
 	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	if_then_else_default,
 	if_then_some,
-	io::Io,
 	lexer::{Token, TokenType},
 	parse_list,
 	parser::{ListType, Parse as _, ParseError, TokenQueueFunctionality as _, TryParse},
 	typechecker::{Type, Typed as _},
-	Span,
-	Spanned,
 };
 
 #[derive(Debug, Clone)]
 pub struct GroupField {
-	name: Name,
+	name: Identifier,
 	default_value: Option<ExpressionPointer>,
 	field_type: Option<ExpressionPointer>,
+	documentation: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct GroupFieldLiteral {
-	name: Name,
+	name: Identifier,
 	default_value: Option<LiteralPointer>,
-	pub(crate) field_type: Type,
+	pub field_type: Type,
 }
 
 #[derive(Debug, Clone)]
-pub struct GroupDeclaration {
-	fields: HashMap<Name, GroupField>,
+pub struct Group {
+	fields: HashMap<Identifier, GroupField>,
 	span: Span,
-	pub(crate) name: Option<Name>,
+	pub name: Option<Identifier>,
 }
 
-impl TryParse for GroupDeclaration {
-	type Output = GroupDeclaration;
+impl TryParse for Group {
+	type Output = Group;
 
-	fn try_parse<System: Io>(tokens: &mut VecDeque<Token>, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordGroup, context)?.span;
-		context.scope_tree.enter_new_scope(ScopeType::Group);
+		context.scope.enter_new_scope(ScopeType::Group);
 
 		let _compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, context, ListType::AngleBracketed, {
 				let parameter = Parameter::try_parse(tokens, context)?;
 				let name = parameter.name().to_owned();
-				let error = Expression::error(Span::unknown(), context);
-				if let Err(error) = context.scope_tree.declare_new_variable(name.clone(), error) {
+				let error = Expression::error(Span::none(), context);
+				if let Err(error) = context.scope.declare_new_variable(name.clone(), error) {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span: name.span(context),
@@ -83,13 +83,13 @@ impl TryParse for GroupDeclaration {
 			}
 
 			// Group field name
-			let name = Name::try_parse(tokens, context)?;
-			if !name.unmangled_name().is_case(Case::Snake) {
+			let name = Identifier::try_parse(tokens, context)?;
+			if !name.source_identifier().is_case(Case::Snake) {
 				context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
 					span: name.span(context),
 					info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
-						original_name: name.unmangled_name().to_owned(),
+						original_name: name.source_identifier().to_owned(),
 					}),
 				});
 			}
@@ -98,7 +98,7 @@ impl TryParse for GroupDeclaration {
 				context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
 					span: name.span(context),
-					info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::DuplicateField(name.unmangled_name().to_owned()))),
+					info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::DuplicateField(name.source_identifier().to_owned()))),
 				});
 			}
 
@@ -124,12 +124,13 @@ impl TryParse for GroupDeclaration {
 				name,
 				default_value: value,
 				field_type,
+				documentation,
 			});
 		})
 		.span;
-		context.scope_tree.exit_scope().unwrap();
+		context.scope.exit_scope().unwrap();
 
-		Ok(GroupDeclaration {
+		Ok(Group {
 			fields,
 			span: start.to(end),
 			name: None,
@@ -137,10 +138,10 @@ impl TryParse for GroupDeclaration {
 	}
 }
 
-impl CompileTime for GroupDeclaration {
-	type Output = EvaluatedGroupDeclaration;
+impl CompileTime for Group {
+	type Output = EvaluatedGroup;
 
-	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		let mut fields = HashMap::new();
 
 		for (name, field) in self.fields {
@@ -165,7 +166,7 @@ impl CompileTime for GroupDeclaration {
 		}
 
 		// Store in memory and return a pointer
-		EvaluatedGroupDeclaration {
+		EvaluatedGroup {
 			fields,
 			span: self.span,
 			name: self.name,
@@ -173,15 +174,15 @@ impl CompileTime for GroupDeclaration {
 	}
 }
 
-impl Spanned for GroupDeclaration {
-	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
+impl Spanned for Group {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }
 
 #[derive(Debug, Clone)]
-pub struct EvaluatedGroupDeclaration {
-	pub(crate) fields: HashMap<Name, GroupFieldLiteral>,
+pub struct EvaluatedGroup {
+	pub fields: HashMap<Identifier, GroupFieldLiteral>,
 	span: Span,
-	pub(crate) name: Option<Name>,
+	pub name: Option<Identifier>,
 }

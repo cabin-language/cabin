@@ -4,8 +4,7 @@ use std::{
 	ops::{Deref, DerefMut},
 };
 
-use super::io::Io;
-use crate::{api::context::Context, ast::expressions::name::Name, comptime::memory::ExpressionPointer, parser::ParseError};
+use crate::{api::context::Context, ast::expressions::identifier::Identifier, comptime::memory::ExpressionPointer, parser::ParseError};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScopeId(usize);
 
@@ -30,6 +29,7 @@ pub enum ScopeType {
 	File,
 	Directory,
 	Either,
+	While,
 	OneOf,
 	/// The global scope type. This should only ever be used on a single scope in the whole program: The global scope.
 	Global,
@@ -45,6 +45,7 @@ pub enum ScopeType {
 /// meaning that this scope also inherits variables from its parent. One important thing to note is that Cabin doesn't support any kind of shadowing -
 /// meaning globally declared variables are available in *every* scope. No matter what scope you're in, you can be 100% certain there is a `String`
 /// variable defined, and that it is exactly what you expect it to be. This is important for resolving things like `Boolean`s.
+#[derive(Debug)]
 pub struct Scope {
 	/// The index of the scope which is the parent to this one. This is the scope's direct parent, i.e., the scope in which this one is declared in. This
 	/// is represented as an index into a `ScopeData`'s `scopes` vector, because trying to create a tree data structure in Rust with regular semantics
@@ -66,7 +67,7 @@ pub struct Scope {
 	/// The variables declared in this scope. Note that this only holds the variables declared in this exact specific scope, and does not count the
 	/// variables declared in any parent scope, even though those are accessible in the language from this one. To get a variable from anywhere up
 	/// the parent tree, use `scope.get_variable`, which will traverse up the scope tree and check all parents.
-	variables: HashMap<Name, ExpressionPointer>,
+	variables: HashMap<Identifier, ExpressionPointer>,
 
 	/// in Rust with regular semantics can get *really* tricky - You need to either resort to lots of unsafe code with raw pointers (and probably pinning),
 	/// or use some fancy reference counting wrappers like `Rc<RefCell<Scope>>` and `Weak<RefCell<Scope>>`. Even in doing so, the implementation is not
@@ -77,7 +78,7 @@ pub struct Scope {
 	/// other information. However, this may in the future be used for more.
 	scope_type: ScopeType,
 
-	label: Option<Name>,
+	label: Option<Identifier>,
 }
 
 impl Scope {
@@ -94,9 +95,10 @@ impl Scope {
 	/// # Returns
 	/// A reference to the declaration data of the variable that exists in this scope with the given name. If none exists, `None` is returned. If it does exist
 	/// and `Some` is returned, the returned reference will have the same lifetime as this `Scope` object, as well as the given scopes slice.
-	fn get_variable<'scopes>(&'scopes self, name: impl Into<Name> + Clone, scopes: &'scopes [Self]) -> Option<ExpressionPointer> {
+	fn get_variable<'scopes>(&'scopes self, name: &str, scopes: &'scopes [Self]) -> Option<ExpressionPointer> {
 		self.variables
-			.get(&name.clone().into())
+			.iter()
+			.find_map(|(other, value)| (other.source_identifier() == name).then_some(value))
 			.copied()
 			.or_else(|| self.parent.and_then(|parent| scopes.get(parent).unwrap().get_variable(name, scopes)))
 	}
@@ -111,7 +113,7 @@ impl Scope {
 	///
 	/// # Returns
 	/// An `Err` if no variable with the given name exists in the current scope.
-	fn reassign_variable_direct(&mut self, name: &Name, value: ExpressionPointer) -> Result<(), ExpressionPointer> {
+	fn reassign_variable_direct(&mut self, name: &Identifier, value: ExpressionPointer) -> Result<(), ExpressionPointer> {
 		if let Some(variable) = self.variables.get_mut(name) {
 			*variable = value;
 			Ok(())
@@ -135,7 +137,7 @@ impl Scope {
 		string.push(format!("\tlabel: [{:?}]", self.label));
 		string.push(format!(
 			"\tvariables: [{}],",
-			self.variables.keys().map(|name| name.unmangled_name()).collect::<Vec<_>>().join(",")
+			self.variables.keys().map(|name| name.source_identifier()).collect::<Vec<_>>().join(",")
 		));
 		for child_scope in &self.children {
 			for line in scopes.get(*child_scope).unwrap().to_string(scopes).lines() {
@@ -147,7 +149,7 @@ impl Scope {
 		string.join("\n")
 	}
 
-	pub fn set_label(&mut self, name: Name) {
+	pub fn set_label(&mut self, name: Identifier) {
 		self.label = Some(name);
 	}
 }
@@ -186,7 +188,7 @@ impl ScopeTree {
 		}
 	}
 
-	pub(crate) fn get_variable(&self, name: impl Into<Name> + Clone) -> Option<ExpressionPointer> {
+	pub fn get_variable(&self, name: &str) -> Option<ExpressionPointer> {
 		self.current().get_variable(name, &self.scopes)
 	}
 
@@ -229,11 +231,11 @@ impl ScopeTree {
 	///
 	/// # Returns
 	/// A reference to the variable declaration, or `None` if the variable does not exist in the current scope.
-	pub fn get_variable_from_id(&self, name: impl Into<Name> + Clone, id: ScopeId) -> Option<ExpressionPointer> {
+	pub fn get_variable_from_id(&self, name: &str, id: ScopeId) -> Option<ExpressionPointer> {
 		self.get_scope_from_id(id).get_variable(name, &self.scopes)
 	}
 
-	pub fn get_builtin(&self, name: impl Into<Name> + Clone) -> Option<ExpressionPointer> {
+	pub fn get_builtin(&self, name: &str) -> Option<ExpressionPointer> {
 		self.get_variable_from_id(name, ScopeId::stdlib())
 	}
 
@@ -302,12 +304,12 @@ impl ScopeTree {
 	///
 	/// # Errors
 	/// Returns an error if a variable already exists with the given name in the scope with the given id.
-	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Name>, value: ExpressionPointer, id: ScopeId) -> Result<(), crate::Error> {
+	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Identifier>, value: ExpressionPointer, id: ScopeId) -> Result<(), crate::Error> {
 		let name = name.into();
 		let old = self.scopes.get_mut(id.0).unwrap().variables.insert(name.clone(), value);
 		old.map_or(Ok(()), |_| {
 			Err(crate::Error::Parse(ParseError::DuplicateVariableDeclaration {
-				name: name.unmangled_name().to_owned(),
+				name: name.source_identifier().to_owned(),
 			}))
 		})
 	}
@@ -323,7 +325,7 @@ impl ScopeTree {
 	///
 	/// # Errors
 	/// Returns an error if a variable already exists with the given name in the current scope.
-	pub fn declare_new_variable(&mut self, name: impl Into<Name>, value: ExpressionPointer) -> Result<(), crate::Error> {
+	pub fn declare_new_variable(&mut self, name: impl Into<Identifier>, value: ExpressionPointer) -> Result<(), crate::Error> {
 		self.declare_new_variable_from_id(name, value, ScopeId(self.current_scope))
 	}
 
@@ -351,7 +353,7 @@ impl ScopeTree {
 	///
 	/// # Errors
 	/// Errors if no variable with the given name exists in the current scope.
-	pub fn reassign_variable_from_id(&mut self, name: &Name, mut value: ExpressionPointer, id: ScopeId) {
+	pub fn reassign_variable_from_id(&mut self, name: &Identifier, mut value: ExpressionPointer, id: ScopeId) {
 		// Traverse up the parent tree looking for the declaration and reassign it
 		let mut current = Some(id.0);
 		while let Some(current_index) = current {
@@ -381,7 +383,7 @@ impl ScopeTree {
 	///
 	/// # Errors
 	/// Returns an error if no variable with the given name exists in the current scope.
-	pub fn reassign_variable(&mut self, name: &Name, value: ExpressionPointer) {
+	pub fn reassign_variable(&mut self, name: &Identifier, value: ExpressionPointer) {
 		self.reassign_variable_from_id(name, value, ScopeId(self.current_scope));
 	}
 
@@ -396,7 +398,7 @@ impl ScopeTree {
 		id
 	}
 
-	pub fn has_variable(&self, name: &Name) -> bool {
+	pub fn has_variable(&self, name: &str) -> bool {
 		self.get_variable(name).is_some()
 	}
 }
@@ -498,7 +500,7 @@ impl Levenshtein for str {
 pub struct ScopeReverter(ScopeId);
 
 impl ScopeReverter {
-	pub fn revert<System: Io>(&self, context: &mut Context<System>) {
-		context.scope_tree.current_scope = self.0 .0;
+	pub fn revert(&self, context: &mut Context) {
+		context.scope.current_scope = self.0.0;
 	}
 }

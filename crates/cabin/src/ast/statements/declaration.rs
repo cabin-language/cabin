@@ -1,49 +1,48 @@
 use convert_case::{Case, Casing as _};
 
 use crate::{
+	Span,
+	Spanned,
 	api::{context::Context, scope::ScopeId},
 	ast::{
 		expressions::{
-			literal::{EvaluatedLiteral, UnevaluatedLiteral},
-			name::Name,
 			Expression,
+			identifier::Identifier,
+			literal::{EvaluatedLiteral, UnevaluatedLiteral},
 		},
 		misc::tag::TagList,
 		statements::Statement,
 	},
-	comptime::{memory::ExpressionPointer, CompileTime},
+	comptime::{CompileTime, memory::ExpressionPointer},
 	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
 	if_then_some,
 	interpreter::Runtime,
-	io::Io,
 	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
-	Span,
-	Spanned,
 };
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Declaration {
-	name: Name,
+	name: Identifier,
 	scope_id: ScopeId,
 	span: Span,
 }
 
 impl Declaration {
-	pub(crate) const fn name(&self) -> &Name {
+	pub const fn name(&self) -> &Identifier {
 		&self.name
 	}
 
-	pub(crate) fn value<System: Io>(&self, context: &Context<System>) -> ExpressionPointer {
-		context.scope_tree.get_variable_from_id(self.name.clone(), self.scope_id).unwrap()
+	pub fn value(&self, context: &Context) -> ExpressionPointer {
+		context.scope.get_variable_from_id(self.name.source_identifier(), self.scope_id).unwrap()
 	}
 }
 
 impl TryParse for Declaration {
 	type Output = Statement;
 
-	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		// Tags
 		let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
 
@@ -55,7 +54,7 @@ impl TryParse for Declaration {
 
 		// Name
 		let start = tokens.pop(TokenType::KeywordLet, context)?.span;
-		let name = Name::try_parse(tokens, context)?;
+		let name = Identifier::try_parse(tokens, context)?;
 
 		// Value
 		let _ = tokens.pop(TokenType::Equal, context)?;
@@ -70,24 +69,24 @@ impl TryParse for Declaration {
 		match expression_value {
 			Expression::Literal(UnevaluatedLiteral::Group(_) | UnevaluatedLiteral::Either(_) | UnevaluatedLiteral::Extend(_))
 			| Expression::EvaluatedLiteral(EvaluatedLiteral::Group(_) | EvaluatedLiteral::Extend(_) | EvaluatedLiteral::Either(_)) => {
-				if !name.unmangled_name().is_case(Case::Pascal) {
+				if !name.source_identifier().is_case(Case::Pascal) {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span: name.span(context),
 						info: DiagnosticInfo::Warning(Warning::NonPascalCaseGroup {
-							original_name: name.unmangled_name().to_owned(),
+							original_name: name.source_identifier().to_owned(),
 							type_name: expression_value.kind_name().to_owned(),
 						}),
 					});
 				}
 			},
 			_ => {
-				if !name.unmangled_name().is_case(Case::Snake) {
+				if !name.source_identifier().is_case(Case::Snake) {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span: name.span(context),
 						info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
-							original_name: name.unmangled_name().to_owned(),
+							original_name: name.source_identifier().to_owned(),
 						}),
 					});
 				}
@@ -95,7 +94,7 @@ impl TryParse for Declaration {
 		}
 
 		// Add the name declaration to the scope
-		if let Err(error) = context.scope_tree.declare_new_variable(name.clone(), value) {
+		if let Err(error) = context.scope.declare_new_variable(name.clone(), value) {
 			context.add_diagnostic(Diagnostic {
 				file: context.file.clone(),
 				span: name.span(context),
@@ -108,7 +107,7 @@ impl TryParse for Declaration {
 		// Return the declaration
 		Ok(Statement::Declaration(Declaration {
 			name,
-			scope_id: context.scope_tree.unique_id(),
+			scope_id: context.scope.unique_id(),
 			span: start.to(end),
 		}))
 	}
@@ -117,9 +116,9 @@ impl TryParse for Declaration {
 impl CompileTime for Declaration {
 	type Output = Declaration;
 
-	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		let evaluated = self.value(context).evaluate_at_compile_time(context); // TODO: use a mapping function instead of cloning
-		context.scope_tree.reassign_variable_from_id(&self.name, evaluated, self.scope_id);
+		context.scope.reassign_variable_from_id(&self.name, evaluated, self.scope_id);
 		self
 	}
 }
@@ -127,15 +126,15 @@ impl CompileTime for Declaration {
 impl Runtime for Declaration {
 	type Output = Declaration;
 
-	fn evaluate_at_runtime<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_runtime(self, context: &mut Context) -> Self::Output {
 		let evaluated = self.value(context).evaluate_at_runtime(context);
-		context.scope_tree.reassign_variable_from_id(&self.name, evaluated, self.scope_id);
+		context.scope.reassign_variable_from_id(&self.name, evaluated, self.scope_id);
 		self
 	}
 }
 
 impl TranspileToC for Declaration {
-	fn to_c<System: Io>(&self, context: &mut Context<System>, _output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c(&self, context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
 		let name = self.name().to_c(context, None)?;
 		Ok(format!(
 			"void* {name};\n{};\nlabel_end_{name}:;\n\n",
@@ -143,17 +142,17 @@ impl TranspileToC for Declaration {
 		))
 	}
 
-	fn c_prelude<System: Io>(&self, context: &mut Context<System>) -> Result<String, TranspileError> {
+	fn c_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
 		self.value(context).to_owned().c_prelude(context)
 	}
 
-	fn c_type_prelude<System: Io>(&self, context: &mut Context<System>) -> Result<String, TranspileError> {
+	fn c_type_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
 		self.value(context).to_owned().c_type_prelude(context)
 	}
 }
 
 impl Spanned for Declaration {
-	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }

@@ -1,52 +1,49 @@
+let Any = group {
+	to_text: action(this: This): Text,
+};
+
 let Text = group {};
 
 #[default]
-let AddText = extensionof Text tobe Addable {
+let AddText = extend Text as Addable {
 	plus = action(this: This, other: This): This,
 };
 
-# The tag for a built-in function. Functions that are built into the Cabin compiler 
-# and run with native code are marked with this, usually via the `builtin_function<>` function.
-let BuiltinTag = group {
+let Builtin = group {
 	internal_name: Text
 };
 
 let This = group {};
-let Object = group {};
 let List = group {};
 
 let Number = group {}; 
 
 let Optional = either<Data> {
 	some: Data,
-	nothing
-};
-
-let Anything = group {
-	to_text: action(this: This): Text,
+	none
 };
 
 let Group = group {
-	fields: Anything,
+	fields: Any,
 };
 
 let Function = group {
-	parameters: Anything,
-	return_type: Anything,
-	compile_time_parameters: Anything,
-	tags: Anything,
-	this_object: Anything,
+	parameters: Any,
+	return_type: Any,
+	compile_time_parameters: Any,
+	tags: Any,
+	this_object: Any,
 };
 
-let no_side_effects = new Object {};
+let no_side_effects = new Any {};
 
-# A tag for extensions that makes the exension "default". Defaul extensions are automatically
-# brought into scope when the extension is in scope. Extensions can only be declared default if
-# the extension is declared in the same scope as the type its extending. Only one extension of
-# some type to be another specific type may be default.
-let default = new Object {};
+let default = new Any {};
 
-let RuntimeTag = group {
+let Runtime = group {
+	reason: Text
+};
+
+let CompileTime = group {
 	reason: Text
 };
 
@@ -59,45 +56,49 @@ let Boolean = either {
 	false
 };
 
-let Addable = group<Operand: Anything, Result: Anything> {
+let Addable = group<Operand: Any, Result: Any> {
 	#[no_side_effects]
 	plus: action(this: This, other: Operand): Result
 }; 
 
 #[default]
-let AddNumbers = extensionof Number tobe Addable { 
-	#[public] 
+let AddNumbers = extend Number as Addable { 
 	plus = action(this: Number, other: Number): Number,
 };
 
-let Attempted = either<Data, Error> {
+let Attempt = either<Data, Error> {
 	data: Data,
 	error: Error
 };
 
-let system = new Object {
+let runtime = action<reason: Text> {
+	return is new Runtime { reason = reason };
+};
 
-	terminal = new Object {
+let compile_time = action<reason: Text> {
+	return is new CompileTime { reason = reason };
+};
 
-		# Prints the given value to the standard output stream.
-		#[new BuiltinTag { internal_name = "terminal.print" }]
-		print = action(object: Anything): Optional.nothing,
+let system = new Any {
+	terminal = new Any {
+		#[
+			new Builtin { internal_name = "terminal.print" },
+			new Runtime { reason = "Use debug() for logging information at compile-time." }
+		]
+		print = action(object: Any),
 
-		#[new BuiltinTag { internal_name = "terminal.input" }] 
+		#[new Builtin { internal_name = "terminal.input" }] 
 		input = action(): Text,
 
-		# Prints a value to the standard output stream. Unlike `print`, this is meant
-		# to be available at compile-time for debugging and logging purposes.
-		# 
-		# **Parameters**
-		# 
-		# - `object` - The value to print
-		#[new BuiltinTag { internal_name = "terminal.debug" }]
-		debug = action(object: Anything): Optional.nothing
+		#[
+			new Builtin { internal_name = "terminal.debug" },
+			new CompileTime { reason = "Use debug() for logging information at compile-time." }
+		]
+		debug = action(object: Any)
 	},
 };
 
-let Equalable = group {
+let Comparable = group {
 	equals: action(this: This, other: This): Boolean
 };
 
@@ -107,14 +108,12 @@ let Ordering = either {
 	equal
 };
 
-let Compareable = group {
-
-	# Compares this value with the given value, returning the ordering of *this* value.
+let Ordered = group {
 	compared_to: action(this: This, other: This): Ordering
 };
 
 #[default]
-let CompareablesAreEqualable = extensionof Compareable tobe Equalable {
+let OrderedsAreComparable = extend Ordered as Comparable {
 	equals = action(this: This, other: This): Boolean {
 		return is this.compared_to(other) == Ordering.equal;
 	}

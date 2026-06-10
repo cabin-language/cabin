@@ -5,15 +5,13 @@ description = "A dead simple, extremely performant, and completely safe programm
 authors = ["Violet Iapalucci"]
 license = "LGPL-3.0"
 repository = "https://github.com/cabin-language/cabin"
-issues = "https://github.com/cabin-language/cabin/issues"
 categories = ["compilers", "parser-implementations"]
 keywords = ["cabin", "language", "compiler"]
 readme = "README.md"
-edition = "2021"
+edition = "2024"
 
-[[bin]]
-name = "cabin"
-path = "src/bin.rs"
+[lib]
+path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1.0.93"

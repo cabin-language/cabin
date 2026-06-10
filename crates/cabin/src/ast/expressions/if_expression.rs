@@ -1,15 +1,14 @@
 use super::ExpressionOrPointer;
 use crate::{
+	Span,
+	Spanned,
 	api::{context::Context, scope::ScopeId},
-	ast::expressions::{block::Block, Expression},
-	comptime::{memory::ExpressionPointer, CompileTime},
+	ast::expressions::{Expression, block::Block},
+	comptime::{CompileTime, memory::ExpressionPointer},
 	diagnostics::Diagnostic,
-	io::Io,
 	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
-	Span,
-	Spanned,
 };
 
 #[derive(Debug, Clone)]
@@ -23,7 +22,7 @@ pub struct IfExpression {
 impl TryParse for IfExpression {
 	type Output = IfExpression;
 
-	fn try_parse<System: Io>(tokens: &mut TokenQueue, context: &mut Context<System>) -> Result<Self::Output, Diagnostic> {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordIf, context)?.span;
 		let condition = Expression::parse(tokens, context);
 		let body = Block::try_parse(tokens, context)?;
@@ -50,10 +49,10 @@ impl CompileTime for IfExpression {
 	type Output = ExpressionOrPointer;
 
 	#[allow(clippy::almost_swapped, reason = "False positive; context.side_effects is reassigned")]
-	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		// Check condition
 		let condition = self.condition.evaluate_at_compile_time(context);
-		let cabin_true = context.scope_tree.get_variable_from_id("true", ScopeId::global()).unwrap();
+		let cabin_true = context.scope.get_variable_from_id("true", ScopeId::global()).unwrap();
 		let condition_is_true = condition == cabin_true;
 
 		// Evaluate body
@@ -88,13 +87,13 @@ impl CompileTime for IfExpression {
 }
 
 impl TranspileToC for IfExpression {
-	fn to_c<System: Io>(&self, context: &mut Context<System>, _output: Option<String>) -> Result<String, TranspileError> {
+	fn to_c(&self, context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
 		Ok(format!("if ({}) {}", self.condition.to_c(context, None)?, self.body.to_c(context, None)?))
 	}
 }
 
 impl Spanned for IfExpression {
-	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }

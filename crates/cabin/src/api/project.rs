@@ -3,13 +3,12 @@ use std::{
 	path::{Path, PathBuf},
 };
 
-use super::context::StandardContext;
 use crate::{
+	Context,
 	api::{config::Config, diagnostics::Diagnostics},
-	ast::{expressions::name::Name, misc::program::Program},
+	ast::{expressions::identifier::Identifier, misc::program::Program},
 	comptime::CompileTime as _,
 	transpiler::TranspileToC as _,
-	Context,
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -34,7 +33,7 @@ pub enum ProjectError {
 pub struct Project {
 	root_directory: PathBuf,
 	config: Config,
-	context: StandardContext,
+	context: Context,
 	program: Option<Program>,
 	main_file_contents: String,
 }
@@ -102,11 +101,11 @@ impl Project {
 		&self.config
 	}
 
-	pub const fn context(&self) -> &StandardContext {
+	pub const fn context(&self) -> &Context {
 		&self.context
 	}
 
-	pub fn context_mut(&mut self) -> &mut StandardContext {
+	pub fn context_mut(&mut self) -> &mut Context {
 		&mut self.context
 	}
 
@@ -135,7 +134,7 @@ impl Project {
 	/// Returns the name at the given byte position in the source code, or `None` if there is no
 	/// name at that byte position. The returned name contains environment (scope) information, so
 	/// this requires tokenizing and parsing the program, if it wasn't already.
-	pub fn name_at(&mut self, name_position: usize) -> Option<Name> {
+	pub fn name_at(&mut self, name_position: usize) -> Option<Identifier> {
 		self.context.side_effects = false;
 
 		self.context.name_query = Some(name_position);

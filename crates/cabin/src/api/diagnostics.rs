@@ -3,8 +3,7 @@ use std::{fmt::Display, path::PathBuf};
 use convert_case::{Case, Casing as _};
 use indexmap::IndexSet;
 
-use super::io::Io;
-use crate::{comptime::CompileTimeError, lexer::TokenizeError, parser::ParseError, Context, Span, Spanned, STDLIB};
+use crate::{Context, STDLIB, Span, Spanned, comptime::CompileTimeError, lexer::TokenizeError, parser::ParseError};
 
 #[derive(Clone, Debug, thiserror::Error, Hash, PartialEq, Eq)]
 pub enum Warning {
@@ -25,6 +24,9 @@ pub enum Warning {
 		/// The original name used that's not in `snake_case`.
 		original_name: String,
 	},
+
+	#[error("Bad compile-time call: This action should only be called at runtime. Reason: {reason}")]
+	CallRuntimeAtCompileTime { reason: String },
 
 	/// The warning that occurs when an empty `either` is created. Empty `either`s can never be
 	/// instantited, so there's no reason to create one.
@@ -103,7 +105,7 @@ impl Diagnostic {
 }
 
 impl Spanned for Diagnostic {
-	fn span<System: Io>(&self, _context: &Context<System>) -> Span {
+	fn span(&self, _context: &Context) -> Span {
 		self.span
 	}
 }

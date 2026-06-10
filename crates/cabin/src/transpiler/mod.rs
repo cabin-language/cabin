@@ -1,4 +1,4 @@
-use crate::{io::Io, Context};
+use crate::Context;
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum TranspileError {
@@ -6,7 +6,7 @@ pub enum TranspileError {
 	TranspileError,
 }
 
-pub(crate) trait TranspileToC {
+pub trait TranspileToC {
 	/// Transpiles this AST node into C code.
 	///
 	/// # Parameters
@@ -20,13 +20,13 @@ pub(crate) trait TranspileToC {
 	/// # Errors
 	///
 	/// If this AST node is invalid, meaning it contains an error node, an error is returned.
-	fn to_c<System: Io>(&self, context: &mut Context<System>, output: Option<String>) -> Result<String, TranspileError>;
+	fn to_c(&self, context: &mut Context, output: Option<String>) -> Result<String, TranspileError>;
 
-	fn c_prelude<System: Io>(&self, _context: &mut Context<System>) -> Result<String, TranspileError> {
+	fn c_prelude(&self, _context: &mut Context) -> Result<String, TranspileError> {
 		Ok(String::new())
 	}
 
-	fn c_type_prelude<System: Io>(&self, _context: &mut Context<System>) -> Result<String, TranspileError> {
+	fn c_type_prelude(&self, _context: &mut Context) -> Result<String, TranspileError> {
 		Ok(String::new())
 	}
 }

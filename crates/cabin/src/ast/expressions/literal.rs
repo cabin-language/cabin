@@ -2,44 +2,43 @@ use std::collections::HashMap;
 
 use try_as::traits as try_as_traits;
 
-use super::{either::EvaluatedEither, function_declaration::FunctionDeclaration, group::GroupDeclaration};
+use super::{action::Action, either::EvaluatedEither, group::Group};
 use crate::{
-	ast::{
-		expressions::{
-			either::Either,
-			extend::{EvaluatedExtend, Extend},
-			field_access::Dot,
-			function_declaration::EvaluatedFunctionDeclaration,
-			group::EvaluatedGroupDeclaration,
-			name::Name,
-			Expression,
-		},
-		sugar::{list::LiteralList, string::CabinString},
-	},
-	comptime::{
-		memory::{ExpressionPointer, LiteralPointer},
-		CompileTime,
-		CompileTimeError,
-	},
-	diagnostics::Diagnostic,
-	io::Io,
-	typechecker::{Type, Typed},
 	Context,
 	Span,
 	Spanned,
+	ast::{
+		expressions::{
+			Expression,
+			action::EvaluatedAction,
+			either::Either,
+			extend::{EvaluatedExtend, Extend},
+			field_access::DoubleColon,
+			group::EvaluatedGroup,
+			identifier::Identifier,
+		},
+		sugar::{list::LiteralList, string::Text},
+	},
+	comptime::{
+		CompileTime,
+		CompileTimeError,
+		memory::{ExpressionPointer, LiteralPointer},
+	},
+	diagnostics::Diagnostic,
+	typechecker::{Type, Typed},
 };
 
 #[derive(Clone, Debug)]
-pub enum Literal<'context> {
+pub enum LiteralRef<'context> {
 	Evaluated(&'context EvaluatedLiteral),
 	Unevaluated(&'context UnevaluatedLiteral),
 }
 
-impl Literal<'_> {
+impl LiteralRef<'_> {
 	pub const fn as_evaluated(&self) -> Option<&EvaluatedLiteral> {
 		match self {
-			Literal::Evaluated(evaluated) => Some(evaluated),
-			Literal::Unevaluated(_) => None,
+			LiteralRef::Evaluated(evaluated) => Some(evaluated),
+			LiteralRef::Unevaluated(_) => None,
 		}
 	}
 }
@@ -51,20 +50,20 @@ pub enum LiteralMut<'context> {
 
 #[derive(Debug, Clone, try_as::macros::TryAsRef)]
 pub enum UnevaluatedLiteral {
-	String(CabinString),
-	FunctionDeclaration(FunctionDeclaration),
-	Group(GroupDeclaration),
+	Text(Text),
+	Action(Action),
+	Group(Group),
 	Extend(Extend),
 	Either(Either),
 }
 
 impl UnevaluatedLiteral {
-	pub(crate) const fn kind_name(&self) -> &'static str {
+	pub const fn kind_name(&self) -> &'static str {
 		match self {
 			Self::Group(_) => "Group",
-			Self::FunctionDeclaration(_) => "Function",
+			Self::Action(_) => "Action",
 			Self::Extend(_) => "Extension",
-			Self::String(_) => "String",
+			Self::Text(_) => "Text",
 			Self::Either(_) => "Either",
 		}
 	}
@@ -73,22 +72,22 @@ impl UnevaluatedLiteral {
 impl CompileTime for UnevaluatedLiteral {
 	type Output = EvaluatedLiteral;
 
-	fn evaluate_at_compile_time<System: Io>(self, context: &mut Context<System>) -> Self::Output {
+	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		match self {
-			Self::FunctionDeclaration(function) => EvaluatedLiteral::FunctionDeclaration(function.evaluate_at_compile_time(context)),
+			Self::Action(function) => EvaluatedLiteral::Action(function.evaluate_at_compile_time(context)),
 			Self::Either(either) => EvaluatedLiteral::Either(either.evaluate_at_compile_time(context)),
 			Self::Extend(extend) => EvaluatedLiteral::Extend(extend.evaluate_at_compile_time(context)),
 			Self::Group(group) => EvaluatedLiteral::Group(group.evaluate_at_compile_time(context)),
-			Self::String(string) => EvaluatedLiteral::String(string),
+			Self::Text(string) => EvaluatedLiteral::Text(string),
 		}
 	}
 }
 
 impl Spanned for UnevaluatedLiteral {
-	fn span<System: Io>(&self, context: &Context<System>) -> Span {
+	fn span(&self, context: &Context) -> Span {
 		match self {
-			Self::String(string) => string.span(context),
-			Self::FunctionDeclaration(function) => function.span(context),
+			Self::Text(string) => string.span(context),
+			Self::Action(function) => function.span(context),
 			Self::Group(group) => group.span(context),
 			Self::Extend(extend) => extend.span(context),
 			Self::Either(either) => either.span(context),
@@ -99,51 +98,51 @@ impl Spanned for UnevaluatedLiteral {
 #[derive(Debug, Clone, try_as::macros::TryAsRef)]
 pub enum EvaluatedLiteral {
 	Object(Object),
-	String(CabinString),
+	Text(Text),
 	Number(f64),
 	List(LiteralList),
-	FunctionDeclaration(EvaluatedFunctionDeclaration),
-	Group(EvaluatedGroupDeclaration),
+	Action(EvaluatedAction),
+	Group(EvaluatedGroup),
 	Extend(EvaluatedExtend),
 	Either(EvaluatedEither),
-	ErrorLiteral(Span),
+	Error(Span),
 }
 
 impl EvaluatedLiteral {
-	pub(crate) const fn kind_name(&self) -> &'static str {
+	pub const fn kind_name(&self) -> &'static str {
 		match self {
 			Self::Group(_) => "Group",
 			Self::Object(_) => "Object",
-			Self::FunctionDeclaration(_) => "Function",
+			Self::Action(_) => "Function",
 			Self::Extend(_) => "Extension",
 			Self::List(_) => "List",
-			Self::String(_) => "String",
+			Self::Text(_) => "String",
 			Self::Number(_) => "Number",
 			Self::Either(_) => "Either",
-			Self::ErrorLiteral(_) => "Error",
+			Self::Error(_) => "Error",
 		}
 	}
 }
 
 impl Typed for EvaluatedLiteral {
-	fn get_type<System: Io>(&self, context: &mut Context<System>) -> Type {
+	fn get_type(&self, context: &mut Context) -> Type {
 		match self {
-			Self::String(_) => Type::Literal(context.scope_tree.get_builtin("Text").unwrap().try_as_literal(context).unwrap_or(LiteralPointer::ERROR)),
-			Self::Number(_) => Type::Literal(context.scope_tree.get_builtin("Number").unwrap().try_as_literal(context).unwrap_or(LiteralPointer::ERROR)),
-			Self::ErrorLiteral(_) => Type::Literal(LiteralPointer::ERROR),
-			EvaluatedLiteral::FunctionDeclaration(_) => Type::Literal(Expression::EvaluatedLiteral(self.to_owned()).store_in_memory(context).as_literal(context)),
+			Self::Text(_) => Type::Literal(context.scope.get_builtin("Text").unwrap().try_as_literal(context).unwrap_or(LiteralPointer::ERROR)),
+			Self::Number(_) => Type::Literal(context.scope.get_builtin("Number").unwrap().try_as_literal(context).unwrap_or(LiteralPointer::ERROR)),
+			Self::Error(_) => Type::Literal(LiteralPointer::ERROR),
+			EvaluatedLiteral::Action(_) => Type::Literal(Expression::EvaluatedLiteral(self.to_owned()).store_in_memory(context).as_literal(context)),
 			literal => todo!("{literal:?}"),
 		}
 	}
 }
 
-impl Dot for EvaluatedLiteral {
-	fn dot<System: Io>(&self, name: &Name, context: &mut Context<System>) -> ExpressionPointer {
+impl DoubleColon for EvaluatedLiteral {
+	fn double_colon(&self, name: &Identifier, context: &mut Context) -> ExpressionPointer {
 		match self {
-			EvaluatedLiteral::Object(object) => object.dot(name, context),
-			EvaluatedLiteral::Either(either) => either.dot(name, context),
-			EvaluatedLiteral::String(string) => string.dot(name, context),
-			EvaluatedLiteral::ErrorLiteral(_) => Expression::EvaluatedLiteral(self.to_owned()).store_in_memory(context),
+			EvaluatedLiteral::Object(object) => object.double_colon(name, context),
+			EvaluatedLiteral::Either(either) => either.double_colon(name, context),
+			EvaluatedLiteral::Text(string) => string.double_colon(name, context),
+			EvaluatedLiteral::Error(_) => Expression::EvaluatedLiteral(self.to_owned()).store_in_memory(context),
 			value => todo!("{value:?}"),
 		}
 	}
@@ -151,40 +150,36 @@ impl Dot for EvaluatedLiteral {
 
 #[derive(Debug, Clone)]
 pub struct Object {
-	pub(crate) span: Span,
-	pub(crate) type_name: Name,
-	pub(crate) fields: HashMap<Name, LiteralPointer>,
+	pub span: Span,
+	pub type_name: Identifier,
+	pub fields: HashMap<Identifier, LiteralPointer>,
 }
 
 impl Object {
-	pub(crate) fn empty() -> Object {
-		Self {
-			type_name: Name::hardcoded("Object"),
-			fields: HashMap::new(),
-			span: Span::unknown(),
-		}
+	pub fn synthetic(type_name: Identifier, fields: HashMap<Identifier, LiteralPointer>, span: Span) -> Object {
+		Object { type_name, fields, span }
 	}
 
-	pub(crate) const fn type_name(&self) -> &Name {
+	pub const fn type_name(&self) -> &Identifier {
 		&self.type_name
 	}
 
-	pub(crate) fn get_field<StringLike: AsRef<str>>(&self, name: StringLike) -> Option<LiteralPointer> {
+	pub fn get_field<StringLike: AsRef<str>>(&self, name: StringLike) -> Option<LiteralPointer> {
 		let name = name.as_ref();
 		self.fields
 			.iter()
-			.find_map(|(field_name, field_value)| (field_name.unmangled_name() == name).then_some(field_value.to_owned()))
+			.find_map(|(field_name, field_value)| (field_name.source_identifier() == name).then_some(field_value.to_owned()))
 	}
 }
 
-impl Dot for Object {
-	fn dot<System: Io>(&self, name: &Name, context: &mut Context<System>) -> ExpressionPointer {
+impl DoubleColon for Object {
+	fn double_colon(&self, name: &Identifier, context: &mut Context) -> ExpressionPointer {
 		self.fields
 			.get(name)
 			.unwrap_or_else(|| {
 				context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
-					info: CompileTimeError::NoSuchField(name.unmangled_name().to_owned()).into(),
+					info: CompileTimeError::NoSuchField(name.source_identifier().to_owned()).into(),
 					span: self.span,
 				});
 				&LiteralPointer::ERROR
@@ -195,10 +190,10 @@ impl Dot for Object {
 }
 
 impl Spanned for EvaluatedLiteral {
-	fn span<System: Io>(&self, context: &Context<System>) -> Span {
+	fn span(&self, context: &Context) -> Span {
 		match self {
-			Self::String(string) => string.span(context),
-			_ => Span::unknown(),
+			Self::Text(string) => string.span(context),
+			_ => Span::none(),
 		}
 	}
 }
