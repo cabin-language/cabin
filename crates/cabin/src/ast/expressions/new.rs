@@ -10,10 +10,9 @@ use crate::{
 	},
 	comptime::{
 		CompileTime,
-		CompileTimeError,
 		memory::{ExpressionPointer, LiteralPointer},
 	},
-	diagnostics::Diagnostic,
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_some,
 	lexer::TokenType,
 	parse_list,
@@ -105,7 +104,7 @@ impl CompileTime for NewExpression {
 						if !field_value.get_type(context).is_assignable_to(&field.field_type, context) {
 							context.add_diagnostic(Diagnostic {
 								span: field_value.span(context),
-								info: CompileTimeError::TypeMismatch(expected_type, field.field_type.clone()).into(),
+								info: DiagnosticInfo::TypeMismatch(expected_type, field.field_type.clone()),
 								file: context.file.clone(),
 							});
 						}
@@ -114,7 +113,7 @@ impl CompileTime for NewExpression {
 					else {
 						context.add_diagnostic(Diagnostic {
 							span: self.span.to(self.type_name.span(context)),
-							info: CompileTimeError::MissingField(field_name.source_identifier().to_owned()).into(),
+							info: DiagnosticInfo::MissingField(field_name.source_identifier().to_owned()),
 							file: context.file.clone(),
 						});
 					}
@@ -125,7 +124,7 @@ impl CompileTime for NewExpression {
 					if !group.fields.contains_key(field_name) {
 						context.add_diagnostic(Diagnostic {
 							span: field_name.span(context),
-							info: CompileTimeError::ExtraField(field_name.source_identifier().to_owned()).into(),
+							info: DiagnosticInfo::ExtraField(field_name.source_identifier().to_owned()),
 							file: context.file.clone(),
 						});
 					}
@@ -136,7 +135,7 @@ impl CompileTime for NewExpression {
 		if let Ok(literal) = self.try_into_literal(context) {
 			Expression::EvaluatedLiteral(EvaluatedLiteral::Object(literal))
 		} else {
-			Expression::ObjectConstructor(self)
+			Expression::New(self)
 		}
 	}
 }

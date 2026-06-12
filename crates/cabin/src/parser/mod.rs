@@ -3,37 +3,12 @@ use std::collections::VecDeque;
 use crate::{
 	Context,
 	Span,
-	ast::statements::Statement,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 };
 
 #[derive(Clone, Debug, thiserror::Error, Hash, PartialEq, Eq)]
-pub enum ParseError {
-	#[error("Unexpected token: Expected {expected} but found {actual}")]
-	UnexpectedToken { expected: TokenType, actual: TokenType },
-
-	#[error("Unexpected token: Expected {expected} but found {actual}")]
-	UnexpectedTokenExpected { expected: &'static str, actual: TokenType },
-
-	#[error("Unexpected end of file: Expected {expected} but found end of file")]
-	UnexpectedEOF { expected: TokenType },
-
-	#[error("Unexpected end of file: Expected more tokens")]
-	UnexpectedGenericEOF,
-
-	#[error("Duplicate variable: The variable \"{name}\" was declared twice")]
-	DuplicateVariableDeclaration { name: String },
-
-	#[error("Invalid top-level statement: Only declarations are allowed at the top level of a module")]
-	InvalidTopLevelStatement { statement: Statement },
-
-	#[error("Invalid formatted string: {0}")]
-	InvalidFormatString(String),
-
-	#[error("Duplicate field: The field \"{0}\" exists multiple times in this type")]
-	DuplicateField(String),
-}
+pub enum ParseError {}
 
 /// A trait for treating a collection of tokens as a queue of tokens that can be parsed. This is
 /// traditionally implemented for `VecDeque<Token>`.
@@ -77,14 +52,14 @@ impl TokenQueueFunctionality for TokenQueue {
 		let mut next = self.get(index).ok_or_else(|| Diagnostic {
 			file: context.file.clone(),
 			span: Span::none(),
-			info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
+			info: DiagnosticInfo::UnexpectedGenericEOF,
 		})?;
 		while next.token_type.is_whitespace() {
 			index += 1;
 			next = self.get(index).ok_or_else(|| Diagnostic {
 				file: context.file.clone(),
 				span: Span::none(),
-				info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
+				info: DiagnosticInfo::UnexpectedGenericEOF,
 			})?;
 		}
 		Ok(next.token_type)
@@ -116,14 +91,14 @@ impl TokenQueueFunctionality for TokenQueue {
 		let mut next = self.get(index).ok_or_else(|| Diagnostic {
 			file: context.file.clone(),
 			span: Span::none(),
-			info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
+			info: DiagnosticInfo::UnexpectedGenericEOF,
 		})?;
 		index += 1;
 		while next.token_type.is_whitespace() {
 			next = self.get(index).ok_or_else(|| Diagnostic {
 				file: context.file.clone(),
 				span: Span::none(),
-				info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
+				info: DiagnosticInfo::UnexpectedGenericEOF,
 			})?;
 			index += 1;
 		}
@@ -131,14 +106,14 @@ impl TokenQueueFunctionality for TokenQueue {
 		let mut next_next = self.get(index).ok_or_else(|| Diagnostic {
 			file: context.file.clone(),
 			span: Span::none(),
-			info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
+			info: DiagnosticInfo::UnexpectedGenericEOF,
 		})?;
 		while next_next.token_type.is_whitespace() {
 			index += 1;
 			next_next = self.get(index).ok_or_else(|| Diagnostic {
 				file: context.file.clone(),
 				span: Span::none(),
-				info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedGenericEOF)),
+				info: DiagnosticInfo::UnexpectedGenericEOF,
 			})?;
 		}
 
@@ -163,20 +138,20 @@ impl TokenQueueFunctionality for TokenQueue {
 					return Err(Diagnostic {
 						file: context.file.clone(),
 						span: token.span,
-						info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedToken {
+						info: DiagnosticInfo::UnexpectedToken {
 							expected: token_type,
 							actual: token.token_type,
-						})),
+						},
 					});
 				}
 			}
 		}
 
-		return Err(Diagnostic {
+		Err(Diagnostic {
 			file: context.file.clone(),
 			span: Span::none(),
-			info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedEOF { expected: token_type })),
-		});
+			info: DiagnosticInfo::UnexpectedEOF { expected: token_type },
+		})
 	}
 
 	fn current_position(&self) -> Option<Span> {

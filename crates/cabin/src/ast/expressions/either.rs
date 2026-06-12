@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use convert_case::{Case, Casing as _};
 
-use super::{field_access::DoubleColon, parameter::EvaluatedParameter};
+use super::{field_access::GetProperty, parameter::EvaluatedParameter};
 use crate::{
 	Span,
 	Spanned,
@@ -17,7 +17,7 @@ use crate::{
 		misc::tag::TagList,
 	},
 	comptime::{CompileTime, memory::ExpressionPointer},
-	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	if_then_some,
 	lexer::{Token, TokenType},
@@ -71,7 +71,7 @@ impl TryParse for Either {
 		let start = tokens.pop(TokenType::KeywordEither, context)?.span;
 		let mut variants = Vec::new();
 
-		context.scope.enter_new_scope(ScopeType::Either);
+		let either_scope = context.scope.enter_new_scope(ScopeType::Either);
 
 		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
@@ -90,7 +90,7 @@ impl TryParse for Either {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span: name.span(context),
-						info: DiagnosticInfo::Error(error),
+						info: error,
 					});
 				}
 				compile_time_parameters.push(Parameter { name, parameter_type, span });
@@ -109,13 +109,13 @@ impl TryParse for Either {
 				context.add_diagnostic(Diagnostic {
 					span: name.span(context),
 					file: context.file.clone(),
-					info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
+					info: DiagnosticInfo::NonSnakeCaseName {
 						original_name: name.source_identifier().to_owned(),
-					}),
+					},
 				});
 			}
 
-			let variant_span = subtype.as_ref().map(|t| t.span(context)).unwrap_or(name.span(context));
+			let variant_span = subtype.as_ref().map_or_else(|| name.span(context), |t| t.span(context));
 
 			variants.push(EitherVariant {
 				value: Expression::EvaluatedLiteral(EvaluatedLiteral::Object(Object::synthetic(
@@ -130,7 +130,7 @@ impl TryParse for Either {
 		})
 		.span;
 
-		context.scope.exit_scope().unwrap();
+		context.scope.exit_scope(either_scope).unwrap();
 
 		Ok(Either {
 			variants,
@@ -153,7 +153,7 @@ impl CompileTime for Either {
 			context.add_diagnostic(Diagnostic {
 				span: self.span(context),
 				file: context.file.clone(),
-				info: DiagnosticInfo::Warning(Warning::EmptyEither),
+				info: DiagnosticInfo::EmptyEither,
 			});
 		}
 
@@ -185,8 +185,16 @@ impl Spanned for Either {
 	}
 }
 
-impl DoubleColon for EvaluatedEither {
+impl GetProperty for EvaluatedEither {
 	fn double_colon(&self, name: &Identifier, _context: &mut Context) -> ExpressionPointer {
+		self.variants
+			.iter()
+			.find_map(|variant| (name == &variant.name).then_some(variant.value))
+			.unwrap_or(ExpressionPointer::ERROR)
+			.to_owned()
+	}
+
+	fn dot(&self, name: &Identifier, _context: &mut Context) -> ExpressionPointer {
 		self.variants
 			.iter()
 			.find_map(|variant| (name == &variant.name).then_some(variant.value))

@@ -61,12 +61,23 @@
   {
     "type": "comment",
     "named": true,
+    "extra": true,
     "fields": {}
   },
   {
     "type": "declaration",
     "named": true,
     "fields": {
+      "editable": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "editable",
+            "named": false
+          }
+        ]
+      },
       "name": {
         "multiple": false,
         "required": true,
@@ -104,6 +115,16 @@
           {
             "type": "expression",
             "named": true
+          }
+        ]
+      },
+      "visible": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "visible",
+            "named": false
           }
         ]
       }
@@ -200,9 +221,9 @@
     "type": "extend",
     "named": true,
     "fields": {
-      "target": {
+      "as": {
         "multiple": false,
-        "required": true,
+        "required": false,
         "types": [
           {
             "type": "type",
@@ -210,9 +231,9 @@
           }
         ]
       },
-      "tobe": {
+      "target": {
         "multiple": false,
-        "required": false,
+        "required": true,
         "types": [
           {
             "type": "type",
@@ -458,6 +479,16 @@
     "type": "group_field",
     "named": true,
     "fields": {
+      "editable": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "editable",
+            "named": false
+          }
+        ]
+      },
       "name": {
         "multiple": false,
         "required": true,
@@ -495,6 +526,16 @@
           {
             "type": "expression",
             "named": true
+          }
+        ]
+      },
+      "visible": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "visible",
+            "named": false
           }
         ]
       }
@@ -909,7 +950,18 @@
   {
     "type": "type",
     "named": true,
-    "fields": {},
+    "fields": {
+      "editable": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "editable",
+            "named": false
+          }
+        ]
+      }
+    },
     "children": {
       "multiple": false,
       "required": true,
@@ -1072,11 +1124,19 @@
     "named": false
   },
   {
+    "type": "as",
+    "named": false
+  },
+  {
+    "type": "editable",
+    "named": false
+  },
+  {
     "type": "either",
     "named": false
   },
   {
-    "type": "extensionof",
+    "type": "extend",
     "named": false
   },
   {
@@ -1140,7 +1200,7 @@
     "named": false
   },
   {
-    "type": "tobe",
+    "type": "visible",
     "named": false
   },
   {

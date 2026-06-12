@@ -1,5 +1,6 @@
 use std::io::Write;
 
+use cabin::diagnostics::Severity;
 use colored::Colorize as _;
 
 use crate::commands::CabinCommand;
@@ -23,10 +24,11 @@ impl CabinCommand for InteractiveCommand {
 			cabin::interpret(&line, &mut context);
 
 			for diagnostic in context.diagnostics() {
-				match &diagnostic.info {
-					cabin::diagnostics::DiagnosticInfo::Error(error) => eprintln!("{} {error}", "Error:".bold().red()),
-					cabin::diagnostics::DiagnosticInfo::Warning(warning) => eprintln!("{} {warning}", "Warning:".bold().yellow()),
-					cabin::diagnostics::DiagnosticInfo::Info(info) => eprintln!("{} {info}", "Info:".bold().cyan()),
+				match &diagnostic.info.severity() {
+					Severity::AlwaysError | Severity::ProdError => eprintln!("{} {}", "Error:".bold().red(), diagnostic.info),
+					Severity::AlwaysWarn | Severity::ProdWarning => eprintln!("{} {}", "Warning:".bold().yellow(), diagnostic.info),
+					Severity::AlwaysInfo | Severity::ProdInfo => eprintln!("{} {}", "Info:".bold().cyan(), diagnostic.info),
+					Severity::AlwaysHint | Severity::ProdHint => eprintln!("{} {}", "Hint:".bold().cyan(), diagnostic.info),
 				}
 			}
 

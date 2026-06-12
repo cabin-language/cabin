@@ -2,9 +2,10 @@ use std::{
 	collections::HashMap,
 	fmt::Debug,
 	ops::{Deref, DerefMut},
+	sync::atomic::{AtomicUsize, Ordering},
 };
 
-use crate::{api::context::Context, ast::expressions::identifier::Identifier, comptime::memory::ExpressionPointer, parser::ParseError};
+use crate::{api::context::Context, ast::expressions::identifier::Identifier, comptime::memory::ExpressionPointer, diagnostics::DiagnosticInfo};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScopeId(usize);
 
@@ -20,11 +21,12 @@ impl ScopeId {
 
 /// A type of scope in the language. Currently, this is only used for debugging purposes, as scopes are able to be printed as a string representation,
 /// and doing so will show their type. However, in the future, this may be used for other purposes, so it's good to leave here regardless
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum ScopeType {
 	/// The function declaration scope type. This is used for the body of a function declaration. Note that this is not in any way related to a scope that
 	/// a function is declared in, but represents the scope *inside* of a function's body.
-	Function,
+	Action,
+	Parameters,
 	Extend,
 	File,
 	Directory,
@@ -45,7 +47,7 @@ pub enum ScopeType {
 /// meaning that this scope also inherits variables from its parent. One important thing to note is that Cabin doesn't support any kind of shadowing -
 /// meaning globally declared variables are available in *every* scope. No matter what scope you're in, you can be 100% certain there is a `String`
 /// variable defined, and that it is exactly what you expect it to be. This is important for resolving things like `Boolean`s.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Scope {
 	/// The index of the scope which is the parent to this one. This is the scope's direct parent, i.e., the scope in which this one is declared in. This
 	/// is represented as an index into a `ScopeData`'s `scopes` vector, because trying to create a tree data structure in Rust with regular semantics
@@ -161,12 +163,15 @@ impl Scope {
 /// destroyed or removed, so their indices act as permanent unique IDs.
 ///
 /// This acts simply as a wrapper around the scope arena vector, as well as keeping track of the current scope, be it during parsing, compile-time, etc.
+#[derive(Clone)]
 pub struct ScopeTree {
 	/// The arena of scopes stored as a flat vector. For more information, see the documentation on the `ScopeData` struct.
 	scopes: Vec<Scope>,
 	/// The id of the current scope. This is guaranteed to always point to a valid scope, and by default is the global scope.
 	current_scope: usize,
 }
+
+static INDENT: AtomicUsize = AtomicUsize::new(0);
 
 impl ScopeTree {
 	/// Creates a new scope data with an empty global scope. This should only be used once in each program to create the main scope data.
@@ -241,7 +246,7 @@ impl ScopeTree {
 
 	/// Enters a new scope. This creates a new scope with the given scope type, and sets the current scope to be that one. The newly created scope is added
 	/// to the children of this scope, and its parent will be this scope. When you're done with this scope, use `exit_scope()`.
-	pub fn enter_new_scope(&mut self, scope_type: ScopeType) {
+	pub fn enter_new_scope(&mut self, scope_type: ScopeType) -> ScopeId {
 		self.scopes.push(Scope {
 			variables: HashMap::new(),
 			index: self.scopes.len(),
@@ -252,8 +257,11 @@ impl ScopeTree {
 		});
 
 		let new_id = self.scopes.len() - 1;
+		// eprintln!("{}Entering {new_id} ({scope_type:?})", "    ".repeat(INDENT.load(Ordering::Relaxed)));
+		// INDENT.fetch_add(1, Ordering::Relaxed);
 		self.current_mut().children.push(new_id);
 		self.current_scope = self.scopes.len() - 1;
+		ScopeId(self.current_scope)
 	}
 
 	/// Exits the current scope. This sets the current scope of this scope data to be the parent of the current scope. This will only return an `Err` if
@@ -263,7 +271,16 @@ impl ScopeTree {
 	/// # Errors
 	///
 	/// If this is currently the global scope
-	pub fn exit_scope(&mut self) -> anyhow::Result<()> {
+	pub fn exit_scope(&mut self, id: ScopeId) -> anyhow::Result<()> {
+		assert!(
+			self.current_scope == id.0,
+			"Attempted to exit scope {}, but current scope is {} of type {:?}",
+			id.0,
+			self.current_scope,
+			self.current().scope_type
+		);
+		// INDENT.fetch_sub(1, Ordering::Relaxed);
+		// eprintln!("{}Exiting {}", "    ".repeat(INDENT.load(Ordering::Relaxed)), self.current_scope);
 		self.current_scope = self.current().parent.ok_or_else(|| anyhow::anyhow!("Attempted to exit global scope"))?;
 		Ok(())
 	}
@@ -286,7 +303,8 @@ impl ScopeTree {
 	///
 	/// # Returns
 	/// The id of the previously current scope
-	pub fn set_current_scope(&mut self, id: ScopeId) -> ScopeReverter {
+	#[must_use]
+	pub const fn set_current_scope(&mut self, id: ScopeId) -> ScopeReverter {
 		let previous = self.current_scope;
 		self.current_scope = id.0;
 		ScopeReverter(ScopeId(previous))
@@ -304,14 +322,18 @@ impl ScopeTree {
 	///
 	/// # Errors
 	/// Returns an error if a variable already exists with the given name in the scope with the given id.
-	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Identifier>, value: ExpressionPointer, id: ScopeId) -> Result<(), crate::Error> {
+	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Identifier>, value: ExpressionPointer, id: ScopeId) -> Result<(), DiagnosticInfo> {
 		let name = name.into();
 		let old = self.scopes.get_mut(id.0).unwrap().variables.insert(name.clone(), value);
 		old.map_or(Ok(()), |_| {
-			Err(crate::Error::Parse(ParseError::DuplicateVariableDeclaration {
+			Err(DiagnosticInfo::DuplicateVariableDeclaration {
 				name: name.source_identifier().to_owned(),
-			}))
+			})
 		})
+	}
+
+	pub fn remove_variable_from_id(&mut self, name: impl Into<Identifier>, id: ScopeId) {
+		let _ = self.scopes.get_mut(id.0).unwrap().variables.remove(&name.into());
 	}
 
 	/// Declares a new variable in the current scope with the given value and tags. This should only be used to declare a new variable,
@@ -325,8 +347,12 @@ impl ScopeTree {
 	///
 	/// # Errors
 	/// Returns an error if a variable already exists with the given name in the current scope.
-	pub fn declare_new_variable(&mut self, name: impl Into<Identifier>, value: ExpressionPointer) -> Result<(), crate::Error> {
+	pub fn declare_new_variable(&mut self, name: impl Into<Identifier>, value: ExpressionPointer) -> Result<(), DiagnosticInfo> {
 		self.declare_new_variable_from_id(name, value, ScopeId(self.current_scope))
+	}
+
+	pub fn remove_variable(&mut self, name: impl Into<Identifier>) {
+		self.remove_variable_from_id(name, ScopeId(self.current_scope));
 	}
 
 	/// as only the current scope is stored, so this operation is `O(n)`, where `n` is the height of the scope tree.
@@ -392,9 +418,9 @@ impl ScopeTree {
 	}
 
 	pub fn new_scope_id(&mut self, scope_type: ScopeType) -> ScopeId {
-		self.enter_new_scope(scope_type);
+		let old = self.enter_new_scope(scope_type);
 		let id = ScopeId(self.current_scope);
-		self.exit_scope().unwrap();
+		self.exit_scope(old).unwrap();
 		id
 	}
 
@@ -500,7 +526,7 @@ impl Levenshtein for str {
 pub struct ScopeReverter(ScopeId);
 
 impl ScopeReverter {
-	pub fn revert(&self, context: &mut Context) {
+	pub const fn revert(&self, context: &mut Context) {
 		context.scope.current_scope = self.0.0;
 	}
 }

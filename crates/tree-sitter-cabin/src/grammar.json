@@ -1168,7 +1168,7 @@
       "members": [
         {
           "type": "STRING",
-          "value": "extensionof"
+          "value": "extend"
         },
         {
           "type": "FIELD",
@@ -1186,11 +1186,11 @@
               "members": [
                 {
                   "type": "STRING",
-                  "value": "tobe"
+                  "value": "as"
                 },
                 {
                   "type": "FIELD",
-                  "name": "tobe",
+                  "name": "as",
                   "content": {
                     "type": "SYMBOL",
                     "name": "type"
@@ -1601,6 +1601,38 @@
           ]
         },
         {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "visible",
+              "content": {
+                "type": "STRING",
+                "value": "visible"
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "editable",
+              "content": {
+                "type": "STRING",
+                "value": "editable"
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
           "type": "FIELD",
           "name": "name",
           "content": {
@@ -1797,8 +1829,29 @@
       ]
     },
     "type": {
-      "type": "SYMBOL",
-      "name": "expression"
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "editable",
+              "content": {
+                "type": "STRING",
+                "value": "editable"
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
+          "type": "SYMBOL",
+          "name": "expression"
+        }
+      ]
     },
     "either_variant": {
       "type": "SEQ",
@@ -2080,6 +2133,38 @@
         {
           "type": "STRING",
           "value": "let"
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "visible",
+              "content": {
+                "type": "STRING",
+                "value": "visible"
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "editable",
+              "content": {
+                "type": "STRING",
+                "value": "editable"
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
         },
         {
           "type": "FIELD",

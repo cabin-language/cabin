@@ -10,12 +10,13 @@ use crate::{
 		misc::tag::TagList,
 	},
 	comptime::{CompileTime, memory::ExpressionPointer},
-	diagnostics::{Diagnostic, DiagnosticInfo},
+	diagnostics::Diagnostic,
 	if_then_else_default,
 	if_then_some,
 	lexer::TokenType,
 	parse_list,
 	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	scope::ScopeId,
 	typechecker::Type,
 };
 
@@ -28,6 +29,7 @@ pub struct Action {
 	body: Option<Block>,
 	this_object: Option<ExpressionPointer>,
 	span: Span,
+	parameter_scope_id: ScopeId,
 	pub documentation: Option<String>,
 }
 
@@ -35,9 +37,11 @@ impl TryParse for Action {
 	type Output = Action;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
-		// "function" keyword
+		// "action" keyword
 		let start = tokens.pop(TokenType::KeywordAction, context)?.span;
 		let mut end = start;
+
+		let parameter_scope = context.scope.enter_new_scope(ScopeType::Parameters);
 
 		// Compile-time parameters
 		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
@@ -49,6 +53,16 @@ impl TryParse for Action {
 			.span;
 			compile_time_parameters
 		});
+
+		for parameter in &compile_time_parameters {
+			if let Err(info) = context.scope.declare_new_variable(&parameter.name, ExpressionPointer::ERROR) {
+				context.add_diagnostic(Diagnostic {
+					span: parameter.parameter_type.span(context),
+					info,
+					file: context.file.clone(),
+				});
+			}
+		}
 
 		// Parameters
 		let parameters = if_then_else_default!(tokens.next_is(TokenType::LeftParenthesis), {
@@ -71,14 +85,14 @@ impl TryParse for Action {
 
 		// Body
 		let body = if_then_some!(tokens.next_is(TokenType::LeftBrace), {
-			let block = Block::parse_with_scope_type(tokens, context, ScopeType::Function)?;
+			let block = Block::parse_with_scope_type(tokens, context, ScopeType::Action)?;
 			let error = Expression::error(Span::none(), context);
 			for parameter in &compile_time_parameters {
 				if let Err(error) = context.scope.declare_new_variable_from_id(parameter.name().clone(), error, block.inner_scope_id()) {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span: parameter.name().span(context),
-						info: DiagnosticInfo::Error(error),
+						info: error,
 					});
 				};
 			}
@@ -87,7 +101,7 @@ impl TryParse for Action {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span: parameter.name().span(context),
-						info: DiagnosticInfo::Error(error),
+						info: error,
 					});
 				}
 			}
@@ -95,10 +109,13 @@ impl TryParse for Action {
 			block
 		});
 
+		context.scope.exit_scope(parameter_scope).unwrap();
+
 		// Return
 		Ok(Self {
 			tags: TagList::default(),
 			parameters,
+			parameter_scope_id: parameter_scope,
 			compile_time_parameters,
 			return_type,
 			body,
@@ -113,6 +130,8 @@ impl CompileTime for Action {
 	type Output = EvaluatedAction;
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+		let reverter = context.scope.set_current_scope(self.parameter_scope_id);
+
 		// Compile-time parameters
 		let compile_time_parameters = {
 			let mut compile_time_parameters = Vec::new();
@@ -134,12 +153,16 @@ impl CompileTime for Action {
 		// Return type
 		let return_type = self.return_type.map(|return_type| Type::Literal(return_type.evaluate_to_literal(context)));
 
+		// tags
 		let tags = self.tags.evaluate_at_compile_time(context);
 
-		let body = self.body.map(|body| body.evaluate_at_compile_time(context));
+		// body
+		let body = self.body.map(|body| body.evaluate_lazy(context));
+
+		reverter.revert(context);
 
 		// Return
-		let function = EvaluatedAction {
+		EvaluatedAction {
 			compile_time_parameters,
 			parameters,
 			body,
@@ -147,9 +170,7 @@ impl CompileTime for Action {
 			tags,
 			span: self.span,
 			documentation: self.documentation,
-		};
-
-		function
+		}
 	}
 }
 

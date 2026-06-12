@@ -14,7 +14,7 @@ use crate::{
 		statements::Statement,
 	},
 	comptime::{CompileTime, memory::ExpressionPointer},
-	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_some,
 	interpreter::Runtime,
 	lexer::TokenType,
@@ -52,8 +52,13 @@ impl TryParse for Declaration {
 			return Ok(Statement::Expression(expression));
 		}
 
-		// Name
+		// let
 		let start = tokens.pop(TokenType::KeywordLet, context)?.span;
+
+		let visible = if_then_some!(tokens.next_is(TokenType::KeywordVisible), tokens.pop(TokenType::KeywordVisible, context).unwrap());
+		let editable = if_then_some!(tokens.next_is(TokenType::KeywordEditable), tokens.pop(TokenType::KeywordVisible, context).unwrap());
+
+		// name
 		let name = Identifier::try_parse(tokens, context)?;
 
 		// Value
@@ -73,10 +78,10 @@ impl TryParse for Declaration {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span: name.span(context),
-						info: DiagnosticInfo::Warning(Warning::NonPascalCaseGroup {
+						info: DiagnosticInfo::NonPascalCaseGroup {
 							original_name: name.source_identifier().to_owned(),
 							type_name: expression_value.kind_name().to_owned(),
-						}),
+						},
 					});
 				}
 			},
@@ -85,9 +90,9 @@ impl TryParse for Declaration {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span: name.span(context),
-						info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
+						info: DiagnosticInfo::NonSnakeCaseName {
 							original_name: name.source_identifier().to_owned(),
-						}),
+						},
 					});
 				}
 			},
@@ -98,7 +103,7 @@ impl TryParse for Declaration {
 			context.add_diagnostic(Diagnostic {
 				file: context.file.clone(),
 				span: name.span(context),
-				info: DiagnosticInfo::Error(error),
+				info: error,
 			});
 		}
 

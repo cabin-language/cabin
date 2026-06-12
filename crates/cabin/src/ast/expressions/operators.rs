@@ -6,23 +6,23 @@ use crate::{
 	ast::{
 		expressions::{
 			Expression,
+			action::Action,
 			block::Block,
 			either::Either,
 			extend::Extend,
 			foreach::ForEachLoop,
 			function_call::{FunctionCall, PostfixOperators},
-			action::Action,
 			group::Group,
 			identifier::Identifier,
 			if_expression::IfExpression,
-			object::NewExpression,
+			new::NewExpression,
 		},
 		sugar::{list::List, string::Text},
 	},
 	comptime::memory::ExpressionPointer,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
-	parser::{Parse as _, ParseError, TokenQueueFunctionality as _, TryParse},
+	parser::{Parse as _, TokenQueueFunctionality as _, TryParse},
 };
 
 /// A binary operation. More specifically, this represents not one operation, but a group of operations that share the same precedence.
@@ -95,7 +95,7 @@ impl TryParse for PrimaryExpression {
 			TokenType::KeywordAction => Expression::Literal(UnevaluatedLiteral::Action(Action::try_parse(tokens, context)?)).store_in_memory(context),
 			TokenType::LeftBrace => Expression::Block(Block::try_parse(tokens, context)?).store_in_memory(context),
 			TokenType::Identifier => Expression::Identifier(Identifier::try_parse(tokens, context)?).store_in_memory(context),
-			TokenType::KeywordNew => Expression::ObjectConstructor(NewExpression::try_parse(tokens, context)?).store_in_memory(context),
+			TokenType::KeywordNew => Expression::New(NewExpression::try_parse(tokens, context)?).store_in_memory(context),
 			TokenType::KeywordGroup => Expression::Literal(UnevaluatedLiteral::Group(Group::try_parse(tokens, context)?)).store_in_memory(context),
 			TokenType::KeywordEither => Expression::Literal(UnevaluatedLiteral::Either(Either::try_parse(tokens, context)?)).store_in_memory(context),
 			TokenType::KeywordIf => Expression::If(IfExpression::try_parse(tokens, context)?).store_in_memory(context),
@@ -116,10 +116,10 @@ impl TryParse for PrimaryExpression {
 				return Err(Diagnostic {
 					file: context.file.clone(),
 					span: tokens.current_position().unwrap(),
-					info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::UnexpectedTokenExpected {
+					info: DiagnosticInfo::UnexpectedTokenExpected {
 						expected: "primary expression",
 						actual: token_type,
-					})),
+					},
 				});
 			},
 		})

@@ -1,13 +1,14 @@
-use std::{collections::HashMap, ops::Not};
+use std::collections::HashMap;
 
 use cabin::{lexer::TokenType, typechecker::Typed as _};
 use indoc::indoc;
+use url::Url;
 
 use crate::{
 	lsp::text_document::{
 		diagnostics::{get_diagnostics, PublishDiagnosticParams},
 		did_change::TextDocumentDidChangeEvent,
-		hover::HoverResult,
+		hover::{HoverResult, MarkupContents},
 		Position,
 		TextDocumentIdentifier,
 		TextDocumentItem,
@@ -51,6 +52,11 @@ pub enum RequestData {
 		text_document: TextDocumentIdentifier,
 	},
 
+	#[serde(rename = "custom/setMode")]
+	CustomSetMode {
+		mode: String,
+	},
+
 	#[serde(rename = "textDocument/didSave")]
 	DidSave {},
 
@@ -64,16 +70,51 @@ pub struct ClientInfo {
 	version: String,
 }
 
+#[derive(Debug, Default, Clone, PartialEq)]
+pub enum Mode {
+	#[default]
+	Dev,
+	Prod,
+}
+
 pub struct State {
 	pub files: HashMap<String, String>,
+	pub mode: Mode,
 }
 
 impl Request {
-	pub fn response(&self, state: &mut State, logger: &mut Logger) -> anyhow::Result<Option<Response>> {
+	pub fn response(&self, state: &mut State, logger: &mut Logger) -> anyhow::Result<Vec<Response>> {
 		Ok(match &self.data {
+			RequestData::CustomSetMode { mode } => {
+				logger.log(format!("\n*Mode changed to `{}`*\n", mode))?;
+
+				state.mode = match mode.as_str() {
+					"prod" | "production" => Mode::Prod,
+					_ => Mode::Dev,
+				};
+
+				let mut diagnostic_responses = Vec::new();
+
+				let active_uris: Vec<String> = state.files.keys().cloned().collect();
+
+				for uri in active_uris {
+					let diagnostics = get_diagnostics(state, logger, &uri)?;
+
+					diagnostic_responses.push(Response {
+						id: None,
+						jsonrpc: "2.0",
+						data: ResponseData::Diagnostics {
+							method: "textDocument/publishDiagnostics".to_owned(),
+							params: PublishDiagnosticParams { uri, diagnostics },
+						},
+					});
+				}
+
+				diagnostic_responses
+			},
 			RequestData::Initialize { client_info } => {
 				logger.log(format!("\n*Connected to client `{} {}`*\n", client_info.name, client_info.version))?;
-				Some(Response {
+				vec![Response {
 					id: self.id,
 					jsonrpc: "2.0",
 					data: ResponseData::Initialize {
@@ -88,21 +129,25 @@ impl Request {
 							},
 						},
 					},
-				})
+				}]
 			},
 			RequestData::TextDocumentDidOpen { text_document } => {
 				let norm_uri = normalize_uri(&text_document.uri)?;
 				logger.log(format!("\n*Opened `{}`*\n", norm_uri))?;
 				state.files.insert(norm_uri.clone(), text_document.text.clone());
 				let diagnostics = get_diagnostics(state, logger, &norm_uri)?;
-				diagnostics.is_empty().not().then_some(Response {
-					id: None,
-					jsonrpc: "2.0",
-					data: ResponseData::Diagnostics {
-						method: "textDocument/publishDiagnostics".to_owned(),
-						params: PublishDiagnosticParams { uri: norm_uri, diagnostics },
-					},
-				})
+				if !diagnostics.is_empty() {
+					vec![Response {
+						id: None,
+						jsonrpc: "2.0",
+						data: ResponseData::Diagnostics {
+							method: "textDocument/publishDiagnostics".to_owned(),
+							params: PublishDiagnosticParams { uri: norm_uri, diagnostics },
+						},
+					}]
+				} else {
+					Vec::new()
+				}
 			},
 
 			RequestData::TextDocumentDidChange { text_document, content_changes } => {
@@ -112,19 +157,20 @@ impl Request {
 					state.files.insert(norm_uri.clone(), last_change.text.clone());
 				}
 				let diagnostics = get_diagnostics(state, logger, &norm_uri)?;
-				Some(Response {
+				vec![Response {
 					id: None,
 					jsonrpc: "2.0",
 					data: ResponseData::Diagnostics {
 						method: "textDocument/publishDiagnostics".to_owned(),
 						params: PublishDiagnosticParams { uri: norm_uri, diagnostics },
 					},
-				})
+				}]
 			},
 
 			RequestData::TextDocumentDidHover { position, text_document } => {
-				let code = state.files.get(&text_document.uri).unwrap_or_else(|| {
-					logger.log(format!("\n**ERROR:** Could not find file for hover")).unwrap();
+				let norm_uri = normalize_uri(&text_document.uri)?;
+				let code = state.files.get(&norm_uri).unwrap_or_else(|| {
+					logger.log("\n**ERROR:** Could not find file for hover").unwrap();
 					unreachable!()
 				});
 				let tokens = cabin::tokenize(code).0;
@@ -133,14 +179,14 @@ impl Request {
 				let hover_text = token
 					.map(|token| match token.token_type {
 						TokenType::Identifier => {
-							let path = url::Url::parse(&text_document.uri)
+							let path = url::Url::parse(&norm_uri)
 								.unwrap_or_else(|error| {
 									logger.log(format!("\n**ERROR:** Could not parse URL for hover: {error}")).unwrap();
 									unreachable!()
 								})
 								.to_file_path()
 								.unwrap_or_else(|_error| {
-									logger.log(format!("\n**ERROR:** Could not convert URL to file path for hover")).unwrap();
+									logger.log("\n**ERROR:** Could not convert URL to file path for hover").unwrap();
 									unreachable!()
 								});
 							if let Ok(mut project) = cabin::Project::from_child(path) {
@@ -148,12 +194,11 @@ impl Request {
 								name.map(|name| {
 									let documentation = name
 										.value(project.context_mut())
-										.map(|expr| {
+										.and_then(|expr| {
 											expr.expression(project.context())
 												.get_documentation()
 												.map(|documentation| format!("\n---\n{documentation}"))
 										})
-										.flatten()
 										.map(|str| str.to_owned())
 										.unwrap_or(String::new());
 									format!(
@@ -171,290 +216,275 @@ impl Request {
 						},
 						TokenType::KeywordLet => indoc!(
 							r#"
-                            let
-                            ===
+							```cabin
+							let
+							```
+							
+							---
 
-                            `let` is used to declare a new variable:
+							`let` is used to declare a new variable:
 
-                            ```cabin
-                            let message = "Hello world!";
-                            ```
+							```cabin
+							let message = "Hello world!";
+							```
 
-                            `let` declarations *must* provide a value, i.e., the following isn't valid:
+							`let` declarations *must* provide a value, i.e., the following isn't valid:
 
-                            ```cabin
-                            let message;
-                            ```
+							```cabin
+							let message;
+							```
 
-                            # Mutability
+							## Mutability
 
-                            `let` declarations may optionally specify a type on the value, indicating that 
+							`let` declarations may optionally be marked `editable`, indicating that 
 							it can be reassigned:
 
-                            ```cabin
-                            let message: Text = "Hello world!";
-                            message = "Goodbye world!";
-                            ```
+							```cabin
+							let editable person: Person = john;
+							person = steve;
+							```
 
-                            Without specifying a type, the variable cannot be reassigned:
+							If the type itlsef is declared `editable`, then it can be mutated:
 
-                            ```cabin
-                            let message = "Hello world!";
-                            message = "Goodbye world!"; # not allowed!
-                            ```
+							```cabin
+							let message: editable Person = john;
+							person.name = "johnathan";
+							```
 
-                            "#,
+							Of course, both is an option:
+							
+							```cabin
+							let editable message: editable Person = john;
+							person.name = "johnathan";
+							```
+							"#,
 						)
 						.to_owned(),
 						TokenType::KeywordGroup => indoc!(
 							r#"
-                            group
-                            =====
+							```cabin
+							group
+							```
 
-                            `group` is used to declare a group type, similar to a `struct` in other 
+							---
+
+							`group` is used to declare a group type, similar to a `struct` in other 
 							languages:
 
-                            ```cabin
-                            let Person = group {
-                                name: Text,
-                                age: Number
-                            };
+							```cabin
+							let Person = group {
+								name: Text,
+								age: Number
+							};
+							```
 
-                            let john = new Person {
-                                name = "John",
-                                age = 30
-                            };
-                            ```
+							## Nominality
 
-                            # Nominality
-
-                            Groups are nominally typed, meaning even if two groups share the same 
+							Groups are nominally typed, meaning even if two groups share the same 
 							structure, you cannot use them interchangeably, i.e., the following isn't 
 							valid:
 
-                            ```cabin
-                            let Point = group { x: Number, y: Number };
-                            let Position = group { x: Number, y: Number };
+							```cabin
+							let Point = group { x: Number, y: Number };
+							let Position = group { x: Number, y: Number };
 
-                            let x: Point = new Position { x = 10, y = 10 };
-                            ```
-                            "#,
+							let x: Point = new Position { x = 10, y = 10 };
+							```
+							"#,
 						)
 						.to_owned(),
 						TokenType::KeywordExtend => indoc!(
 							r#"
-                            # extend
-                            ========
+							```cabin
+							extend
+							```
 
-                            # Extensions
+							`extend` is used to add properties to a type:
 
-                            `extend` is used to "extend" one type "to be" another. `extend` is how
-                            Cabin implements open polymorphism.
+							```cabin
+							let text_extension = extend Text {
+								is_even = action(this: This) {
+									return is this.length mod 2 == 0;
+								}
+							};
 
-                            ```cabin
-                            let Shape = group {
-                                area: action(this: This): Number
-                            };
+							let even = "hello world!".is_even();
+							```
 
-                            let Square = group {
-                                side_length: Number
-                            };
+							Properties declared in extensions can only be accessed if the extension
+							is in scope:
 
-                            let SquareArea = extend Square tobe Shape {
-                                area = action(this: This): Number {
-                                    return is this.side_length ^ 2;
-                                }
-                            };
+							```cabin
+							let _ = other_file.text_extension;
+							```
 
-                            let get_area = action(shape: Shape): Number {
-                                return is shape.area();
-                            };
+							The one exception to this is if the extension is marked with `#[default]`,
+							in which case, it's automatically in scope whenever the type is used:
 
-                            get_area(new Square {});
-                            ```
+							```cabin
+							#[default]
+							let text_extension = extend Text {
+								is_even = action(this: This) {
+									return is this.length mod 2 == 0;
+								}
+							};
+							```
 
-                            The `area` action is only available if it's implementation, `SquareArea`,
-                            is in scope.
+							`#[default]` can only be used when defining an extension in the same file as
+							the type being extended.
 
-                            # Extending Non-Action Fields
+							Extensions also allow extending a type to be assignable to another type. For
+							example:
 
-                            Conveniently, non-action fields can be substituted for an action that
-                            takes only an immutable `this` parameter:
+							```cabin
+							let Shape = group {
+								area: action(this: This): Number
+							};
 
-                            ```cabin
-                            let Shape = group {
-                                area: Number
-                            };
+							let Rectangle = group {
+								length: Number,
+								width: Number
+							};
 
-                            let Square = group {
-                                side_length: Number
-                            };
+							let RectangleShape = extend Rectangle as Shape {
+								area = action(this: This): Number {
+									return is this.length * this.width;
+								}
+							}:
 
-                            let SquareArea = extend Square tobe Shape {
+							let area_squared = action(shape: Shape): Number {
+								return is shape.area() ^ 2;
+							};
 
-                                # This is allowed!
-                                area = action(this: This): Number {
-                                    return is this.side_length ^ 2;
-                                }
-                            };
+							let rect = new Rectangle {
+								length: 5,
+								width: 10
+							};
 
-                            let area = new Square { side_length = 10 }.area;
-                            ```
+							let a2 = area_squared(rect);
+							```
 
-                            As with all actions in Cabin, it's automatically called without needing parentheses.
-
-                            # Untyped Extensions
-
-                            `extend` can also be used to extend a type without projecting it onto another:
-
-                            ```cabin
-                            let TextLength = extend Text {
-                                get_length = action(this: This) {
-                                    return is this.length;
-                                }
-                            };
-
-                            let length = "Hello".get_length;
-                            ```
-
-                            Once again, these fields can only be accessed if their implementations are in scope.
-
-                            # Default Extensions
-
-                            Finally, extensions can be made "default", which means they are automatically brought
-                            into scope whenever the target type is used:
-
-                            ```cabin
-                            let Vector = group {
-                                x: Number,
-                                y: Number
-                            };
-
-                            # This is automatically available when using `Vector`
-                            default extend Vector tobe Addable {
-                                plus = action(this: Vector, other: Vector): Vector {
-                                    return is new Vector { x = this.x + other.x, y = this.y + other.y };
-                                }
-                            };
-                            ```
-
-                            Note that you can only declare a `default` extension for a type in the same scope
-                            that the type is declared, i.e, you can't declare a `default` extension for `Text`,
-                            because it's declared in a different scope.
-
-                            Default extensions cannot be bound to a name.
-                            "#,
+							As you can see, we can assign an instance of `Rectangle` to a parameter of
+							type `Shape`, as long as we have our extension `RectangleShape` in scope.
+							"#,
 						)
 						.to_owned(),
 						TokenType::KeywordNew => indoc!(
 							r#"
+							```cabin
 							new
-							===
+
+							---
 
 							`new` is used to create a new instance of a `group`:
 
-                            ```cabin
-                            let Person = group {
-                                name: Text,
-                                age: Number
-                            };
+							```cabin
+							let Person = group {
+								name: Text,
+								age: Number
+							};
 
-                            let john = new Person {
-                                name = "John",
-                                age = 30
-                            };
+							let john = new Person {
+								name = "John",
+								age = 30
+							};
 							```
 							"#
 						)
 						.to_owned(),
 						TokenType::KeywordAction => indoc!(
 							r#"
-                            action
-                            ======
+							action
+							======
 
-                            `action` takes a list of statements and runs them when it's called:
+							`action` takes a list of statements and runs them when it's called:
 
-                            ```cabin
-                            let print_hello = action {
-                                print("Hello!");
-                            };
+							```cabin
+							let print_hello = action {
+								print("Hello!");
+							};
 
-                            print_hello(); # Prints "Hello!"
-                            ```
+							print_hello(); # Prints "Hello!"
+							```
 
-                            # Returning
+							# Returning
 
-                            `action` can give a value back to the caller by breaking from the
-                            `return` label:
+							`action` can give a value back to the caller by breaking from the
+							`return` label:
 
-                            ```cabin
-                            let get_name = action: Text {
-                                return is "john";
-                            };
+							```cabin
+							let get_name = action: Text {
+								return is "john";
+							};
 
-                            let name = get_name();
-                            ```
+							let name = get_name();
+							```
 
-                            # Parameters
+							# Parameters
 
-                            `actions` can take parameters:
+							`actions` can take parameters:
 
-                            ```cabin
-                            let capitalize = action(text: Text): Text {
-                                return is text.uppercase();
-                            };
-                            ```
+							```cabin
+							let capitalize = action(text: Text): Text {
+								return is text.uppercase();
+							};
+							```
 
-                            # Compile-Time Parameters
+							# Compile-Time Parameters
 
-                            `actions` may also specify parameters in angle brackets to indicate
-                            that their values must be known at compile-time:
+							`actions` may also specify parameters in angle brackets to indicate
+							that their values must be known at compile-time:
 
-                            ```cabin
-                            let compile_time_capitalize = action<text: Text>: Text {
-                                return is text.uppercase();
-                            };
+							```cabin
+							let compile_time_capitalize = action<text: Text>: Text {
+								return is text.uppercase();
+							};
 
-                            let uppercase = compile_time_capitalize<"john">;
-                            ```
+							let uppercase = compile_time_capitalize<"john">;
+							```
 
-                            Compile-Time parameters don't need to specify a type, they will default
-                            to `Anything`:
+							Compile-Time parameters don't need to specify a type, they will default
+							to `Anything`:
 
-                            ```cabin
-                            let do_something = action<T> { # equivalent to <T: Anything>
-                                # ...
-                            };
-                            ```
+							```cabin
+							let do_something = action<T> { # equivalent to <T: Anything>
+								# ...
+							};
+							```
 
-                            Furthermore, compile-time parameters may be used as types of runtime
-                            parameters:
+							Furthermore, compile-time parameters may be used as types of runtime
+							parameters:
 
-                            ```cabin
-                            let do_something = action<T>(value: T) {
-                                # ...
-                            };
+							```cabin
+							let do_something = action<T>(value: T) {
+								# ...
+							};
 
-                            do_something<Text>("Hello");
-                            ```
-                            "#
+							do_something<Text>("Hello");
+							```
+							"#
 						)
 						.to_owned(),
 						_ => String::new(),
 					})
 					.unwrap_or(String::new());
-				Some(Response {
+				vec![Response {
 					id: self.id,
 					jsonrpc: "2.0",
 					data: ResponseData::Hover {
-						result: HoverResult { contents: hover_text.to_owned() },
+						result: HoverResult {
+							contents: MarkupContents {
+								kind: "markdown",
+								value: hover_text.to_owned(),
+							},
+						},
 					},
-				})
+				}]
 			},
 
-			RequestData::Initialized {} => None,
-			RequestData::DidSave {} => None,
-			RequestData::Shutdown {} => None,
+			RequestData::Initialized {} => Vec::new(),
+			RequestData::DidSave {} => Vec::new(),
+			RequestData::Shutdown => Vec::new(),
 		})
 	}
 }
@@ -509,8 +539,6 @@ struct ServerInfo {
 	name: &'static str,
 	version: &'static str,
 }
-
-use url::Url;
 
 fn normalize_uri(uri_str: &str) -> anyhow::Result<String> {
 	let url = Url::parse(uri_str).map_err(|e| anyhow::anyhow!("Failed to parse URI '{uri_str}': {e}"))?;

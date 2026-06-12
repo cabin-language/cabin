@@ -10,7 +10,7 @@ use crate::{
 	},
 	comptime::CompileTime,
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	parser::{Parse, ParseError, TokenQueue, TokenQueueFunctionality as _},
+	parser::{Parse, TokenQueue, TokenQueueFunctionality as _},
 	scope::{ScopeId, ScopeType},
 };
 
@@ -24,7 +24,7 @@ impl Parse for Module {
 	type Output = Self;
 
 	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
-		context.scope.enter_new_scope(ScopeType::File);
+		let module_scope = context.scope.enter_new_scope(ScopeType::File);
 		let inner_scope_id = context.scope.unique_id();
 		let mut declarations = Vec::new();
 
@@ -39,12 +39,12 @@ impl Parse for Module {
 				other_statement => context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
 					span: other_statement.span(context),
-					info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::InvalidTopLevelStatement { statement: other_statement })),
+					info: DiagnosticInfo::InvalidTopLevelStatement { statement: other_statement },
 				}),
 			};
 		}
 
-		context.scope.exit_scope().unwrap();
+		context.scope.exit_scope(module_scope).unwrap();
 		Module { declarations, inner_scope_id }
 	}
 }

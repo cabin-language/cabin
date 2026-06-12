@@ -17,7 +17,7 @@ use crate::{
 			identifier::Identifier,
 			if_expression::IfExpression,
 			literal::EvaluatedLiteral,
-			object::NewExpression,
+			new::NewExpression,
 			operators::BinaryExpression,
 			parameter::Parameter,
 			run::{RunExpression, RuntimeableExpression},
@@ -26,7 +26,7 @@ use crate::{
 		misc::tag::TagList,
 		sugar::list::List,
 	},
-	comptime::{CompileTime, CompileTimeError, memory::ExpressionPointer},
+	comptime::{CompileTime, memory::ExpressionPointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	interpreter::Runtime,
 	parser::{Parse, TokenQueue, TokenQueueFunctionality as _, TryParse as _},
@@ -34,18 +34,18 @@ use crate::{
 	typechecker::{Type, Typed},
 };
 
+pub mod action;
 pub mod block;
 pub mod either;
 pub mod extend;
 pub mod field_access;
 pub mod foreach;
 pub mod function_call;
-pub mod action;
 pub mod group;
 pub mod identifier;
 pub mod if_expression;
 pub mod literal;
-pub mod object;
+pub mod new;
 pub mod operators;
 pub mod parameter;
 pub mod run;
@@ -59,7 +59,7 @@ pub enum Expression {
 	FunctionCall(FunctionCall),
 	If(IfExpression),
 	Identifier(Identifier),
-	ObjectConstructor(NewExpression),
+	New(NewExpression),
 	ForEachLoop(ForEachLoop),
 	Run(RunExpression),
 	Unary(UnaryOperation),
@@ -100,12 +100,12 @@ impl CompileTime for Expression {
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		match self {
-			Self::Block(block) => ExpressionOrPointer::Expression(Expression::Block(block.evaluate_at_compile_time(context))),
+			Self::Block(block) => ExpressionOrPointer::Pointer(block.evaluate_eager(context)),
 			Self::FieldAccess(field_access) => field_access.evaluate_at_compile_time(context),
 			Self::FunctionCall(function_call) => function_call.evaluate_at_compile_time(context),
 			Self::If(if_expression) => if_expression.evaluate_at_compile_time(context),
 			Self::Identifier(name) => ExpressionOrPointer::Expression(Expression::Identifier(name.evaluate_at_compile_time(context))),
-			Self::ObjectConstructor(constructor) => ExpressionOrPointer::Expression(constructor.evaluate_at_compile_time(context)),
+			Self::New(constructor) => ExpressionOrPointer::Expression(constructor.evaluate_at_compile_time(context)),
 			Self::ForEachLoop(for_loop) => for_loop.evaluate_at_compile_time(context),
 			Self::Run(run_expression) => ExpressionOrPointer::Expression(Expression::Run(run_expression.evaluate_at_compile_time(context))),
 			Self::EvaluatedLiteral(_) => ExpressionOrPointer::Expression(self),
@@ -134,7 +134,7 @@ impl TranspileToC for Expression {
 
 	fn c_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
 		match self {
-			Expression::ObjectConstructor(object) => object.c_prelude(context),
+			Expression::New(object) => object.c_prelude(context),
 			_ => Ok(String::new()),
 		}
 	}
@@ -203,14 +203,14 @@ impl Expression {
 		}
 	}
 
-	pub fn kind_name(&self) -> &'static str {
+	pub const fn kind_name(&self) -> &'static str {
 		match self {
 			Expression::Block(_) => "block",
 			Expression::FieldAccess(_) => "field access",
 			Expression::FunctionCall(_) => "function call",
 			Expression::If(_) => "if expression",
 			Expression::Identifier(_) => "name",
-			Expression::ObjectConstructor(_) => "object constructor",
+			Expression::New(_) => "object constructor",
 			Expression::ForEachLoop(_) => "for loop",
 			Expression::Run(_) => "run expression",
 			Expression::Unary(_) => "unary operation",
@@ -228,7 +228,7 @@ impl Spanned for Expression {
 			Expression::Identifier(name) => name.span(context),
 			Expression::Run(run_expression) => run_expression.span(context),
 			Expression::Block(block) => block.span(context),
-			Expression::ObjectConstructor(object_constructor) => object_constructor.span(context),
+			Expression::New(object_constructor) => object_constructor.span(context),
 			Expression::FunctionCall(function_call) => function_call.span(context),
 			Expression::If(if_expression) => if_expression.span(context),
 			Expression::FieldAccess(field_access) => field_access.span(context),
@@ -250,7 +250,7 @@ impl RuntimeableExpression for Expression {
 				context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
 					span: self.span(context),
-					info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::RunNonFunctionCall)),
+					info: DiagnosticInfo::RunNonFunctionCall,
 				});
 				self
 			},

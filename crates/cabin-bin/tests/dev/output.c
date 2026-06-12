@@ -9,19 +9,12 @@ int main(int argc, char* argv[]) {
 	
 	
 	
+	void* u_some_func;
+	u_some_func = &literal_179;
+	label_end_u_some_func:;
 	
 	
-	void* u_Person;
-	u_Person = &literal_150;
-	label_end_u_Person:;
-	
-	
-	void* u_john;
-	u_john = &literal_153;
-	label_end_u_john:;
-	
-	
-	&literal_160
+	&literal_183
 
 
 	return 0;

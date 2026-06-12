@@ -89,6 +89,7 @@ impl FieldAccess {
 	}
 }
 
-pub trait DoubleColon {
+pub trait GetProperty {
 	fn double_colon(&self, name: &Identifier, context: &mut Context) -> ExpressionPointer;
+	fn dot(&self, name: &Identifier, context: &mut Context) -> ExpressionPointer;
 }

@@ -8,7 +8,6 @@ use crate::{
 /// A unary operator. These are types of operators that take a single expression and operate on it.
 #[derive(Debug, Clone)]
 pub enum UnaryOperator {
-	QuestionMark,
 	ExclamationPoint,
 }
 

@@ -18,7 +18,7 @@ impl Parse for Program {
 	type Output = Self;
 
 	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
-		context.scope.enter_new_scope(ScopeType::File);
+		let program_scope = context.scope.enter_new_scope(ScopeType::File);
 		let inner_scope_id = context.scope.unique_id();
 		let mut statements = Vec::new();
 
@@ -26,7 +26,7 @@ impl Parse for Program {
 			statements.push(Statement::parse(tokens, context));
 		}
 
-		context.scope.exit_scope().unwrap();
+		context.scope.exit_scope(program_scope).unwrap();
 
 		Program { statements, inner_scope_id }
 	}

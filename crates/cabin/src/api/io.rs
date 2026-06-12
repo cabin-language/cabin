@@ -187,9 +187,9 @@ impl Io for SystemIo {
 	}
 
 	fn set_environment_variable(&mut self, name: &str, value: &str) {
-		#[allow(unsafe_code)]
+		#[allow(unsafe_code, reason = "setting an environment variable dude")]
 		unsafe {
-			std::env::set_var(name, value)
+			std::env::set_var(name, value);
 		};
 	}
 

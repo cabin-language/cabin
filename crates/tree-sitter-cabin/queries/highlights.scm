@@ -5,7 +5,7 @@
 (either ["either"] @keyword)
 (function ["action"] @keyword.function)
 (object_constructor ["new"] @keyword)
-(extend ["tobe" "extensionof"] @keyword)
+(extend ["as" "extend"] @keyword)
 (goto ["is"] @keyword)
 (foreach ["foreach" "in"] @keyword)
 (while_loop ["while"] @keyword)

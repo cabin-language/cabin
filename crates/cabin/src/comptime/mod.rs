@@ -1,4 +1,4 @@
-use crate::{api::context::Context, diagnostics::DiagnosticInfo, typechecker::Type};
+use crate::api::context::Context;
 
 pub mod memory;
 
@@ -16,46 +16,4 @@ pub trait CompileTime {
 	/// An error can occur during compile-time evaluation for any number of reasons, such as the user writing a
 	/// variable name that doesn't exist. The specific error returned by this is implementation-specific.
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output;
-}
-
-#[derive(thiserror::Error, Debug, Clone, Hash, PartialEq, Eq)]
-pub enum CompileTimeError {
-	#[error("Unresolvable Type: This expression can't be fully evaluated at compile-time; Default values for group fields must be known at compile-time.")]
-	GroupValueNotKnownAtCompileTime,
-
-	#[error("Invalid run expression: run has no effect on this type of expression")]
-	RunNonFunctionCall,
-
-	#[error("Iterate over non-iterable: This type of value can't be iterated over")]
-	IterateOverNonList,
-
-	#[error("Call non-callable: This type of value can't be called")]
-	CallNonFunction,
-
-	#[error("Unknown variable: \"{0}\"")]
-	UnknownVariable(String),
-
-	#[error("Unresolvable Type: This expression is being used as a type, but it can't be fully evaluated at compile-time")]
-	ExpressionUsedAsType,
-
-	#[error("Unknown property: No property \"{0}\" exists on this value")]
-	NoSuchField(String),
-
-	#[error("Type mismatch: This value cannot be assigned to this type")]
-	TypeMismatch(Type, Type),
-
-	#[error("Missing property: Missing property \"{0}\"")]
-	MissingField(String),
-
-	#[error("Unknown property: This type has no property called \"{0}\"")]
-	ExtraField(String),
-
-	#[error("Invalid extension target: Attempted to extend a type to be a non-group")]
-	ExtendToBeNonGroup,
-}
-
-impl From<CompileTimeError> for DiagnosticInfo {
-	fn from(value: CompileTimeError) -> Self {
-		DiagnosticInfo::Error(crate::Error::CompileTime(value))
-	}
 }

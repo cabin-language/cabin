@@ -7,6 +7,8 @@ use std::{
 mod lsp;
 use lsp::State;
 
+use crate::lsp::Mode;
+
 fn main() -> anyhow::Result<()> {
 	let logfile = directories::BaseDirs::new().unwrap().data_local_dir().join("cabin-language-server-log.md");
 	std::fs::write(&logfile, "")?;
@@ -27,7 +29,10 @@ fn run(logger: &mut Logger) -> anyhow::Result<()> {
 	logger.log("\n\n# Awaiting next request from client...\n")?;
 
 	let mut responder = std::io::stdout();
-	let mut state = State { files: HashMap::new() };
+	let mut state = State {
+		files: HashMap::new(),
+		mode: Mode::Dev,
+	};
 
 	let stdin = std::io::stdin();
 	let mut reader = BufReader::new(stdin.lock());
@@ -84,16 +89,18 @@ fn handle_request(logger: &mut Logger, state: &mut State, responder: &mut Stdout
 
 	let request: lsp::Request = serde_json::from_str(content).map_err(|error| anyhow::anyhow!("Error deserializing content: {error}; content: {content}"))?;
 
-	// Response
-	let response = request.response(state, logger)?;
+	// Get the vector of responses
+	let responses = request.response(state, logger)?;
 
-	if let Some(response) = response {
-		let response_string: String = response.try_into()?;
-		logger.log(format!("\n**Response:**\n```json\n{response_string}\n```"))?;
-		responder.write_all(response_string.as_bytes())?;
-		responder.flush()?;
-	} else {
+	if responses.is_empty() {
 		logger.log("\n**No response needed.**\n")?;
+	} else {
+		for response in responses {
+			let response_string: String = response.try_into()?;
+			logger.log(format!("\n**Response:**\n```json\n{response_string}\n```"))?;
+			responder.write_all(response_string.as_bytes())?;
+			responder.flush()?;
+		}
 	}
 
 	Ok(())

@@ -13,7 +13,7 @@ use crate::{
 			action::EvaluatedAction,
 			either::Either,
 			extend::{EvaluatedExtend, Extend},
-			field_access::DoubleColon,
+			field_access::GetProperty,
 			group::EvaluatedGroup,
 			identifier::Identifier,
 		},
@@ -21,10 +21,9 @@ use crate::{
 	},
 	comptime::{
 		CompileTime,
-		CompileTimeError,
 		memory::{ExpressionPointer, LiteralPointer},
 	},
-	diagnostics::Diagnostic,
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	typechecker::{Type, Typed},
 };
 
@@ -113,7 +112,7 @@ impl EvaluatedLiteral {
 		match self {
 			Self::Group(_) => "Group",
 			Self::Object(_) => "Object",
-			Self::Action(_) => "Function",
+			Self::Action(_) => "Action",
 			Self::Extend(_) => "Extension",
 			Self::List(_) => "List",
 			Self::Text(_) => "String",
@@ -136,12 +135,22 @@ impl Typed for EvaluatedLiteral {
 	}
 }
 
-impl DoubleColon for EvaluatedLiteral {
+impl GetProperty for EvaluatedLiteral {
 	fn double_colon(&self, name: &Identifier, context: &mut Context) -> ExpressionPointer {
 		match self {
 			EvaluatedLiteral::Object(object) => object.double_colon(name, context),
 			EvaluatedLiteral::Either(either) => either.double_colon(name, context),
 			EvaluatedLiteral::Text(string) => string.double_colon(name, context),
+			EvaluatedLiteral::Error(_) => Expression::EvaluatedLiteral(self.to_owned()).store_in_memory(context),
+			value => todo!("{value:?}"),
+		}
+	}
+
+	fn dot(&self, name: &Identifier, context: &mut Context) -> ExpressionPointer {
+		match self {
+			EvaluatedLiteral::Object(object) => object.dot(name, context),
+			EvaluatedLiteral::Either(either) => either.dot(name, context),
+			EvaluatedLiteral::Text(string) => string.dot(name, context),
 			EvaluatedLiteral::Error(_) => Expression::EvaluatedLiteral(self.to_owned()).store_in_memory(context),
 			value => todo!("{value:?}"),
 		}
@@ -172,14 +181,29 @@ impl Object {
 	}
 }
 
-impl DoubleColon for Object {
+impl GetProperty for Object {
 	fn double_colon(&self, name: &Identifier, context: &mut Context) -> ExpressionPointer {
 		self.fields
 			.get(name)
 			.unwrap_or_else(|| {
 				context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
-					info: CompileTimeError::NoSuchField(name.source_identifier().to_owned()).into(),
+					info: DiagnosticInfo::NoSuchField(name.source_identifier().to_owned()),
+					span: self.span,
+				});
+				&LiteralPointer::ERROR
+			})
+			.to_owned()
+			.into()
+	}
+
+	fn dot(&self, name: &Identifier, context: &mut Context) -> ExpressionPointer {
+		self.fields
+			.get(name)
+			.unwrap_or_else(|| {
+				context.add_diagnostic(Diagnostic {
+					file: context.file.clone(),
+					info: DiagnosticInfo::NoSuchField(name.source_identifier().to_owned()),
 					span: self.span,
 				});
 				&LiteralPointer::ERROR

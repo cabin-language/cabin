@@ -3,7 +3,7 @@ use std::{collections::VecDeque, path::Path};
 use api::io::Io;
 
 // Re-exports
-pub use crate::api::{context::Context, diagnostics::Error, project::Project, span::*, *};
+pub use crate::api::{context::Context, project::Project, span::*, *};
 use crate::{
 	api::diagnostics::Diagnostics,
 	ast::misc::{module::Module, program::Program},

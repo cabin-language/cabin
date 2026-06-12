@@ -7,19 +7,19 @@ use crate::{
 	Spanned,
 	api::{context::Context, scope::ScopeType},
 	ast::{
-		expressions::{Expression, identifier::Identifier, parameter::Parameter},
+		expressions::{Expression, group, identifier::Identifier, parameter::Parameter},
 		misc::tag::TagList,
 	},
 	comptime::{
 		CompileTime,
 		memory::{ExpressionPointer, LiteralPointer},
 	},
-	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	if_then_some,
 	lexer::{Token, TokenType},
 	parse_list,
-	parser::{ListType, Parse as _, ParseError, TokenQueueFunctionality as _, TryParse},
+	parser::{ListType, Parse as _, TokenQueueFunctionality as _, TryParse},
 	typechecker::{Type, Typed as _},
 };
 
@@ -29,6 +29,7 @@ pub struct GroupField {
 	default_value: Option<ExpressionPointer>,
 	field_type: Option<ExpressionPointer>,
 	documentation: Option<String>,
+	visible: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -50,19 +51,21 @@ impl TryParse for Group {
 
 	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordGroup, context)?.span;
-		context.scope.enter_new_scope(ScopeType::Group);
+		let group_scope = context.scope.enter_new_scope(ScopeType::Group);
 
 		let _compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut compile_time_parameters = Vec::new();
 			let _ = parse_list!(tokens, context, ListType::AngleBracketed, {
-				let parameter = Parameter::try_parse(tokens, context)?;
+				let parameter = Parameter::try_parse(tokens, context).inspect_err(|_err| {
+					context.scope.exit_scope(group_scope).unwrap();
+				})?;
 				let name = parameter.name().to_owned();
 				let error = Expression::error(Span::none(), context);
 				if let Err(error) = context.scope.declare_new_variable(name.clone(), error) {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span: name.span(context),
-						info: DiagnosticInfo::Error(error),
+						info: error,
 					});
 				}
 				compile_time_parameters.push(parameter);
@@ -76,21 +79,29 @@ impl TryParse for Group {
 			let mut documentation = if_then_some!(tokens.next_is(TokenType::Comment), tokens.pop(TokenType::Comment, context).unwrap().value);
 
 			//  Group field tags
-			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
+			let tags = if_then_some!(
+				tokens.next_is(TokenType::TagOpening),
+				TagList::try_parse(tokens, context).inspect_err(|_err| {
+					context.scope.exit_scope(group_scope).unwrap();
+				})?
+			);
+			let visible = if_then_some!(tokens.next_is(TokenType::KeywordVisible), tokens.pop(TokenType::KeywordVisible, context).unwrap()).is_some();
 
 			if documentation.is_none() && tokens.next_is(TokenType::Comment) {
 				documentation = Some(tokens.pop(TokenType::Comment, context).unwrap().value);
 			}
 
 			// Group field name
-			let name = Identifier::try_parse(tokens, context)?;
+			let name = Identifier::try_parse(tokens, context).inspect_err(|_err| {
+				context.scope.exit_scope(group_scope).unwrap();
+			})?;
 			if !name.source_identifier().is_case(Case::Snake) {
 				context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
 					span: name.span(context),
-					info: DiagnosticInfo::Warning(Warning::NonSnakeCaseName {
+					info: DiagnosticInfo::NonSnakeCaseName {
 						original_name: name.source_identifier().to_owned(),
-					}),
+					},
 				});
 			}
 
@@ -98,19 +109,23 @@ impl TryParse for Group {
 				context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
 					span: name.span(context),
-					info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::DuplicateField(name.source_identifier().to_owned()))),
+					info: DiagnosticInfo::DuplicateGroupField(name.source_identifier().to_owned()),
 				});
 			}
 
 			// Group field type
 			let field_type = if_then_some!(tokens.next_is(TokenType::Colon), {
-				let _ = tokens.pop(TokenType::Colon, context)?;
+				let _ = tokens.pop(TokenType::Colon, context).inspect_err(|_err| {
+					context.scope.exit_scope(group_scope).unwrap();
+				})?;
 				Expression::parse(tokens, context)
 			});
 
 			// Group field value
 			let value = if_then_some!(tokens.next_is(TokenType::Equal), {
-				let _ = tokens.pop(TokenType::Equal, context)?;
+				let _ = tokens.pop(TokenType::Equal, context).inspect_err(|_err| {
+					context.scope.exit_scope(group_scope).unwrap();
+				})?;
 				let value = Expression::parse(tokens, context);
 				if let Some(tags) = tags {
 					value.expression_mut(context).set_tags(tags);
@@ -125,10 +140,11 @@ impl TryParse for Group {
 				default_value: value,
 				field_type,
 				documentation,
+				visible,
 			});
 		})
 		.span;
-		context.scope.exit_scope().unwrap();
+		context.scope.exit_scope(group_scope).unwrap();
 
 		Ok(Group {
 			fields,

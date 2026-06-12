@@ -1,8 +1,10 @@
-use cabin::{diagnostics::DiagnosticInfo, Spanned as _};
 use gag::Gag;
 
 use super::Range;
-use crate::{lsp::State, Logger};
+use crate::{
+	lsp::{Mode, State},
+	Logger,
+};
 
 #[derive(serde::Serialize)]
 pub struct PublishDiagnosticParams {
@@ -19,10 +21,15 @@ pub struct Diagnostic {
 }
 
 fn diagnostic_code(diagnostic: &cabin::diagnostics::Diagnostic) -> u8 {
-	match diagnostic.info() {
-		DiagnosticInfo::Error(_) => 1,
-		DiagnosticInfo::Warning(_) => 2,
-		DiagnosticInfo::Info(_) => 3,
+	match diagnostic.info().severity() {
+		cabin::diagnostics::Severity::ProdError => 1,
+		cabin::diagnostics::Severity::ProdWarning => 2,
+		cabin::diagnostics::Severity::ProdInfo => 3,
+		cabin::diagnostics::Severity::ProdHint => 4,
+		cabin::diagnostics::Severity::AlwaysError => 1,
+		cabin::diagnostics::Severity::AlwaysWarn => 2,
+		cabin::diagnostics::Severity::AlwaysInfo => 3,
+		cabin::diagnostics::Severity::AlwaysHint => 4,
 	}
 }
 
@@ -30,7 +37,7 @@ pub fn get_diagnostics(state: &State, logger: &mut Logger, uri: &str) -> anyhow:
 	logger.log("\n*Checking for diagnostics...*")?;
 
 	let code = state.files.get(uri).unwrap_or_else(|| {
-		logger.log(format!("\n**ERROR:** could not find file for diagnostics")).unwrap();
+		logger.log("\n**ERROR:** could not find file for diagnostics").unwrap();
 		unreachable!()
 	});
 
@@ -41,7 +48,7 @@ pub fn get_diagnostics(state: &State, logger: &mut Logger, uri: &str) -> anyhow:
 		})
 		.to_file_path()
 		.unwrap_or_else(|_error| {
-			logger.log(format!("\n**ERROR:** could not convert URI to file path")).unwrap();
+			logger.log("\n**ERROR:** could not convert URI to file path").unwrap();
 			unreachable!()
 		});
 	logger.log(format!("\n*Checking project for* `{}`", path.display()))?;
@@ -58,13 +65,17 @@ pub fn get_diagnostics(state: &State, logger: &mut Logger, uri: &str) -> anyhow:
 
 	logger.log("\n*Done checking. Reporting diagnostics.*")?;
 
-	Ok(diagnostics
-		.to_owned()
+	let diags = match state.mode {
+		Mode::Dev => diagnostics.dev_only(),
+		Mode::Prod => diagnostics.all(),
+	};
+
+	Ok(diags
 		.into_iter()
 		.map(|diagnostic| {
 			let span = diagnostic.span;
 			Diagnostic {
-				severity: diagnostic_code(&diagnostic),
+				severity: diagnostic_code(diagnostic),
 				message: format!("{diagnostic}"),
 				source: "Cabin Language Server".to_owned(),
 				range: Range {

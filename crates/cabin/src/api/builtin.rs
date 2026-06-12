@@ -3,7 +3,6 @@ use std::collections::VecDeque;
 use crate::{
 	Context,
 	Span,
-	Spanned as _,
 	api::traits::TryAs as _,
 	ast::{
 		expressions::{Expression, literal::EvaluatedLiteral},

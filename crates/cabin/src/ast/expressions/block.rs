@@ -5,9 +5,12 @@ use crate::{
 		context::Context,
 		scope::{ScopeId, ScopeType},
 	},
-	ast::statements::Statement,
-	comptime::CompileTime,
-	diagnostics::Diagnostic,
+	ast::{
+		expressions::{Expression, block},
+		statements::Statement,
+	},
+	comptime::{CompileTime as _, memory::ExpressionPointer},
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::{TranspileError, TranspileToC},
@@ -41,7 +44,8 @@ impl Block {
 	///
 	/// If an unexpected token was encountered.
 	pub fn parse_with_scope_type(tokens: &mut TokenQueue, context: &mut Context, scope_type: ScopeType) -> Result<Block, Diagnostic> {
-		context.scope.enter_new_scope(scope_type);
+		let block_scope = context.scope.enter_new_scope(scope_type);
+
 		let scope_id = context.scope.unique_id();
 		let start = tokens.pop(TokenType::LeftBrace, context)?.span;
 
@@ -52,7 +56,7 @@ impl Block {
 
 		let end = tokens.pop(TokenType::RightBrace, context)?.span;
 
-		context.scope.exit_scope().unwrap();
+		context.scope.exit_scope(block_scope).unwrap();
 
 		Ok(Block {
 			statements,
@@ -64,6 +68,81 @@ impl Block {
 	pub const fn inner_scope_id(&self) -> ScopeId {
 		self.inner_scope_id
 	}
+
+	pub fn evaluate_eager(self, context: &mut Context) -> ExpressionPointer {
+		let mut statements = Vec::new();
+		let scope_reverter = context.scope.set_current_scope(self.inner_scope_id);
+
+		let count = self.statements.len();
+		let last_span = self.statements.last().map(|last| last.span(context));
+
+		for (index, statement) in self.statements.into_iter().enumerate() {
+			let evaluated_statement = statement.evaluate_at_compile_time(context);
+			if let Statement::Tail(tail) = evaluated_statement {
+				let tail_end = tail.span.end();
+				if index != count - 1 {
+					context.add_diagnostic(Diagnostic {
+						span: Span::range(tail_end, last_span.unwrap().end()),
+						info: DiagnosticInfo::UnreachableCode,
+						file: context.file.clone(),
+					});
+				}
+
+				let value = tail.value;
+				if let Ok(literal) = value.try_as_literal(context) {
+					scope_reverter.revert(context);
+					return literal.into();
+				}
+
+				statements.push(Statement::Tail(tail));
+			} else {
+				statements.push(evaluated_statement);
+			};
+		}
+
+		scope_reverter.revert(context);
+
+		Expression::Block(Block {
+			statements,
+			inner_scope_id: self.inner_scope_id,
+			span: self.span,
+		})
+		.store_in_memory(context)
+	}
+
+	pub fn evaluate_lazy(self, context: &mut Context) -> Block {
+		let snapshot = context.snapshot();
+		let scope_reverter = context.scope.set_current_scope(self.inner_scope_id);
+
+		let mut statements = Vec::new();
+
+		let count = self.statements.len();
+		let last_span = self.statements.last().map(|last| last.span(context));
+
+		for (index, statement) in self.statements.into_iter().enumerate() {
+			let evaluated_statement = statement.evaluate_at_compile_time(context);
+			if let Statement::Tail(tail) = &evaluated_statement {
+				let tail_end = tail.span.end();
+				if index != count - 1 {
+					context.add_diagnostic(Diagnostic {
+						span: Span::range(tail_end, last_span.unwrap().end()),
+						info: DiagnosticInfo::UnreachableCode,
+						file: context.file.clone(),
+					});
+				}
+			}
+			statements.push(evaluated_statement);
+		}
+
+		scope_reverter.revert(context);
+		context.roll_back(snapshot);
+
+		Block {
+			statements,
+			inner_scope_id: self.inner_scope_id,
+			span: self.span,
+		}
+	}
 }
 
 impl TryParse for Block {
@@ -71,29 +150,6 @@ impl TryParse for Block {
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		Block::parse_with_scope_type(tokens, context, ScopeType::Block)
-	}
-}
-
-impl CompileTime for Block {
-	/// The output for evaluating blocks at compile-time is a generic `Expression`. This is because while some blocks
-	/// will not be able to be fully evaluated and will remain as blocks, some others *will* be able to be resolved
-	/// fully, and those will return either the expressed from their tail statement, or `Expression::Void` if no tail
-	/// statement was present.
-	type Output = Block;
-
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		let mut statements = Vec::new();
-
-		for statement in self.statements {
-			let evaluated_statement = statement.evaluate_at_compile_time(context);
-			statements.push(evaluated_statement);
-		}
-
-		Block {
-			statements,
-			inner_scope_id: self.inner_scope_id,
-			span: self.span,
-		}
 	}
 }
 

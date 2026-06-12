@@ -4,7 +4,7 @@ use crate::{
 	Span,
 	Spanned,
 	api::context::Context,
-	comptime::{CompileTime, CompileTimeError, memory::ExpressionPointer},
+	comptime::{CompileTime, memory::ExpressionPointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -48,10 +48,10 @@ impl TryParse for Identifier {
 			documentation: None,
 		};
 
-		if let Some(name_query) = context.name_query {
-			if identifier.token.span.contains(name_query) {
-				context.name_query_result = Some(identifier.clone());
-			}
+		if let Some(name_query) = context.name_query
+			&& identifier.token.span.contains(name_query)
+		{
+			context.name_query_result = Some(identifier.clone());
 		}
 
 		Ok(identifier)
@@ -122,14 +122,14 @@ impl Identifier {
 			.ok_or_else(|| {
 				context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
-					info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::UnknownVariable(self.source_identifier().to_owned()))),
+					info: DiagnosticInfo::UnknownVariable(self.source_identifier().to_owned()),
 					span: self.span(context),
 				});
 			})
 			.ok()
 	}
 
-	pub fn create_virtual<'a, S: Into<Cow<'a, str>>>(name: S, context: &Context) -> Identifier {
+	pub fn create_virtual<'str, S: Into<Cow<'str, str>>>(name: S, context: &Context) -> Identifier {
 		Identifier {
 			token: Token::create_virtual(TokenType::Identifier, name),
 			should_mangle: true,
@@ -138,7 +138,7 @@ impl Identifier {
 		}
 	}
 
-	pub fn synthetic(token: Token, context: &Context) -> Identifier {
+	pub const fn synthetic(token: Token, context: &Context) -> Identifier {
 		Identifier {
 			token,
 			should_mangle: true,

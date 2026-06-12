@@ -11,10 +11,9 @@ use crate::{
 	},
 	comptime::{
 		CompileTime,
-		CompileTimeError,
 		memory::{ExpressionPointer, LiteralPointer},
 	},
-	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	if_then_some,
 	lexer::TokenType,
@@ -61,7 +60,7 @@ impl TryParse for Extend {
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let start = tokens.pop(TokenType::KeywordExtend, context)?.span;
 
-		context.scope.enter_new_scope(ScopeType::Extend);
+		let extend_scope = context.scope.enter_new_scope(ScopeType::Extend);
 
 		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
 			let mut parameters = Vec::new();
@@ -73,7 +72,7 @@ impl TryParse for Extend {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span: name.span(context),
-						info: DiagnosticInfo::Error(error),
+						info: error,
 					});
 				};
 				parameters.push(parameter);
@@ -109,11 +108,11 @@ impl TryParse for Extend {
 			context.add_diagnostic(Diagnostic {
 				span: start.to(end),
 				file: context.file.clone(),
-				info: Warning::EmptyExtension.into(),
+				info: DiagnosticInfo::EmptyExtension,
 			});
 		}
 
-		context.scope.exit_scope().unwrap();
+		context.scope.exit_scope(extend_scope).unwrap();
 
 		Ok(Extend {
 			type_to_extend,
@@ -153,7 +152,7 @@ impl CompileTime for Extend {
 					if !fields.contains_key(field_name) {
 						context.add_diagnostic(Diagnostic {
 							span: self.span.to(self.type_to_be.as_ref().unwrap().span(context)),
-							info: CompileTimeError::MissingField(field_name.source_identifier().to_owned()).into(),
+							info: DiagnosticInfo::MissingField(field_name.source_identifier().to_owned()),
 							file: context.file.clone(),
 						});
 					}
@@ -165,7 +164,7 @@ impl CompileTime for Extend {
 						let literal = field_value.evaluated_literal(context).to_owned();
 						context.add_diagnostic(Diagnostic {
 							span: field_name.span(context).to(literal.span(context)),
-							info: CompileTimeError::ExtraField(field_name.source_identifier().to_owned()).into(),
+							info: DiagnosticInfo::ExtraField(field_name.source_identifier().to_owned()),
 							file: context.file.clone(),
 						});
 					}
@@ -175,7 +174,7 @@ impl CompileTime for Extend {
 			else {
 				context.add_diagnostic(Diagnostic {
 					span: self.type_to_be.as_ref().unwrap().span(context),
-					info: CompileTimeError::ExtendToBeNonGroup.into(),
+					info: DiagnosticInfo::ExtendToBeNonGroup,
 					file: context.file.clone(),
 				});
 			}

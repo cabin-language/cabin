@@ -8,5 +8,11 @@ pub struct TextDocumentPositionParams {
 
 #[derive(serde::Serialize)]
 pub struct HoverResult {
-	pub contents: String,
+	pub contents: MarkupContents,
+}
+
+#[derive(serde::Serialize)]
+pub struct MarkupContents {
+	pub kind: &'static str,
+	pub value: String,
 }

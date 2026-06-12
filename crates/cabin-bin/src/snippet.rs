@@ -1,6 +1,9 @@
-use std::{collections::VecDeque, io::Write, path::PathBuf};
+use std::{collections::VecDeque, io::Write};
 
-use cabin::{diagnostics::Diagnostic, theme::Theme};
+use cabin::{
+	diagnostics::{Diagnostic, Severity},
+	theme::Theme,
+};
 use colored::Colorize as _;
 use tree_sitter::StreamingIterator;
 
@@ -16,18 +19,18 @@ use tree_sitter::StreamingIterator;
 ///
 /// - `TTheme` - The theme to color the output with
 pub(crate) fn show_snippet<CurrentTheme: cabin::theme::Theme>(diagnostic: &Diagnostic, max_columns: usize) {
-	let code = if diagnostic.file == PathBuf::from("stdlib") {
+	let code = if diagnostic.file == *"stdlib" {
 		cabin::STDLIB.to_owned()
 	} else {
-		std::fs::read_to_string(&diagnostic.file).expect(&format!("No file {}", diagnostic.file.display()))
+		std::fs::read_to_string(&diagnostic.file).unwrap_or_else(|_| panic!("No file {}", diagnostic.file.display()))
 	};
 
 	let mut highlights = VecDeque::from(highlights::<CurrentTheme>(&code));
 
 	// Severity-specifics
-	let ((error_r, error_g, error_b), (error_bg_r, error_bg_g, error_bg_b), icon) = match &diagnostic.info {
-		cabin::diagnostics::DiagnosticInfo::Error(_) => (CurrentTheme::error(), CurrentTheme::error_background(), ""),
-		cabin::diagnostics::DiagnosticInfo::Warning(_) => (CurrentTheme::warning(), CurrentTheme::warning_background(), ""),
+	let ((error_r, error_g, error_b), (error_bg_r, error_bg_g, error_bg_b), icon) = match &diagnostic.info.severity() {
+		Severity::AlwaysError | Severity::ProdError => (CurrentTheme::error(), CurrentTheme::error_background(), ""),
+		Severity::ProdWarning | Severity::AlwaysWarn => (CurrentTheme::warning(), CurrentTheme::warning_background(), ""),
 		_ => unreachable!(),
 	};
 
@@ -40,7 +43,7 @@ pub(crate) fn show_snippet<CurrentTheme: cabin::theme::Theme>(diagnostic: &Diagn
 		format!(
 			"    {} {}    ",
 			"".truecolor(138, 84, 45),
-			diagnostic.file.components().last().unwrap().as_os_str().to_str().unwrap()
+			diagnostic.file.components().next_back().unwrap().as_os_str().to_str().unwrap()
 		)
 		.on_truecolor(bg_r, bg_g, bg_b)
 	);

@@ -11,7 +11,7 @@ use crate::{
 	},
 	diagnostics::Diagnostic,
 	parse_list,
-	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality, TryParse},
+	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 };
 
 #[derive(Debug, Clone)]

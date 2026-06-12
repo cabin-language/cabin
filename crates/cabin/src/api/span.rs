@@ -28,6 +28,10 @@ impl Span {
 		Span::cover(self, other)
 	}
 
+	pub const fn range(start: usize, end: usize) -> Span {
+		Span { start, length: end - start }
+	}
+
 	pub fn or(self, other: Span) -> Span {
 		if self == Span::none() { other } else { self }
 	}

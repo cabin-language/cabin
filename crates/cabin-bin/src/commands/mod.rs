@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use build::BuildCommand;
 use cabin::{
-	diagnostics::{DiagnosticInfo, Diagnostics},
+	diagnostics::Diagnostics,
 	theme::{CatppuccinMocha, Theme},
 };
 use check::CheckCommand;
@@ -45,17 +45,17 @@ pub fn check_errors(diagnostics: Diagnostics, project: &mut cabin::Project, show
 	}
 
 	for diagnostic in &diagnostics {
-		if let DiagnosticInfo::Error(error) = &diagnostic.info {
+		if diagnostic.info.severity().is_error() {
 			let ((error_r, error_g, error_b), (error_bg_r, error_bg_g, error_bg_b), icon) = (CatppuccinMocha::error(), CatppuccinMocha::error_background(), "");
 
 			eprintln!(
 				"{} {}\n",
 				" ERROR: ".bold().truecolor(error_r, error_g, error_b).on_truecolor(error_bg_r, error_bg_g, error_bg_b),
-				wrap(&format!(" ERROR:  {error}"), max_columns).trim_start_matches(" ERROR:  ")
+				wrap(&format!(" ERROR:  {}", diagnostic.info), max_columns).trim_start_matches(" ERROR:  ")
 			);
-			show_snippet::<CatppuccinMocha>(&diagnostic, max_columns);
+			show_snippet::<CatppuccinMocha>(diagnostic, max_columns);
 			let (line, _) = diagnostic.start_line_column();
-			let path = if &diagnostic.file == &PathBuf::from("stdlib") {
+			let path = if diagnostic.file == *"stdlib" {
 				"stdlib".to_owned()
 			} else {
 				format!("{}", pathdiff::diff_paths(&diagnostic.file, project.root_directory()).unwrap().display())
@@ -72,16 +72,16 @@ pub fn check_errors(diagnostics: Diagnostics, project: &mut cabin::Project, show
 	// Warnings
 	else if show_warnings {
 		for diagnostic in &diagnostics {
-			if let DiagnosticInfo::Warning(warning) = &diagnostic.info {
+			if diagnostic.info.severity().is_warning() {
 				let ((error_r, error_g, error_b), (error_bg_r, error_bg_g, error_bg_b), icon) = (CatppuccinMocha::warning(), CatppuccinMocha::warning_background(), "");
 				eprintln!(
 					"{} {}\n",
 					" WARNING: ".bold().truecolor(error_r, error_g, error_b).on_truecolor(error_bg_r, error_bg_g, error_bg_b),
-					wrap(&format!(" WARNING:  {warning}"), max_columns).trim_start_matches(" WARNING: ")
+					wrap(&format!(" WARNING:  {}", diagnostic.info), max_columns).trim_start_matches(" WARNING: ")
 				);
-				show_snippet::<CatppuccinMocha>(&diagnostic, max_columns);
+				show_snippet::<CatppuccinMocha>(diagnostic, max_columns);
 				let (line, _) = diagnostic.start_line_column();
-				let path = if &diagnostic.file == &PathBuf::from("stdlib") {
+				let path = if diagnostic.file == *"stdlib" {
 					"stdlib".to_owned()
 				} else {
 					format!("{}", pathdiff::diff_paths(&diagnostic.file, project.root_directory()).unwrap().display())

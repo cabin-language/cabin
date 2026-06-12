@@ -3,10 +3,33 @@ use std::{fmt::Display, path::PathBuf};
 use convert_case::{Case, Casing as _};
 use indexmap::IndexSet;
 
-use crate::{Context, STDLIB, Span, Spanned, comptime::CompileTimeError, lexer::TokenizeError, parser::ParseError};
+use crate::{Context, STDLIB, Span, Spanned, ast::statements::Statement, lexer::TokenType, typechecker::Type};
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Copy)]
+pub enum Severity {
+	ProdError,
+	ProdWarning,
+	ProdInfo,
+	ProdHint,
+
+	AlwaysError,
+	AlwaysWarn,
+	AlwaysInfo,
+	AlwaysHint,
+}
+
+impl Severity {
+	pub fn is_error(self) -> bool {
+		self == Severity::ProdError || self == Severity::AlwaysError
+	}
+
+	pub fn is_warning(self) -> bool {
+		self == Severity::ProdWarning || self == Severity::AlwaysWarn
+	}
+}
 
 #[derive(Clone, Debug, thiserror::Error, Hash, PartialEq, Eq)]
-pub enum Warning {
+pub enum DiagnosticInfo {
 	/// The warning that occurs when a name that should be in `PascalCase` isn't in `PascalCase`.
 	#[error("{type_name} names should be in PascalCase: Change \"{original_name}\" to \"{}\"", .original_name.to_case(Case::Pascal))]
 	NonPascalCaseGroup {
@@ -37,44 +60,110 @@ pub enum Warning {
 	/// there's no reason to create one.
 	#[error("Empty extension: This extension is empty, so it does nothing")]
 	EmptyExtension,
-}
 
-impl From<Warning> for DiagnosticInfo {
-	fn from(value: Warning) -> Self {
-		DiagnosticInfo::Warning(value)
-	}
-}
+	#[error("Unrecognized token: {0}")]
+	UnrecognizedToken(String),
 
-#[derive(Clone, thiserror::Error, Debug, Hash, PartialEq, Eq)]
-pub enum Error {
-	#[error("{0}")]
-	Tokenize(TokenizeError),
+	#[error("Unresolvable Type: This expression can't be fully evaluated at compile-time; Default values for group fields must be known at compile-time.")]
+	GroupValueNotKnownAtCompileTime,
 
-	#[error("{0}")]
-	Parse(ParseError),
+	#[error("Invalid run expression: run has no effect on this type of expression")]
+	RunNonFunctionCall,
 
-	#[error("{0}")]
-	CompileTime(CompileTimeError),
-}
+	#[error("Iterate over non-iterable: This type of value can't be iterated over")]
+	IterateOverNonList,
 
-/// Information about a diagnostic. This holds the specific severity of the diagnostic, the type of
-/// the diagnostic, and any specific data associated with diagnostics of that type.
-#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq, Hash)]
-pub enum DiagnosticInfo {
-	/// An error diagnostic. These are fatal diagnostics that prevent compilation and indicate that
-	/// the developer has written code that is fundamentally incorrect.
-	#[error("{0}")]
-	Error(Error),
+	#[error("Call non-callable: This type of value can't be called")]
+	CallNonFunction,
 
-	/// A warning diagnostic. These are non-fatal diagnostics that suggest that the developer is
-	/// doing something that's probably wrong or inefficient.
-	#[error("{0}")]
-	Warning(Warning),
+	#[error("Unknown variable: \"{0}\"")]
+	UnknownVariable(String),
 
-	/// An info diagnostic. These are non-fatal diagnostics that just provide general information to
-	/// the user.
+	#[error("Unresolvable Type: This expression is being used as a type, but it can't be fully evaluated at compile-time")]
+	ExpressionUsedAsType,
+
+	#[error("Missing tail statement: This block is being assigned to a value, but it's missing a tail statement")]
+	MissingTailStatement,
+
+	#[error("Unreachable code: This code will never be executed")]
+	UnreachableCode,
+
+	#[error("Unknown property: No property \"{0}\" exists on this value")]
+	NoSuchField(String),
+
+	#[error("Type mismatch: This value cannot be assigned to this type")]
+	TypeMismatch(Type, Type),
+
+	#[error("Missing property: Missing property \"{0}\"")]
+	MissingField(String),
+
+	#[error("Unknown property: This type has no property called \"{0}\"")]
+	ExtraField(String),
+
+	#[error("Invalid extension target: Attempted to extend a type to be a non-group")]
+	ExtendToBeNonGroup,
+
+	#[error("Duplicate property: The property \"{0}\" appears multiple times in this group.")]
+	DuplicateGroupField(String),
+
+	#[error("Unexpected token: Expected {expected} but found {actual}")]
+	UnexpectedTokenExpected { expected: &'static str, actual: TokenType },
+
+	#[error("Invalid top-level statement: Only declarations can appear at the top level of a module.")]
+	InvalidTopLevelStatement { statement: Statement },
+
+	#[error("Invalid format string: The string \"{0}\" is not properly formatted.")]
+	InvalidFormatString(String),
+
+	#[error("Unexpected token: Expected {expected} but found {actual}")]
+	UnexpectedToken { expected: TokenType, actual: TokenType },
+
+	#[error("Unexpected end of file: Expected {expected} but found end of file")]
+	UnexpectedEOF { expected: TokenType },
+
+	#[error("Unexpected end of file: Expected more tokens")]
+	UnexpectedGenericEOF,
+
+	#[error("Duplicate variable: The variable \"{name}\" was declared twice")]
+	DuplicateVariableDeclaration { name: String },
+
 	#[error("{0}")]
 	Info(String),
+}
+
+impl DiagnosticInfo {
+	pub const fn severity(&self) -> Severity {
+		match self {
+			Self::NonPascalCaseGroup { .. } | Self::NonSnakeCaseName { .. } | Self::CallRuntimeAtCompileTime { .. } | Self::EmptyEither | Self::EmptyExtension => {
+				Severity::AlwaysWarn
+			},
+
+			Self::UnrecognizedToken(_)
+			| Self::ExtendToBeNonGroup
+			| Self::ExtraField(_)
+			| Self::MissingField(_)
+			| Self::TypeMismatch(..)
+			| Self::NoSuchField(_)
+			| Self::UnreachableCode
+			| Self::MissingTailStatement
+			| Self::ExpressionUsedAsType
+			| Self::UnknownVariable(_)
+			| Self::CallNonFunction
+			| Self::IterateOverNonList
+			| Self::GroupValueNotKnownAtCompileTime
+			| Self::RunNonFunctionCall
+			| Self::UnexpectedTokenExpected { .. }
+			| Self::DuplicateGroupField(_)
+			| Self::InvalidTopLevelStatement { .. }
+			| Self::InvalidFormatString(_)
+			| Self::DuplicateVariableDeclaration { .. }
+			| Self::UnexpectedEOF { .. }
+			| Self::UnexpectedToken { .. }
+			| Self::UnexpectedGenericEOF => Severity::AlwaysError,
+
+			Self::Info(_) => Severity::AlwaysInfo,
+		}
+	}
 }
 
 /// A compiler diagnostic. Diagnostics are information about source code, such as errors, warnings,
@@ -130,47 +219,50 @@ impl Diagnostics {
 	}
 
 	/// Returns the diagnostics that are warnings, as well as their spans.
-	pub fn warnings(&self) -> Vec<(&Warning, Span)> {
+	pub fn warnings(&self) -> Vec<(&DiagnosticInfo, Span)> {
 		self.0
 			.iter()
 			.filter_map(|diagnostic| {
-				if let DiagnosticInfo::Warning(warning) = &diagnostic.info {
-					Some((warning, diagnostic.span))
-				} else {
-					None
-				}
+				(diagnostic.info.severity() == Severity::AlwaysWarn || diagnostic.info.severity() == Severity::ProdWarning).then_some((&diagnostic.info, diagnostic.span))
 			})
 			.collect()
 	}
 
 	/// Returns the diagnostics that are errors, as well as their spans.
-	pub fn errors(&self) -> Vec<(&Error, Span)> {
+	pub fn errors(&self) -> Vec<(&DiagnosticInfo, Span)> {
 		self.0
 			.iter()
 			.filter_map(|diagnostic| {
-				if let DiagnosticInfo::Error(error) = &diagnostic.info {
-					Some((error, diagnostic.span))
-				} else {
-					None
-				}
+				(diagnostic.info.severity() == Severity::AlwaysError || diagnostic.info.severity() == Severity::ProdError).then_some((&diagnostic.info, diagnostic.span))
 			})
 			.collect()
 	}
 
-	/// Removes and returns owned errors from this diagnostic set without cloning or copying.
-	///
-	/// # Tracking
-	///
-	/// This feature is not yet implementedl; Waiting on <https://github.com/indexmap-rs/indexmap/issues/242>.
-	pub fn take_errors(&self) -> ! {
-		// self.0
-		// 	.extract_if(|(diagnostic, span)| matches!(diagnostic.info, DiagnosticInfo::Error(_)))
-		// 	.map(|(diagnostic, span)| {
-		// 		let DiagnosticInfo::Error(error) = diagnostic.info else { unreachable!() };
-		// 		(error, span)
-		// 	})
-		// 	.collect()
-		unimplemented!()
+	pub fn dev_only(&self) -> Vec<&Diagnostic> {
+		self.0
+			.iter()
+			.filter(|diagnostic| {
+				diagnostic.info.severity() == Severity::AlwaysError || diagnostic.info.severity() == Severity::AlwaysInfo || diagnostic.info.severity() == Severity::AlwaysWarn
+			})
+			.collect()
+	}
+
+	pub fn all(&self) -> Vec<&Diagnostic> {
+		self.0.iter().collect()
+	}
+
+	pub fn dev_errors(&self) -> Vec<(&DiagnosticInfo, Span)> {
+		self.0
+			.iter()
+			.filter_map(|diagnostic| (diagnostic.info.severity() == Severity::AlwaysError).then_some((&diagnostic.info, diagnostic.span)))
+			.collect()
+	}
+
+	pub fn dev_warnings(&self) -> Vec<(&DiagnosticInfo, Span)> {
+		self.0
+			.iter()
+			.filter_map(|diagnostic| (diagnostic.info.severity() == Severity::AlwaysWarn).then_some((&diagnostic.info, diagnostic.span)))
+			.collect()
 	}
 
 	/// Adds a new diagnostic to this diagnostic set. If there is a completely identical diagnostic

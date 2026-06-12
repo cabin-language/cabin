@@ -1,13 +1,4 @@
-let Person = group {
-	first_name: Text,
-	last_name: Text,
-};
+#[runtime<"call at runtime">]
+let some_func = action {};
 
-let john = new Person {
-	first_name = "john",
-	last_name = "smith"
-};
-
-debug(john.first_name);
-
-
+some_func(3);

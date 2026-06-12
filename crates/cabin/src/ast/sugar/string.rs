@@ -9,7 +9,7 @@ use crate::{
 	api::{context::Context, traits::TryAs as _},
 	ast::expressions::{
 		Expression,
-		field_access::{DoubleColon, FieldAccess},
+		field_access::{FieldAccess, GetProperty},
 		function_call::FunctionCall,
 		identifier::Identifier,
 		literal::EvaluatedLiteral,
@@ -17,7 +17,7 @@ use crate::{
 	comptime::memory::ExpressionPointer,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType, tokenize_string},
-	parser::{Parse as _, ParseError, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 };
 
 /// A part of a formatted string literal. Each part is either just a regular string value, or an
@@ -100,11 +100,11 @@ impl TryParse for Text {
 					without_quotes = tokens.into_iter().map(|token| token.value).collect();
 
 					// Pop closing brace
-					if without_quotes.chars().next().unwrap() != '}' {
+					if !without_quotes.starts_with('}') {
 						return Err(Diagnostic {
 							file: context.file.clone(),
 							span: token.span,
-							info: DiagnosticInfo::Error(crate::Error::Parse(ParseError::InvalidFormatString(with_quotes))),
+							info: DiagnosticInfo::InvalidFormatString(with_quotes),
 						});
 					}
 					without_quotes = without_quotes.get(1..without_quotes.len()).unwrap().to_owned();
@@ -156,8 +156,14 @@ impl Spanned for Text {
 	}
 }
 
-impl DoubleColon for Text {
-	fn double_colon(&self, name: &Identifier, _context: &mut Context) -> ExpressionPointer {
+impl GetProperty for Text {
+	fn dot(&self, name: &Identifier, _context: &mut Context) -> ExpressionPointer {
+		match name.source_identifier() {
+			_ => ExpressionPointer::ERROR,
+		}
+	}
+
+	fn double_colon(&self, name: &Identifier, context: &mut Context) -> ExpressionPointer {
 		match name.source_identifier() {
 			_ => ExpressionPointer::ERROR,
 		}

@@ -1,119 +1,133 @@
-let Any = group {
+let visible Any = group {
 	to_text: action(this: This): Text,
 };
 
-let Text = group {};
+let visible Text = group {};
 
 #[default]
-let AddText = extend Text as Addable {
+let visible AddText = extend Text as Addable {
 	plus = action(this: This, other: This): This,
 };
 
-let Builtin = group {
+let visible Builtin = group {
 	internal_name: Text
 };
 
-let This = group {};
-let List = group {};
+let visible This = group {};
+let visible List = group {};
 
-let Number = group {}; 
+let visible Number = group {}; 
 
-let Optional = either<Data> {
+let visible Optional = either<Data: Any> {
 	some: Data,
 	none
 };
 
-let Group = group {
+let visible Group = group {
 	fields: Any,
 };
 
-let Function = group {
-	parameters: Any,
-	return_type: Any,
-	compile_time_parameters: Any,
-	tags: Any,
-	this_object: Any,
+let visible Function = group {
+	visible parameters: Any,
+	visible return_type: Any,
+	visible compile_time_parameters: Any,
+	visible tags: Any,
+	visible this_object: Any,
 };
 
-let no_side_effects = new Any {};
+let visible no_side_effects = new Any {};
+let visible default = new Any {};
+let visible discardable = new Any {};
+let visible indispensible = new Any {};
 
-let default = new Any {};
-
-let Runtime = group {
+let visible Runtime = group {
 	reason: Text
 };
 
-let CompileTime = group {
+let visible CompileTime = group {
 	reason: Text
 };
 
-let Either = group {
+let visible Either = group {
 	variants: List
 };
 
-let Boolean = either {
+let visible Boolean = either {
 	true,
 	false
 };
 
-let Addable = group<Operand: Any, Result: Any> {
+let visible Addable = group<Operand: Any, Result: Any> {
 	#[no_side_effects]
-	plus: action(this: This, other: Operand): Result
+	visible plus: action(this: This, other: Operand): Attempt,
 }; 
 
 #[default]
-let AddNumbers = extend Number as Addable { 
+let visible AddNumbers = extend Number as Addable { 
+	#[no_side_effects]
 	plus = action(this: Number, other: Number): Number,
 };
 
-let Attempt = either<Data, Error> {
+let visible Attempt = either<Data, Error> {
 	data: Data,
 	error: Error
 };
 
-let runtime = action<reason: Text> {
+let visible runtime = action<reason: Text> {
 	return is new Runtime { reason = reason };
 };
 
-let compile_time = action<reason: Text> {
+let visible compile_time = action<reason: Text> {
 	return is new CompileTime { reason = reason };
 };
 
-let system = new Any {
-	terminal = new Any {
-		#[
-			new Builtin { internal_name = "terminal.print" },
-			new Runtime { reason = "Use debug() for logging information at compile-time." }
-		]
-		print = action(object: Any),
+let visible builtin = action<name: Text> {
+	return is new Builtin { internal_name = name };
+};
 
-		#[new Builtin { internal_name = "terminal.input" }] 
+let visible system = new Any {
+
+	terminal = new Any {
+
+		#[builtin<"terminal.print">]
+		write = action(object: Any),
+
+		#[builtin<"terminal.input">] 
 		input = action(): Text,
 
-		#[
-			new Builtin { internal_name = "terminal.debug" },
-			new CompileTime { reason = "Use debug() for logging information at compile-time." }
-		]
-		debug = action(object: Any)
+		#[runtime<"Use log() for logging information at compile-time">]
+		print = action(object: Any) {
+			system.terminal.write(object);
+		},
+
+		#[compile_time<"Use print() for logging information at runtime">]
+		log = action(object: Any) {
+			system.terminal.write(object);	
+		},
+
+		debug = action<T: Any>(object: T): T {
+			system.terminal.write(object);
+			return is object;
+		},
 	},
 };
 
-let Comparable = group {
-	equals: action(this: This, other: This): Boolean
+let visible Comparable = group {
+	visible equals: action(this: This, other: This): Boolean
 };
 
-let Ordering = either {
+let visible Ordering = either {
 	less,
 	greater,
 	equal
 };
 
-let Ordered = group {
-	compared_to: action(this: This, other: This): Ordering
+let visible Ordered = group {
+	visible compared_to: action(this: This, other: This): Ordering
 };
 
 #[default]
-let OrderedsAreComparable = extend Ordered as Comparable {
+let visible OrderedsAreComparable = extend Ordered as Comparable {
 	equals = action(this: This, other: This): Boolean {
 		return is this.compared_to(other) == Ordering.equal;
 	}

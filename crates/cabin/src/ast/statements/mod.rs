@@ -32,16 +32,10 @@ impl Parse for Statement {
 		fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Statement, Diagnostic> {
 			let statement = match tokens.peek_type(context)? {
 				TokenType::KeywordLet | TokenType::TagOpening => Declaration::try_parse(tokens, context)?,
-				TokenType::Identifier => {
-					if tokens.peek_type2(context)? == TokenType::KeywordIs {
-						let tail = Statement::Tail(TailStatement::try_parse(tokens, context)?);
-						let _ = tokens.pop(TokenType::Semicolon, context)?;
-						tail
-					} else {
-						let expression = Statement::Expression(Expression::parse(tokens, context));
-						let _ = tokens.pop(TokenType::Semicolon, context)?;
-						expression
-					}
+				TokenType::Identifier if tokens.peek_type2(context)? == TokenType::KeywordIs => {
+					let tail = Statement::Tail(TailStatement::try_parse(tokens, context)?);
+					let _ = tokens.pop(TokenType::Semicolon, context)?;
+					tail
 				},
 				_ => {
 					let expression = Statement::Expression(Expression::parse(tokens, context));

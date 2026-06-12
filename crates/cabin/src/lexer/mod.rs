@@ -167,6 +167,8 @@ pub enum TokenType {
 	KeywordWhile,
 
 	KeywordEither,
+	KeywordVisible,
+	KeywordEditable,
 
 	/// An identifier in the language. This is essentially a "name" of a variable. Whenever the user creates a new variable with a name, it is represented with
 	/// this token type.
@@ -209,6 +211,8 @@ pub enum TokenType {
 	/// tokens before a `RightParenthesis` token; There is no syntax in Cabin that constitutes unmatched parenthesis. This token type, when parsed, will always return
 	/// a token with a single character value, which is just a left parenthesis character "(".
 	LeftParenthesis,
+
+	Pipe,
 
 	/// The "minus" token type. This is used for parsing arithmetic subtraction expressions. Any token tokenized of this type will always have a single-character value,
 	/// which is the "hyphen" or "minus" value (-).
@@ -300,6 +304,8 @@ impl TokenType {
 			Self::KeywordAs => regex!(r"^as\b"),
 			Self::KeywordWhile => regex!(r"^while\b"),
 			Self::KeywordGo => regex!(r"^go\b"),
+			Self::KeywordVisible => regex!(r"^visible\b"),
+			Self::KeywordEditable => regex!(r"^editable\b"),
 
 			// Left opening groupings
 			Self::LeftAngleBracket => regex!("^<"),
@@ -319,6 +325,7 @@ impl TokenType {
 			Self::Identifier => regex!(r"^[a-zA-Z_]\w*"),
 
 			// Operators
+			Self::Pipe => regex!(r"^->"),
 			Self::Plus => regex!(r"^\+"),
 			Self::Minus => regex!("^-"),
 			Self::Asterisk => regex!(r"^\*"),
@@ -400,7 +407,7 @@ pub struct Token {
 }
 
 impl Token {
-	pub fn create_virtual<'a, S: Into<Cow<'a, str>>>(token_type: TokenType, value: S) -> Token {
+	pub fn create_virtual<'str, S: Into<Cow<'str, str>>>(token_type: TokenType, value: S) -> Token {
 		Token {
 			token_type,
 			value: value.into().into_owned(),
@@ -408,7 +415,7 @@ impl Token {
 		}
 	}
 
-	pub fn synthetic<'a, S: Into<Cow<'a, str>>>(token_type: TokenType, value: S, span: Span) -> Token {
+	pub fn synthetic<'str, S: Into<Cow<'str, str>>>(token_type: TokenType, value: S, span: Span) -> Token {
 		Token {
 			token_type,
 			value: value.into().into_owned(),
@@ -447,7 +454,7 @@ pub fn tokenize(code: &str, context: &mut Context) -> VecDeque<Token> {
 			context.add_diagnostic(Diagnostic {
 				file: context.file.clone(),
 				span: Span { start: position, length: 1 },
-				info: DiagnosticInfo::Error(crate::Error::Tokenize(TokenizeError::UnrecognizedToken(value.clone()))),
+				info: DiagnosticInfo::UnrecognizedToken(value.clone()),
 			});
 		}
 

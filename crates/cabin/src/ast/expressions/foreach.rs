@@ -7,7 +7,7 @@ use crate::{
 		expressions::{Expression, block::Block, identifier::Identifier},
 		sugar::list::LiteralList,
 	},
-	comptime::{CompileTime, CompileTimeError, memory::ExpressionPointer},
+	comptime::{CompileTime, memory::ExpressionPointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::TokenType,
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -56,7 +56,7 @@ impl TryParse for ForEachLoop {
 			context.add_diagnostic(Diagnostic {
 				file: context.file.clone(),
 				span: binding_name.span(context),
-				info: DiagnosticInfo::Error(error),
+				info: error,
 			});
 		}
 
@@ -82,17 +82,19 @@ impl CompileTime for ForEachLoop {
 				context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
 					span: self.iterable.span(context),
-					info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::IterateOverNonList)),
+					info: DiagnosticInfo::IterateOverNonList,
 				});
 				return ExpressionOrPointer::Expression(Expression::ForEachLoop(self));
 			}
 
 			let elements = pointer.evaluated_literal(context).try_as::<LiteralList>().cloned().unwrap_or_else(|_| LiteralList::empty());
 
+			let snapshot = context.snapshot();
 			for element in &*elements {
 				context.scope.reassign_variable_from_id(&self.binding_name, (*element).into(), self.inner_scope_id);
-				let _value = self.body.clone().evaluate_at_compile_time(context);
+				let _value = self.body.clone().evaluate_eager(context);
 			}
+			context.roll_back(snapshot);
 		}
 
 		ExpressionOrPointer::Expression(Expression::ForEachLoop(self))

@@ -1,12 +1,12 @@
 use crate::{
 	Context,
 	Span,
-	Spanned,
+	Spanned as _,
 	ast::expressions::{Expression, block::Block},
 	comptime::{CompileTime, memory::ExpressionPointer},
 	diagnostics::Diagnostic,
 	lexer::TokenType,
-	parser::{Parse, TokenQueue, TokenQueueFunctionality, TryParse},
+	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 	scope::ScopeType::{self},
 };
 
@@ -36,7 +36,7 @@ impl CompileTime for WhileLoop {
 
 	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
 		loop {
-			let condition = self.condition.clone().evaluate_at_compile_time(context);
+			let condition = self.condition.evaluate_at_compile_time(context);
 
 			// loop can be run at compile-time
 			if condition.is_literal(context) {

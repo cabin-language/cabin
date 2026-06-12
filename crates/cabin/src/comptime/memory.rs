@@ -1,9 +1,8 @@
 use std::{
 	collections::{HashMap, hash_map},
-	fmt::Debug,
+	fmt::{Debug, Write as _},
 };
 
-use super::CompileTimeError;
 use crate::{
 	Span,
 	Spanned,
@@ -14,7 +13,7 @@ use crate::{
 		literal::{EvaluatedLiteral, LiteralMut, LiteralRef},
 	},
 	comptime::CompileTime,
-	diagnostics::Diagnostic,
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	interpreter::Runtime,
 	transpiler::{TranspileError, TranspileToC},
 	typechecker::{Type, Typed},
@@ -76,10 +75,7 @@ impl ExpressionPointer {
 		match self.expression(context).to_owned() {
 			Expression::EvaluatedLiteral(_) | Expression::Literal(_) => Ok(LiteralPointer(self)),
 			Expression::Identifier(name) => name.value(context).unwrap_or(ExpressionPointer::ERROR).try_as_literal(context),
-			expression => {
-				dbg!(expression);
-				Err(())
-			},
+			expression => Err(()),
 		}
 	}
 
@@ -88,7 +84,7 @@ impl ExpressionPointer {
 			context.add_diagnostic(Diagnostic {
 				file: context.file.clone(),
 				span: self.span(context),
-				info: CompileTimeError::ExpressionUsedAsType.into(),
+				info: DiagnosticInfo::ExpressionUsedAsType,
 			});
 			LiteralPointer::ERROR
 		})
@@ -197,7 +193,7 @@ impl TranspileToC for ExpressionPointer {
 	fn c_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
 		let mut code = String::new();
 		code += &self.expression(context).to_owned().c_prelude(context)?;
-		code += &format!("void literal_{} = {}", self.0, self.expression(context).clone().to_c(context, None)?);
+		write!(code, "void literal_{} = {}", self.0, self.expression(context).clone().to_c(context, None)?).unwrap();
 		Ok(code)
 	}
 
@@ -233,14 +229,15 @@ impl Spanned for ExpressionPointer {
 ///
 /// Values stored in virtual memory can be accessed via `VirtualPointers`, which are retrieved when storing an object in virtual
 /// memory via `virtual_memory.store()`.
+#[derive(Debug, Clone)]
 pub struct VirtualMemory {
 	/// The internal memory storage as a simple `HashMap` between `usize` (pointers/address) and `LiteralObject` values.
 	memory: HashMap<usize, Expression>,
 }
 
-impl<'a> IntoIterator for &'a VirtualMemory {
-	type IntoIter = hash_map::Iter<'a, usize, Expression>;
-	type Item = (&'a usize, &'a Expression);
+impl<'mem> IntoIterator for &'mem VirtualMemory {
+	type IntoIter = hash_map::Iter<'mem, usize, Expression>;
+	type Item = (&'mem usize, &'mem Expression);
 
 	fn into_iter(self) -> Self::IntoIter {
 		self.memory.iter()

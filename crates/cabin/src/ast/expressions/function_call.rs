@@ -20,10 +20,9 @@ use crate::{
 	},
 	comptime::{
 		CompileTime,
-		CompileTimeError::{self},
 		memory::{ExpressionPointer, LiteralPointer},
 	},
-	diagnostics::{Diagnostic, DiagnosticInfo, Warning},
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_else_default,
 	lexer::{Token, TokenType},
 	parse_list,
@@ -67,14 +66,15 @@ impl TryParse for PostfixOperators {
 			TokenType::QuestionMark,
 			TokenType::ExclamationPoint,
 		]) {
-			if tokens.next_is(TokenType::QuestionMark) {
-				end = tokens.pop(TokenType::QuestionMark, context)?.span;
-				return Ok(Expression::Unary(UnaryOperation {
+			if tokens.next_is(TokenType::ExclamationPoint) {
+				end = tokens.pop(TokenType::ExclamationPoint, context)?.span;
+				expression = Expression::Unary(UnaryOperation {
 					expression,
-					operator: UnaryOperator::QuestionMark,
+					operator: UnaryOperator::ExclamationPoint,
 					span: start.to(end),
 				})
-				.store_in_memory(context));
+				.store_in_memory(context);
+				continue;
 			}
 
 			// Compile-time arguments
@@ -165,7 +165,7 @@ impl CompileTime for FunctionCall {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span,
-						info: CompileTimeError::CallNonFunction.into(),
+						info: DiagnosticInfo::CallNonFunction,
 					});
 				}
 				EvaluatedAction::error()
@@ -189,10 +189,7 @@ impl CompileTime for FunctionCall {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span: argument.span(context),
-						info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::TypeMismatch(
-							parameter.parameter_type().to_owned(),
-							argument_type,
-						))),
+						info: DiagnosticInfo::TypeMismatch(parameter.parameter_type().to_owned(), argument_type),
 					});
 				}
 
@@ -201,7 +198,7 @@ impl CompileTime for FunctionCall {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span: argument.span(context),
-						info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::ExpressionUsedAsType)),
+						info: DiagnosticInfo::ExpressionUsedAsType,
 					});
 				}
 			}
@@ -213,10 +210,7 @@ impl CompileTime for FunctionCall {
 					context.add_diagnostic(Diagnostic {
 						file: context.file.clone(),
 						span: argument.span(context),
-						info: DiagnosticInfo::Error(crate::Error::CompileTime(CompileTimeError::TypeMismatch(
-							parameter.parameter_type().to_owned(),
-							argument_type,
-						))),
+						info: DiagnosticInfo::TypeMismatch(parameter.parameter_type().to_owned(), argument_type),
 					});
 				}
 			}
@@ -247,14 +241,12 @@ impl CompileTime for FunctionCall {
 						runtime = Some(object.get_field("reason").unwrap().evaluated_literal(context).try_as::<Text>().unwrap().value.to_owned());
 					}
 				}
-
-				if let Ok(tag_pointer) = tag.try_as_literal(context) {}
 			}
 
 			if let Some(reason) = runtime {
 				context.add_diagnostic(Diagnostic {
 					span: self.span,
-					info: DiagnosticInfo::Warning(Warning::CallRuntimeAtCompileTime { reason }),
+					info: DiagnosticInfo::CallRuntimeAtCompileTime { reason },
 					file: context.file.clone(),
 				});
 			}
@@ -272,9 +264,9 @@ impl CompileTime for FunctionCall {
 				}
 
 				// Return value
-				let return_value = block.clone().evaluate_at_compile_time(context);
+				let return_value = block.clone().evaluate_eager(context);
 
-				return ExpressionOrPointer::Expression(Expression::Block(return_value));
+				return ExpressionOrPointer::Pointer(return_value);
 			}
 
 			// Call builtin function

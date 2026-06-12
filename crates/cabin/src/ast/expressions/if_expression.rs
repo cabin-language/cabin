@@ -14,8 +14,8 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct IfExpression {
 	condition: ExpressionPointer,
-	body: Block,
-	else_body: Option<Block>,
+	body: ExpressionPointer,
+	else_body: Option<ExpressionPointer>,
 	span: Span,
 }
 
@@ -38,8 +38,8 @@ impl TryParse for IfExpression {
 
 		Ok(IfExpression {
 			condition,
-			body,
-			else_body,
+			body: Expression::Block(body).store_in_memory(context),
+			else_body: else_body.map(|else_body| Expression::Block(else_body).store_in_memory(context)),
 			span: start.to(end),
 		})
 	}
@@ -56,16 +56,24 @@ impl CompileTime for IfExpression {
 		let condition_is_true = condition == cabin_true;
 
 		// Evaluate body
-		let had_side_effects = context.side_effects;
-		context.side_effects = had_side_effects && condition_is_true;
+		let snapshot = context.snapshot();
 		let body = self.body.evaluate_at_compile_time(context);
-		context.side_effects = had_side_effects;
+
+		// IF the condition was false, then the if body shouldnt have side effects--
+		// so revert to the previous snapshot
+		if !condition_is_true {
+			context.roll_back(snapshot);
+		}
 
 		// Evaluate else body
-		let had_side_effects_2 = context.side_effects;
-		context.side_effects = had_side_effects_2 && !condition_is_true;
+		let else_snapshot = context.snapshot();
 		let else_body = self.else_body.map(|else_body| else_body.evaluate_at_compile_time(context));
-		context.side_effects = had_side_effects_2;
+
+		// IF the condition was true, then the else body shouldnt have side effects--
+		// so revert to the previous snapshot
+		if condition_is_true {
+			context.roll_back(else_snapshot);
+		}
 
 		// Fully evaluated: return the value (only if true)
 		if condition_is_true {

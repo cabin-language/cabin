@@ -85,6 +85,12 @@ impl Default for Context {
 	}
 }
 
+#[derive(Debug, Clone)]
+pub struct ContextSnapshot {
+	scope: ScopeTree,
+	virtual_memory: VirtualMemory,
+}
+
 impl Context {
 	pub fn interactive() -> Context {
 		Context {
@@ -92,9 +98,25 @@ impl Context {
 			..Default::default()
 		}
 	}
-}
 
-impl Context {
+	/// Creates a snapshot of the scope and memory of the current execution. The context
+	/// can later be rolled back to this snapshot with `context.roll_back()`.
+	///
+	/// This allows running code such as action bodies to check for compile-time errors
+	/// without performing undesired mutations by saving a snapshot, running the mutations,
+	/// and then rolling back to the snapshot.
+	pub fn snapshot(&self) -> ContextSnapshot {
+		ContextSnapshot {
+			scope: self.scope.clone(),
+			virtual_memory: self.virtual_memory.clone(),
+		}
+	}
+
+	pub fn roll_back(&mut self, snapshot: ContextSnapshot) {
+		self.scope = snapshot.scope;
+		self.virtual_memory = snapshot.virtual_memory;
+	}
+
 	pub fn with_io<System: Io + 'static>(io: System) -> Self {
 		let mut context = Context {
 			scope: ScopeTree::global(),
@@ -146,6 +168,30 @@ impl Context {
 					.try_as::<Object>()
 					.unwrap()
 					.get_field("print")
+					.unwrap()
+					.into(),
+			)
+			.unwrap();
+		context
+			.scope
+			.declare_new_variable(
+				Identifier::create_virtual("log", &context),
+				stdlib
+					.get_field("system")
+					.unwrap()
+					.get_literal(&context)
+					.as_evaluated()
+					.unwrap()
+					.try_as::<Object>()
+					.unwrap()
+					.get_field("terminal")
+					.unwrap()
+					.get_literal(&context)
+					.as_evaluated()
+					.unwrap()
+					.try_as::<Object>()
+					.unwrap()
+					.get_field("log")
 					.unwrap()
 					.into(),
 			)
@@ -257,5 +303,9 @@ impl Context {
 
 	pub fn none(&self) -> ExpressionPointer {
 		self.scope.get_variable_from_id("none", ScopeId::global()).unwrap()
+	}
+
+	pub fn any(&self) -> ExpressionPointer {
+		self.scope.get_variable_from_id("Any", ScopeId::global()).unwrap()
 	}
 }

@@ -105,7 +105,7 @@ impl Project {
 		&self.context
 	}
 
-	pub fn context_mut(&mut self) -> &mut Context {
+	pub const fn context_mut(&mut self) -> &mut Context {
 		&mut self.context
 	}
 
