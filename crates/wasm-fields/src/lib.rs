@@ -7,25 +7,26 @@ pub fn wasm_fields(_attribute: TokenStream, input: TokenStream) -> TokenStream {
 	let original_input: proc_macro2::TokenStream = input.clone().into();
 
 	let ast = syn::parse_macro_input!(input as DeriveInput);
+	#[allow(clippy::panic, reason = "its a proc macro")]
 	let syn::Data::Struct(input_struct) = ast.data else {
 		panic!("wasm_fields can only be applied to a struct");
 	};
 	let name = ast.ident;
 
 	let methods = input_struct.fields.into_iter().map(|field| {
-		let name = field.ident.unwrap();
+		let field_name = field.ident.unwrap();
 		let field_type = field.ty;
-		let setter_name = format_ident!("set_{name}");
+		let setter_name = format_ident!("set_{field_name}");
 
 		quote::quote! {
 			#[::wasm_bindgen::prelude::wasm_bindgen(getter)]
-			pub fn #name(&self) -> #field_type {
-				self.#name.clone()
+			pub fn #field_name(&self) -> #field_type {
+				self.#field_name.clone()
 			}
 
 			#[::wasm_bindgen::prelude::wasm_bindgen(setter)]
 			pub fn #setter_name(&mut self, value: #field_type) {
-				self.#name = value;
+				self.#field_name = value;
 			}
 		}
 	});

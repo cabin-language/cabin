@@ -1,8 +1,8 @@
 use clap::Parser as _;
 use commands::{CabinCommand as _, SubCommand};
 
-mod commands;
-mod snippet;
+pub mod commands;
+pub mod snippet;
 
 /// The Cabin compiler.
 #[derive(clap::Parser)]

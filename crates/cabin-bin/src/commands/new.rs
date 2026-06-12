@@ -4,7 +4,7 @@ use cabin::{
 	config::ProjectType,
 	theme::{CatppuccinMocha, Theme as _},
 };
-use colored::Colorize;
+use colored::Colorize as _;
 
 use super::CabinCommand;
 

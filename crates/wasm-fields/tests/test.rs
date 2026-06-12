@@ -5,7 +5,7 @@ use wasm_fields::wasm_fields;
 pub fn test() {
 	#[wasm_bindgen]
 	#[wasm_fields]
-	pub struct Example {
+	struct Example {
 		text: String,
 	}
 }

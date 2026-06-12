@@ -1,10 +1,10 @@
 use colored::Colorize as _;
 
-use crate::commands::{check_errors, CabinCommand};
+use crate::commands::{CabinCommand, check_errors};
 
 /// Run a cabin file or project.
 #[derive(clap::Parser)]
-pub struct CheckCommand {}
+pub struct CheckCommand;
 
 impl CabinCommand for CheckCommand {
 	fn execute(self) {
@@ -18,7 +18,7 @@ impl CabinCommand for CheckCommand {
 
 		println!("{} {}...", "\nChecking".bold().green(), project.config().information.name.bold());
 
-		if !check_errors(project.check().to_owned(), &mut project, true, false) {
+		if !check_errors(project.check().to_owned(), &project, true, false) {
 			return;
 		}
 	}

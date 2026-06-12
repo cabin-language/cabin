@@ -1,27 +1,31 @@
 [package]
 name = "cabin-bin"
-version = "0.1.0"
-edition = "2021"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+version.workspace = true
 
 [[bin]]
 name = "cabin"
 path = "src/main.rs"
 
 [dependencies]
-cabin = { path = "../cabin" }
-tree-sitter-cabin = { path = "../tree-sitter-cabin/" }
+tree-sitter-cabin.workspace = true
+cabin.workspace = true
 clap = { version = "4.5.28", features = ["derive"] }
 colored = "3.0.0"
 enum_dispatch = "0.3.13"
-tree-sitter = "0.25.2"
 pathdiff = "0.2.3"
 cliclack = "0.3.5"
-convert_case = "0.8.0"
-console = "0.15.11"
 toml_edit = "0.22.24"
 which = "7.0.2"
+tree-sitter = "0.26.9"
 
 [profile.release]
 lto = true
 codegen-units = 1
 panic = "abort"
+
+[lints]
+workspace = true

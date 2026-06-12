@@ -1,15 +1,21 @@
 [package]
 name = "cabin-web"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
 
 [dependencies]
+cabin.workspace = true
+wasm-fields.workspace = true
 wasm-bindgen = "0.2.100"
 js-sys = "0.3.77"
-cabin = { path = "../cabin" }
 console_error_panic_hook = "0.1.7"
 web-sys = "0.3.77"
-wasm-fields = { path = "../wasm-fields/" }
 
 [lib]
 crate-type = ["cdylib"]
+
+[lints]
+workspace = true

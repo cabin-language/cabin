@@ -1,9 +1,8 @@
-use std::path::PathBuf;
-
 use build::BuildCommand;
 use cabin::{
+	Project,
 	diagnostics::Diagnostics,
-	theme::{CatppuccinMocha, Theme},
+	theme::{CatppuccinMocha, Theme as _},
 };
 use check::CheckCommand;
 use colored::Colorize as _;
@@ -13,11 +12,11 @@ use run::RunCommand;
 
 use crate::{snippet::show_snippet, wrap};
 
-mod build;
-mod check;
-mod interactive;
-mod new;
-mod run;
+pub mod build;
+pub mod check;
+pub mod interactive;
+pub mod new;
+pub mod run;
 
 #[enum_dispatch::enum_dispatch]
 pub trait CabinCommand {
@@ -35,7 +34,7 @@ pub enum SubCommand {
 	Interactive(InteractiveCommand),
 }
 
-pub fn check_errors(diagnostics: Diagnostics, project: &mut cabin::Project, show_warnings: bool, cancel_on_errors: bool) -> bool {
+pub fn check_errors(diagnostics: Diagnostics, project: &Project, show_warnings: bool, cancel_on_errors: bool) -> bool {
 	let has_errors = !diagnostics.errors().is_empty();
 	let one_error = diagnostics.errors().len() == 1;
 	let max_columns = 100;

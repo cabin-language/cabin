@@ -1,10 +1,10 @@
 use colored::Colorize as _;
 
-use crate::commands::{check_errors, CabinCommand};
+use crate::commands::{CabinCommand, check_errors};
 
 /// Run a cabin file or project.
 #[derive(clap::Parser)]
-pub struct RunCommand {}
+pub struct RunCommand;
 
 impl CabinCommand for RunCommand {
 	fn execute(self) {
@@ -20,13 +20,13 @@ impl CabinCommand for RunCommand {
 
 		// Checking
 		println!("{} syntax and types...", "\tChecking".bold().green());
-		if !check_errors(project.check().to_owned(), &mut project, true, true) {
+		if !check_errors(project.check().to_owned(), &project, true, true) {
 			return;
 		}
 
 		// Compile-time evaluation
 		println!("    {} compile-time code...", "Running".bold().green());
-		if !check_errors(project.run_compile_time_code().to_owned(), &mut project, false, true) {
+		if !check_errors(project.run_compile_time_code().to_owned(), &project, false, true) {
 			return;
 		}
 		if project.printed() {

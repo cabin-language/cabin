@@ -1,11 +1,11 @@
-use std::{collections::VecDeque, io::Write};
+use std::{collections::VecDeque, io::Write as _};
 
 use cabin::{
 	diagnostics::{Diagnostic, Severity},
 	theme::Theme,
 };
 use colored::Colorize as _;
-use tree_sitter::StreamingIterator;
+use tree_sitter::StreamingIterator as _;
 
 /// Prints the code snippet for the given diagnostic, showing the location of the error. All
 /// printing is done to `stderr`.
@@ -18,7 +18,7 @@ use tree_sitter::StreamingIterator;
 /// # Type Parameters
 ///
 /// - `TTheme` - The theme to color the output with
-pub(crate) fn show_snippet<CurrentTheme: cabin::theme::Theme>(diagnostic: &Diagnostic, max_columns: usize) {
+pub fn show_snippet<CurrentTheme: Theme>(diagnostic: &Diagnostic, max_columns: usize) {
 	let code = if diagnostic.file == *"stdlib" {
 		cabin::STDLIB.to_owned()
 	} else {
@@ -58,6 +58,8 @@ pub(crate) fn show_snippet<CurrentTheme: cabin::theme::Theme>(diagnostic: &Diagn
 	let (end_line, _end_column) = diagnostic.span.end_line_column(&code).unwrap();
 	let mut leftmost_column = usize::MAX;
 	let mut rightmost_column = 0;
+
+	#[allow(clippy::integer_division, reason = "i want to round!")]
 	let middle_line = (start_line + end_line) / 2;
 
 	// Line out of range
@@ -65,7 +67,7 @@ pub(crate) fn show_snippet<CurrentTheme: cabin::theme::Theme>(diagnostic: &Diagn
 		if byte_position == characters.len() {
 			break;
 		}
-		if characters[byte_position] == '\n' {
+		if characters.get(byte_position).unwrap() == &'\n' {
 			line += 1;
 			column = 0;
 		} else {
@@ -90,10 +92,10 @@ pub(crate) fn show_snippet<CurrentTheme: cabin::theme::Theme>(diagnostic: &Diagn
 
 		// Extra highlights
 		while highlights.front().is_some_and(|highlight| highlight.start < byte_position) {
-			highlights.pop_front().unwrap();
+			let _ = highlights.pop_front().unwrap();
 		}
 
-		if characters[byte_position] == '\t' {
+		if characters.get(byte_position).unwrap() == &'\t' {
 			current_line_tabs += 1;
 		}
 
@@ -117,7 +119,7 @@ pub(crate) fn show_snippet<CurrentTheme: cabin::theme::Theme>(diagnostic: &Diagn
 		}
 
 		// Newline
-		if characters[byte_position] == '\n' && byte_position != code.len() - 2 {
+		if characters.get(byte_position).unwrap() == &'\n' && byte_position != code.len() - 2 {
 			let mut ending = column + 3 * current_line_tabs + format!(" {}  ", line + 1).len();
 			if line == middle_line {
 				let info = format!("{diagnostic}");
@@ -166,7 +168,9 @@ pub(crate) fn show_snippet<CurrentTheme: cabin::theme::Theme>(diagnostic: &Diagn
 			let normal = "\x1b[0m";
 			eprint!(
 				"{undercurl}{}{normal}",
-				characters[byte_position]
+				characters
+					.get(byte_position)
+					.unwrap()
 					.to_string()
 					.replace("\t", "    ")
 					.on_truecolor(bg_r, bg_g, bg_b)
@@ -192,7 +196,9 @@ pub(crate) fn show_snippet<CurrentTheme: cabin::theme::Theme>(diagnostic: &Diagn
 		else {
 			eprint!(
 				"{}",
-				characters[byte_position]
+				characters
+					.get(byte_position)
+					.unwrap()
 					.to_string()
 					.replace('\t', "    ")
 					.on_truecolor(bg_r, bg_g, bg_b)
@@ -239,7 +245,7 @@ fn highlights<TTheme: Theme>(code: &str) -> Vec<Highlight> {
 		for capture in query_match.captures {
 			let start = capture.node.start_byte();
 			let end = capture.node.end_byte();
-			let name = query.capture_names()[capture.index as usize];
+			let name = query.capture_names().get(capture.index as usize).unwrap();
 			if let Some(highlight) = TTheme::highlight(name) {
 				highlights.push(Highlight { start, end, highlight });
 			}
@@ -261,7 +267,7 @@ struct Highlight {
 
 impl Highlight {
 	/// Returns the length of this highlight.
-	fn length(&self) -> usize {
+	const fn length(&self) -> usize {
 		self.end - self.start
 	}
 }

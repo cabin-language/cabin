@@ -1,7 +1,7 @@
 use std::{
 	collections::HashMap,
 	fs::{File, OpenOptions},
-	io::{BufRead, BufReader, Read, Stdout, Write},
+	io::{BufRead as _, BufReader, Read as _, Stdout, Write as _},
 };
 
 mod lsp;
@@ -57,7 +57,7 @@ fn run(logger: &mut Logger) -> anyhow::Result<()> {
 			if line.starts_with("Content-Length:") {
 				let parts: Vec<&str> = line.split(':').collect();
 				if parts.len() >= 2 {
-					content_length = Some(parts[1].trim().parse()?);
+					content_length = Some(parts.get(1).unwrap().trim().parse()?);
 				}
 			}
 
