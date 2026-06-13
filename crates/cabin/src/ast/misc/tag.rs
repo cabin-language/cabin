@@ -1,72 +1,91 @@
-use std::{fmt::Debug, ops::Deref};
+use derive_getters::Getters;
 
 use crate::{
 	api::context::Context,
 	ast::expressions::Expression,
-	comptime::{CompileTime, memory::ExpressionPointer},
+	comptime::{Evaluate, memory::Pointer},
 	diagnostics::Diagnostic,
-	parse_list,
-	parser::{ListType, Parse as _, TokenQueue, TryParse},
+	lexer::{Token, TokenType},
+	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
 };
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Getters)]
 pub struct TagList {
-	pub values: Vec<ExpressionPointer>,
+	values: Vec<TagListItem>,
+	tokens: TagListTokens,
 }
 
-impl TagList {
-	pub const fn empty() -> TagList {
-		TagList { values: Vec::new() }
-	}
+#[derive(Debug, Clone, Getters)]
+pub struct TagListItem {
+	value: Expression,
+	tokens: TagListItemTokens,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct TagListItemTokens {
+	comma: Option<Token>,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct TagListTokens {
+	tag_list_opening: Token,
+	right_bracket: Token,
 }
 
 impl TryParse for TagList {
 	type Output = TagList;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+		let tag_list_opening = tokens.pop(TokenType::TagOpening, context)?;
+
 		let mut tags = Vec::new();
-		let _ = parse_list!(tokens, context, ListType::Tag, {
-			tags.push(Expression::parse(tokens, context));
-		});
-		Ok(TagList { values: tags })
+		while !tokens.next_is(TokenType::RightBracket) {
+			let value = Expression::try_parse(tokens, context)?;
+			let comma = tokens.pop(TokenType::Comma, context).ok();
+			let has_comma = comma.is_some();
+
+			tags.push(TagListItem {
+				value,
+				tokens: TagListItemTokens { comma },
+			});
+
+			if !has_comma {
+				break;
+			}
+		}
+
+		let right_bracket = tokens.pop(TokenType::RightBracket, context)?;
+
+		Ok(TagList {
+			values: tags,
+			tokens: TagListTokens { tag_list_opening, right_bracket },
+		})
 	}
 }
 
-impl CompileTime for TagList {
-	type Output = TagList;
+impl Evaluate for TagList {
+	type Output = EvaluatedTagList;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+	fn evaluate(self, context: &mut Context) -> Self::Output {
 		let mut values = Vec::new();
 		for value in self.values {
-			let evaluated = value.evaluate_at_compile_time(context);
-			values.push(evaluated);
+			values.push(EvaluatedTagListItem {
+				value: value.value.evaluate(context),
+				tokens: value.tokens,
+			});
 		}
-		TagList { values }
+		EvaluatedTagList { values, tokens: self.tokens }
 	}
 }
 
-impl Deref for TagList {
-	type Target = Vec<ExpressionPointer>;
-
-	fn deref(&self) -> &Self::Target {
-		&self.values
-	}
+#[derive(Debug, Clone, Getters)]
+pub struct EvaluatedTagList {
+	values: Vec<EvaluatedTagListItem>,
+	tokens: TagListTokens,
 }
 
-impl From<Vec<ExpressionPointer>> for TagList {
-	fn from(values: Vec<ExpressionPointer>) -> Self {
-		Self { values }
-	}
-}
-
-impl Debug for TagList {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(
-			f,
-			"{}",
-			format!("#[{}]", self.values.iter().map(|value| format!("{value:?}")).collect::<Vec<_>>().join(", "))
-				.replace("\n", " ")
-				.replace("\t", "")
-		)
-	}
+#[derive(Debug, Clone, Getters)]
+pub struct EvaluatedTagListItem {
+	value: Pointer,
+	tokens: TagListItemTokens,
 }

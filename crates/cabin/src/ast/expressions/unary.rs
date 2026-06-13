@@ -1,35 +1,63 @@
+use derive_getters::Getters;
+
 use crate::{
+	Context,
 	Span,
-	api::context::Context,
 	ast::expressions::{Expression, Spanned},
-	comptime::{CompileTime, memory::ExpressionPointer},
+	comptime::{Evaluate, memory::Pointer},
+	lexer::Token,
 };
 
 /// A unary operator. These are types of operators that take a single expression and operate on it.
 #[derive(Debug, Clone)]
 pub enum UnaryOperator {
-	ExclamationPoint,
+	Not,
+	Assert,
 }
 
-/// Unlike binary expressions, which are converted to function calls at parse-time, these cannot be
-/// converted to function calls because operators like `?` and `!` can affect control flow.
-#[derive(Debug, Clone)]
-pub struct UnaryOperation {
-	pub operator: UnaryOperator,
-	pub expression: ExpressionPointer,
-	pub span: Span,
-}
-
-impl CompileTime for UnaryOperation {
-	type Output = Expression;
-
-	fn evaluate_at_compile_time(self, _context: &mut Context) -> Self::Output {
-		todo!()
+impl UnaryOperator {
+	pub const fn placement(&self) -> UnaryOperatorPlacement {
+		match self {
+			UnaryOperator::Not => UnaryOperatorPlacement::Prefix,
+			UnaryOperator::Assert => UnaryOperatorPlacement::Postfix,
+		}
 	}
 }
 
-impl Spanned for UnaryOperation {
-	fn span(&self, _context: &Context) -> Span {
-		self.span
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
+pub enum UnaryOperatorPlacement {
+	Prefix,
+	Postfix,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct UnaryExpression {
+	operator: UnaryOperator,
+	expression: Expression,
+	tokens: UnaryTokens,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct UnaryTokens {
+	operator: Token,
+}
+
+impl Evaluate for UnaryExpression {
+	type Output = Pointer;
+
+	fn evaluate(self, _context: &mut Context) -> Self::Output {
+		match self.operator {
+			UnaryOperator::Not => todo!(),
+			UnaryOperator::Assert => todo!(),
+		}
+	}
+}
+
+impl Spanned for UnaryExpression {
+	fn span(&self) -> Span {
+		match self.operator.placement() {
+			UnaryOperatorPlacement::Prefix => self.tokens.operator.span.to(self.expression.span()),
+			UnaryOperatorPlacement::Postfix => self.expression.span().to(self.tokens.operator.span),
+		}
 	}
 }

@@ -23,7 +23,7 @@ impl CabinCommand for InteractiveCommand {
 			let _ = std::io::stdin().read_line(&mut line).unwrap();
 			line = line.get(0..line.len() - 1).unwrap().to_owned();
 
-			cabin::interpret(&line, &mut context);
+			// cabin::interpret(&line, &mut context);
 
 			for diagnostic in context.diagnostics() {
 				match &diagnostic.info.severity() {

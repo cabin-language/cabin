@@ -1,21 +1,23 @@
 use std::{fmt::Display, path::PathBuf};
 
-use super::{
-	io::{Io, StyledString, SystemIo},
-	traits::TryAs as _,
-};
+use super::io::{Io, StyledString, SystemIo};
 use crate::{
 	Diagnostics,
 	STDLIB,
 	api::{diagnostics::Diagnostic, scope::ScopeTree},
-	ast::expressions::{
-		Expression,
-		identifier::Identifier,
-		literal::{EvaluatedLiteral, Object},
+	ast::expressions::identifier::Identifier,
+	comptime::{
+		Evaluate as _,
+		memory::{Pointer, VirtualMemory},
 	},
-	comptime::memory::{ExpressionPointer, VirtualMemory},
-	scope::ScopeId,
+	scope::ScopeRef,
 };
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum DebugMode {
+	Full,
+	None,
+}
 
 /// Global(ish) data about the state of the compiler. The context holds the program's scope data,
 /// as well as memory where expressions are stored, among some other metadata like the file path
@@ -43,7 +45,7 @@ pub struct Context {
 	/// Storage for expressions. All expressions are stored in `VirtualMemory`, and can be accessed
 	/// with an `ExpressionPointer`, allowing one expression to be reused and mutated globally from
 	/// different places in the user's code.
-	pub virtual_memory: VirtualMemory,
+	pub memory: VirtualMemory,
 
 	pub system_io: Box<dyn Io>,
 
@@ -77,6 +79,7 @@ pub struct Context {
 
 	pub name_query_result: Option<Identifier>,
 	pub name_query: Option<usize>,
+	pub debug_mode: DebugMode,
 }
 
 impl Default for Context {
@@ -108,19 +111,19 @@ impl Context {
 	pub fn snapshot(&self) -> ContextSnapshot {
 		ContextSnapshot {
 			scope: self.scope.clone(),
-			virtual_memory: self.virtual_memory.clone(),
+			virtual_memory: self.memory.clone(),
 		}
 	}
 
 	pub fn roll_back(&mut self, snapshot: ContextSnapshot) {
 		self.scope = snapshot.scope;
-		self.virtual_memory = snapshot.virtual_memory;
+		self.memory = snapshot.virtual_memory;
 	}
 
 	pub fn with_io<System: Io + 'static>(io: System) -> Self {
 		let mut context = Context {
 			scope: ScopeTree::global(),
-			virtual_memory: VirtualMemory::empty(),
+			memory: VirtualMemory::empty(),
 			diagnostics: Diagnostics::empty(),
 			side_effects: true,
 			has_printed: false,
@@ -129,47 +132,41 @@ impl Context {
 			name_query_result: None,
 			system_io: Box::new(io),
 			interactive: false,
+
+			debug_mode: DebugMode::None,
 		};
 
 		// Add stdlib
 		let stdlib_ast = crate::parse_library(STDLIB, &mut context);
-		let stdlib_pointer = Expression::EvaluatedLiteral(EvaluatedLiteral::Object(stdlib_ast.into_object(&mut context))).store_in_memory(&mut context);
-		context.scope.declare_new_variable(Identifier::create_virtual("builtin", &context), stdlib_pointer).unwrap();
-		let Expression::EvaluatedLiteral(EvaluatedLiteral::Object(stdlib)) = stdlib_pointer.expression(&context).to_owned() else {
-			unreachable!()
-		};
+		let stdlib_ast = stdlib_ast
+			.inspect_err(|_| {
+				dbg!(context.diagnostics.all().first());
+			})
+			.unwrap();
+		let stdlib = stdlib_ast.evaluate(&mut context);
 
 		// Bring some stdib items into scope
 		context
 			.scope
-			.declare_new_variable(Identifier::create_virtual("Text", &context), stdlib.get_field("Text").unwrap().into())
+			.declare_new_variable(Identifier::create_virtual("Text", &context), stdlib.get_pointer("Text"))
 			.unwrap();
 		context
 			.scope
-			.declare_new_variable(Identifier::create_virtual("Number", &context), stdlib.get_field("Number").unwrap().into())
+			.declare_new_variable(Identifier::create_virtual("Number", &context), stdlib.get_pointer("Number"))
 			.unwrap();
 		context
 			.scope
 			.declare_new_variable(
 				Identifier::create_virtual("print", &context),
 				stdlib
-					.get_field("system")
+					.get_object("system", &context)
+					.get_field_value("terminal")
 					.unwrap()
-					.get_literal(&context)
-					.as_evaluated()
+					.value(&context)
+					.as_object()
 					.unwrap()
-					.try_as::<Object>()
-					.unwrap()
-					.get_field("terminal")
-					.unwrap()
-					.get_literal(&context)
-					.as_evaluated()
-					.unwrap()
-					.try_as::<Object>()
-					.unwrap()
-					.get_field("print")
-					.unwrap()
-					.into(),
+					.get_field_value("print")
+					.unwrap(),
 			)
 			.unwrap();
 		context
@@ -177,23 +174,14 @@ impl Context {
 			.declare_new_variable(
 				Identifier::create_virtual("log", &context),
 				stdlib
-					.get_field("system")
+					.get_object("system", &context)
+					.get_field_value("terminal")
 					.unwrap()
-					.get_literal(&context)
-					.as_evaluated()
+					.value(&context)
+					.as_object()
 					.unwrap()
-					.try_as::<Object>()
-					.unwrap()
-					.get_field("terminal")
-					.unwrap()
-					.get_literal(&context)
-					.as_evaluated()
-					.unwrap()
-					.try_as::<Object>()
-					.unwrap()
-					.get_field("log")
-					.unwrap()
-					.into(),
+					.get_field_value("log")
+					.unwrap(),
 			)
 			.unwrap();
 		context
@@ -201,23 +189,14 @@ impl Context {
 			.declare_new_variable(
 				Identifier::create_virtual("debug", &context),
 				stdlib
-					.get_field("system")
+					.get_object("system", &context)
+					.get_field_value("terminal")
 					.unwrap()
-					.get_literal(&context)
-					.as_evaluated()
+					.value(&context)
+					.as_object()
 					.unwrap()
-					.try_as::<Object>()
-					.unwrap()
-					.get_field("terminal")
-					.unwrap()
-					.get_literal(&context)
-					.as_evaluated()
-					.unwrap()
-					.try_as::<Object>()
-					.unwrap()
-					.get_field("debug")
-					.unwrap()
-					.into(),
+					.get_field_value("debug")
+					.unwrap(),
 			)
 			.unwrap();
 		context
@@ -225,25 +204,32 @@ impl Context {
 			.declare_new_variable(
 				Identifier::create_virtual("input", &context),
 				stdlib
-					.get_field("system")
+					.get_object("system", &context)
+					.get_field_value("terminal")
 					.unwrap()
-					.get_literal(&context)
-					.as_evaluated()
+					.value(&context)
+					.as_object()
 					.unwrap()
-					.try_as::<Object>()
-					.unwrap()
-					.get_field("terminal")
-					.unwrap()
-					.get_literal(&context)
-					.as_evaluated()
-					.unwrap()
-					.try_as::<Object>()
-					.unwrap()
-					.get_field("input")
-					.unwrap()
-					.into(),
+					.get_field_value("input")
+					.unwrap(),
 			)
 			.unwrap();
+		context
+			.scope
+			.declare_new_variable(
+				Identifier::create_virtual("none", &context),
+				*stdlib
+					.get_either("Optional", &context)
+					.variants()
+					.iter()
+					.find(|variant| variant.name().source_identifier() == "none")
+					.unwrap()
+					.object(),
+			)
+			.unwrap();
+
+		let stdlib_pointer = stdlib.into_object(&context).store(&mut context);
+		context.scope.declare_new_variable(Identifier::create_virtual("builtin", &context), stdlib_pointer).unwrap();
 
 		context
 	}
@@ -293,19 +279,32 @@ impl Context {
 		self.system_io.read_line()
 	}
 
-	pub fn get_false(&self) -> ExpressionPointer {
-		self.scope.get_variable_from_id("false", ScopeId::global()).unwrap()
+	pub fn get_false(&self) -> Pointer {
+		self.scope.get_variable_from_id("false", ScopeRef::global()).unwrap()
 	}
 
-	pub fn get_true(&self) -> ExpressionPointer {
-		self.scope.get_variable_from_id("true", ScopeId::global()).unwrap()
+	pub fn get_true(&self) -> Pointer {
+		self.scope.get_variable_from_id("true", ScopeRef::global()).unwrap()
 	}
 
-	pub fn none(&self) -> ExpressionPointer {
-		self.scope.get_variable_from_id("none", ScopeId::global()).unwrap()
+	pub fn none(&self) -> Pointer {
+		self.scope.get_variable_from_id("none", ScopeRef::global()).unwrap()
 	}
 
-	pub fn any(&self) -> ExpressionPointer {
-		self.scope.get_variable_from_id("Any", ScopeId::global()).unwrap()
+	pub fn any(&self) -> Pointer {
+		self.scope.get_variable_from_id("Any", ScopeRef::global()).unwrap()
 	}
+
+	pub fn ident(&self, name: &'static str) -> Pointer {
+		self.scope.get_variable_from_id(name, ScopeRef::stdlib()).expect(&format!("Couldnt find {name}"))
+	}
+}
+
+#[macro_export]
+macro_rules! log {
+	($context: expr, $($tokens: tt)*) => {
+		if $context.debug_mode == $crate::api::context::DebugMode::Full {
+			eprintln!($($tokens)*);
+		}
+	};
 }

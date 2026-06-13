@@ -22,6 +22,7 @@ pub fn show_snippet<CurrentTheme: Theme>(diagnostic: &Diagnostic, max_columns: u
 	let code = if diagnostic.file == *"stdlib" {
 		cabin::STDLIB.to_owned()
 	} else {
+		#[allow(clippy::panic, reason = "dev error")]
 		std::fs::read_to_string(&diagnostic.file).unwrap_or_else(|_| panic!("No file {}", diagnostic.file.display()))
 	};
 

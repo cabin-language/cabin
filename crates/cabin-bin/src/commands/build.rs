@@ -20,13 +20,13 @@ impl CabinCommand for BuildCommand {
 
 		// Checking
 		println!("{} syntax and types...", "\tChecking".bold().green());
-		if !check_errors(project.check().to_owned(), &project, true, true) {
+		if !check_errors(project.check().unwrap().to_owned(), &project, true, true) {
 			return;
 		}
 
 		// Compile-time evaluation
 		println!("    {} compile-time code...", "Running".bold().green());
-		if !check_errors(project.run_compile_time_code().to_owned(), &project, false, true) {
+		if !check_errors(project.run_compile_time_code().unwrap().to_owned(), &project, false, true) {
 			return;
 		}
 		if project.printed() {
@@ -35,7 +35,7 @@ impl CabinCommand for BuildCommand {
 
 		// Compilation
 		println!("    {} compile-time evaluated code...", "Compiling".bold().green());
-		let c = project.transpile().unwrap();
-		std::fs::write(project.root_directory().join("builds").join(&project.config().information.name), c).unwrap();
+		// let c = project.transpile().unwrap();
+		// std::fs::write(project.root_directory().join("builds").join(&project.config().information.name), c).unwrap();
 	}
 }

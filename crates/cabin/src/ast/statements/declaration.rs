@@ -1,42 +1,53 @@
 use convert_case::{Case, Casing as _};
+use derive_getters::Getters;
 
 use crate::{
 	Span,
 	Spanned,
-	api::{context::Context, scope::ScopeId},
+	api::context::Context,
 	ast::{
-		expressions::{
-			Expression,
-			identifier::Identifier,
-			literal::{EvaluatedLiteral, UnevaluatedLiteral},
-		},
+		expressions::{Expression, evaluated::EvaluatedExpression, identifier::Identifier},
 		misc::tag::TagList,
 		statements::Statement,
 	},
-	comptime::{CompileTime, memory::ExpressionPointer},
+	comptime::{
+		Evaluate,
+		memory::{Pointer, Storable},
+	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_some,
-	interpreter::Runtime,
-	lexer::TokenType,
-	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
-	transpiler::{TranspileError, TranspileToC},
+	lexer::{Token, TokenType},
+	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
+	scope::ScopeRef,
 };
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Getters)]
 pub struct Declaration {
 	name: Identifier,
-	scope_id: ScopeId,
-	span: Span,
+	explicit_type: Option<DeclarationType>,
+	value: Expression,
+	tokens: DeclarationTokens,
+	scope: ScopeRef,
 }
 
-impl Declaration {
-	pub const fn name(&self) -> &Identifier {
-		&self.name
-	}
+#[derive(Debug, Clone, Getters)]
+pub struct DeclarationTokens {
+	keyword_visible: Option<Token>,
+	keyword_editable: Option<Token>,
+	keyword_let: Token,
+	equal: Token,
+	semicolon: Token,
+}
 
-	pub fn value(&self, context: &Context) -> ExpressionPointer {
-		context.scope.get_variable_from_id(self.name.source_identifier(), self.scope_id).unwrap()
-	}
+#[derive(Debug, Clone, Getters)]
+pub struct DeclarationType {
+	value: Expression,
+	tokens: DeclarationTypeTokens,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct DeclarationTypeTokens {
+	colon: Token,
 }
 
 impl TryParse for Declaration {
@@ -47,117 +58,132 @@ impl TryParse for Declaration {
 		let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
 
 		if tags.is_some() && !tokens.next_is(TokenType::KeywordLet) {
-			let expression = Expression::parse(tokens, context);
+			let expression = Expression::try_parse(tokens, context)?;
 			let _ = tokens.pop(TokenType::Semicolon, context)?;
 			return Ok(Statement::Expression(expression));
 		}
 
 		// let
-		let start = tokens.pop(TokenType::KeywordLet, context)?.span;
+		let keyword_let = tokens.pop(TokenType::KeywordLet, context)?;
 
-		let visible = if_then_some!(tokens.next_is(TokenType::KeywordVisible), tokens.pop(TokenType::KeywordVisible, context).unwrap());
-		let editable = if_then_some!(tokens.next_is(TokenType::KeywordEditable), tokens.pop(TokenType::KeywordVisible, context).unwrap());
+		let keyword_visible = if_then_some!(tokens.next_is(TokenType::KeywordVisible), tokens.pop(TokenType::KeywordVisible, context).unwrap());
+		let keyword_editable = if_then_some!(tokens.next_is(TokenType::KeywordEditable), tokens.pop(TokenType::KeywordVisible, context).unwrap());
 
 		// name
 		let name = Identifier::try_parse(tokens, context)?;
 
+		let explicit_type = if_then_some!(tokens.next_is(TokenType::Colon), {
+			let colon = tokens.pop(TokenType::Colon, context).unwrap();
+			DeclarationType {
+				value: Expression::try_parse(tokens, context)?,
+				tokens: DeclarationTypeTokens { colon },
+			}
+		});
+
 		// Value
-		let _ = tokens.pop(TokenType::Equal, context)?;
+		let equal = tokens.pop(TokenType::Equal, context)?;
 
-		let value = Expression::parse(tokens, context);
-		let end = value.span(context);
-
-		let expression = value.expression_mut(context);
-		expression.set_name(name.clone());
-		let expression_value = value.expression(context);
-
-		match expression_value {
-			Expression::Literal(UnevaluatedLiteral::Group(_) | UnevaluatedLiteral::Either(_) | UnevaluatedLiteral::Extend(_))
-			| Expression::EvaluatedLiteral(EvaluatedLiteral::Group(_) | EvaluatedLiteral::Extend(_) | EvaluatedLiteral::Either(_)) => {
-				if !name.source_identifier().is_case(Case::Pascal) {
-					context.add_diagnostic(Diagnostic {
-						file: context.file.clone(),
-						span: name.span(context),
-						info: DiagnosticInfo::NonPascalCaseGroup {
-							original_name: name.source_identifier().to_owned(),
-							type_name: expression_value.kind_name().to_owned(),
-						},
-					});
-				}
-			},
-			_ => {
-				if !name.source_identifier().is_case(Case::Snake) {
-					context.add_diagnostic(Diagnostic {
-						file: context.file.clone(),
-						span: name.span(context),
-						info: DiagnosticInfo::NonSnakeCaseName {
-							original_name: name.source_identifier().to_owned(),
-						},
-					});
-				}
-			},
-		}
+		let value = Expression::try_parse(tokens, context)?;
 
 		// Add the name declaration to the scope
-		if let Err(error) = context.scope.declare_new_variable(name.clone(), value) {
+		if let Err(error) = context.scope.declare_new_variable(name.clone(), context.memory.calloc()) {
 			context.add_diagnostic(Diagnostic {
 				file: context.file.clone(),
-				span: name.span(context),
+				span: name.span(),
 				info: error,
 			});
 		}
 
-		let _ = tokens.pop(TokenType::Semicolon, context)?;
+		let semicolon = tokens.pop(TokenType::Semicolon, context)?;
 
 		// Return the declaration
 		Ok(Statement::Declaration(Declaration {
 			name,
-			scope_id: context.scope.unique_id(),
-			span: start.to(end),
+			value,
+			explicit_type,
+			scope: context.scope.unique_id(),
+			tokens: DeclarationTokens {
+				keyword_visible,
+				keyword_editable,
+				keyword_let,
+				equal,
+				semicolon,
+			},
 		}))
 	}
 }
 
-impl CompileTime for Declaration {
-	type Output = Declaration;
+impl Evaluate for Declaration {
+	type Output = EvaluatedDeclaration;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		let evaluated = self.value(context).evaluate_at_compile_time(context); // TODO: use a mapping function instead of cloning
-		context.scope.reassign_variable_from_id(&self.name, evaluated, self.scope_id);
-		self
-	}
-}
+	fn evaluate(self, context: &mut Context) -> Self::Output {
+		let evaluated = self.value.evaluate(context);
 
-impl Runtime for Declaration {
-	type Output = Declaration;
+		if let Storable::Expression(value) = evaluated.value(context) {
+			match value {
+				EvaluatedExpression::Group(_) | EvaluatedExpression::Either(_) => {
+					if !self.name.source_identifier().is_case(Case::Pascal) {
+						context.add_diagnostic(Diagnostic {
+							file: context.file.clone(),
+							span: self.name.span(),
+							info: DiagnosticInfo::NonPascalCaseGroup {
+								original_name: self.name.source_identifier().to_owned(),
+								type_name: value.kind_name().to_owned(),
+							},
+						});
+					}
+				},
 
-	fn evaluate_at_runtime(self, context: &mut Context) -> Self::Output {
-		let evaluated = self.value(context).evaluate_at_runtime(context);
-		context.scope.reassign_variable_from_id(&self.name, evaluated, self.scope_id);
-		self
-	}
-}
+				_ => {
+					if !self.name.source_identifier().is_case(Case::Snake) {
+						context.add_diagnostic(Diagnostic {
+							file: context.file.clone(),
+							span: self.name.span(),
+							info: DiagnosticInfo::NonSnakeCaseName {
+								original_name: self.name.source_identifier().to_owned(),
+							},
+						});
+					}
+				},
+			}
+		}
 
-impl TranspileToC for Declaration {
-	fn to_c(&self, context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
-		let name = self.name().to_c(context, None)?;
-		Ok(format!(
-			"void* {name};\n{};\nlabel_end_{name}:;\n\n",
-			self.value(context).to_owned().to_c(context, Some(name.clone()))?
-		))
-	}
+		context.scope.reassign_variable_from_id(&self.name, evaluated, self.scope);
 
-	fn c_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
-		self.value(context).to_owned().c_prelude(context)
-	}
-
-	fn c_type_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
-		self.value(context).to_owned().c_type_prelude(context)
+		EvaluatedDeclaration {
+			name: self.name,
+			explicit_type: self.explicit_type.map(|t| EvaluatedDeclarationType {
+				value: t.value.evaluate(context),
+				tokens: t.tokens,
+			}),
+			value: evaluated,
+			tokens: self.tokens,
+		}
 	}
 }
 
 impl Spanned for Declaration {
-	fn span(&self, _context: &Context) -> Span {
-		self.span
+	fn span(&self) -> Span {
+		self.tokens.keyword_let.span.to(self.value.span())
+	}
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct EvaluatedDeclaration {
+	name: Identifier,
+	explicit_type: Option<EvaluatedDeclarationType>,
+	value: Pointer,
+	tokens: DeclarationTokens,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct EvaluatedDeclarationType {
+	value: Pointer,
+	tokens: DeclarationTypeTokens,
+}
+
+impl Spanned for EvaluatedDeclaration {
+	fn span(&self) -> Span {
+		self.tokens.keyword_let.span.to(self.value.span())
 	}
 }

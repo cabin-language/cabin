@@ -42,109 +42,49 @@ pub trait TokenQueueFunctionality {
 	}
 
 	fn current_position(&self) -> Option<Span>;
-
-	fn is_all_whitespace(&self) -> bool;
 }
 
 impl TokenQueueFunctionality for TokenQueue {
 	fn peek_type(&self, context: &Context) -> Result<TokenType, Diagnostic> {
-		let mut index = 0;
-		let mut next = self.get(index).ok_or_else(|| Diagnostic {
-			file: context.file.clone(),
-			span: Span::none(),
-			info: DiagnosticInfo::UnexpectedGenericEOF,
-		})?;
-		while next.token_type.is_whitespace() {
-			index += 1;
-			next = self.get(index).ok_or_else(|| Diagnostic {
+		Ok(self
+			.front()
+			.ok_or_else(|| Diagnostic {
 				file: context.file.clone(),
 				span: Span::none(),
 				info: DiagnosticInfo::UnexpectedGenericEOF,
-			})?;
-		}
-		Ok(next.token_type)
+			})?
+			.token_type)
 	}
 
 	fn next_is(&self, token_type: TokenType) -> bool {
-		let mut index = 0;
-		let Some(mut next) = self.get(index) else {
-			return false;
-		};
-		while next.token_type.is_whitespace() {
-			if token_type == TokenType::Comment && next.token_type == TokenType::Comment {
-				return true;
-			}
-			index += 1;
-			if let Some(token) = self.get(index) {
-				next = token;
-			} else {
-				return false;
-			}
-		}
-		next.token_type == token_type
+		self.front().is_some_and(|front| front.token_type == token_type)
 	}
 
 	fn peek_type2(&self, context: &Context) -> Result<TokenType, Diagnostic> {
-		let mut index = 0;
-
-		// The one time I'd enjoy a do-while loop
-		let mut next = self.get(index).ok_or_else(|| Diagnostic {
-			file: context.file.clone(),
-			span: Span::none(),
-			info: DiagnosticInfo::UnexpectedGenericEOF,
-		})?;
-		index += 1;
-		while next.token_type.is_whitespace() {
-			next = self.get(index).ok_or_else(|| Diagnostic {
+		Ok(self
+			.get(1)
+			.ok_or_else(|| Diagnostic {
 				file: context.file.clone(),
 				span: Span::none(),
 				info: DiagnosticInfo::UnexpectedGenericEOF,
-			})?;
-			index += 1;
-		}
-
-		let mut next_next = self.get(index).ok_or_else(|| Diagnostic {
-			file: context.file.clone(),
-			span: Span::none(),
-			info: DiagnosticInfo::UnexpectedGenericEOF,
-		})?;
-		while next_next.token_type.is_whitespace() {
-			index += 1;
-			next_next = self.get(index).ok_or_else(|| Diagnostic {
-				file: context.file.clone(),
-				span: Span::none(),
-				info: DiagnosticInfo::UnexpectedGenericEOF,
-			})?;
-		}
-
-		Ok(next_next.token_type)
-	}
-
-	fn is_all_whitespace(&self) -> bool {
-		self.iter().all(|token| token.token_type.is_whitespace())
+			})?
+			.token_type)
 	}
 
 	fn pop(&mut self, token_type: TokenType, context: &Context) -> Result<Token, Diagnostic> {
-		let mut maybe_whitespace = TokenType::Whitespace;
-		while maybe_whitespace.is_whitespace() {
-			if let Some(token) = self.pop_front() {
-				maybe_whitespace = token.token_type;
-
-				if token.token_type == token_type {
-					return Ok(token);
-				}
-
-				if !maybe_whitespace.is_whitespace() {
-					return Err(Diagnostic {
-						file: context.file.clone(),
-						span: token.span,
-						info: DiagnosticInfo::UnexpectedToken {
-							expected: token_type,
-							actual: token.token_type,
-						},
-					});
-				}
+		if let Some(front) = self.front() {
+			if front.token_type == token_type {
+				return Ok(self.pop_front().unwrap());
 			}
+
+			return Err(Diagnostic {
+				span: front.span,
+				info: DiagnosticInfo::UnexpectedToken {
+					expected: token_type,
+					actual: front.token_type,
+				},
+				file: context.file.clone(),
+			});
 		}
 
 		Err(Diagnostic {

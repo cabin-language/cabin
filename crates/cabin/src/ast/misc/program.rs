@@ -1,82 +1,51 @@
 use crate::{
 	Context,
-	ast::statements::Statement,
-	comptime::CompileTime,
-	interpreter::Runtime,
-	parser::{Parse, TokenQueue, TokenQueueFunctionality as _},
-	scope::{ScopeId, ScopeType},
-	transpiler::{TranspileError, TranspileToC},
+	ast::statements::{EvaluatedStatement, Statement},
+	comptime::Evaluate,
+	diagnostics::Diagnostic,
+	parser::{Parse, TokenQueue, TryParse},
+	scope::{ScopeRef, ScopeType},
 };
 
 #[derive(Debug)]
 pub struct Program {
 	statements: Vec<Statement>,
-	inner_scope_id: ScopeId,
+	inner_scope: ScopeRef,
 }
 
-impl Parse for Program {
+impl TryParse for Program {
 	type Output = Self;
 
-	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let program_scope = context.scope.enter_new_scope(ScopeType::File);
 		let inner_scope_id = context.scope.unique_id();
 		let mut statements = Vec::new();
 
-		while !tokens.is_all_whitespace() {
-			statements.push(Statement::parse(tokens, context));
+		while !tokens.is_empty() {
+			statements.push(Statement::try_parse(tokens, context)?);
 		}
 
 		context.scope.exit_scope(program_scope).unwrap();
 
-		Program { statements, inner_scope_id }
+		Ok(Program {
+			statements,
+			inner_scope: inner_scope_id,
+		})
 	}
 }
 
-impl CompileTime for Program {
-	type Output = Program;
+impl Evaluate for Program {
+	type Output = EvaluatedProgram;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		Self {
-			statements: self.statements.into_iter().map(|statement| statement.evaluate_at_compile_time(context)).collect(),
-			inner_scope_id: self.inner_scope_id,
+	fn evaluate(self, context: &mut Context) -> Self::Output {
+		EvaluatedProgram {
+			statements: self.statements.into_iter().map(|statement| statement.evaluate(context)).collect(),
+			inner_scope: self.inner_scope,
 		}
 	}
 }
-
-impl Runtime for Program {
-	type Output = Program;
-
-	fn evaluate_at_runtime(self, context: &mut Context) -> Self::Output {
-		Self {
-			statements: self.statements.into_iter().map(|statement| statement.evaluate_at_runtime(context)).collect(),
-			inner_scope_id: self.inner_scope_id,
-		}
-	}
-}
-
-impl TranspileToC for Program {
-	fn to_c(&self, context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
-		let type_prelude = self
-			.statements
-			.iter()
-			.map(|statement| statement.c_type_prelude(context))
-			.collect::<Result<Vec<_>, _>>()?
-			.join("\n");
-
-		let prelude = self
-			.statements
-			.iter()
-			.map(|statement| statement.c_prelude(context))
-			.collect::<Result<Vec<_>, _>>()?
-			.join("\n");
-
-		let body = self
-			.statements
-			.iter()
-			.map(|statement| statement.to_c(context, None))
-			.collect::<Result<Vec<_>, _>>()?
-			.join("\n");
-
-		Ok(format!("{type_prelude}\n\n{prelude}\n\n{body}",))
-	}
+#[derive(Debug)]
+pub struct EvaluatedProgram {
+	statements: Vec<EvaluatedStatement>,
+	inner_scope: ScopeRef,
 }

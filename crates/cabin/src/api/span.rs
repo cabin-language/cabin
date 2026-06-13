@@ -1,5 +1,3 @@
-use crate::Context;
-
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Hash)]
 pub struct Span {
 	/// The zero-indexed start byte index of the span.
@@ -108,5 +106,5 @@ pub trait Spanned {
 	/// # Returns
 	///
 	/// The second of the program's source code that this expression spans.
-	fn span(&self, context: &Context) -> Span;
+	fn span(&self) -> Span;
 }

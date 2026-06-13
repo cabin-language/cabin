@@ -19,18 +19,14 @@ macro_rules! function {
 
 /// Returns the second value provided wrapped in `Some()` if the first value is true; Otherwise, returns `None`.
 ///
-/// This is equivalent to `boolean::then`, but doesn't create a closure, meaning return statements and the question mark operator
+/// This is equivalent to `bool::then`, but doesn't create a closure, meaning return statements and the question mark operator
 /// can be used in reference to the surrounding function.
 #[macro_export]
 macro_rules! if_then_some {
 	(
 		$value: expr, $body: expr
 	) => {
-		if $value {
-			Some($body)
-		} else {
-			None
-		}
+		if $value { Some($body) } else { None }
 	};
 }
 
@@ -40,11 +36,7 @@ macro_rules! if_then_else_default {
 	(
 		$value: expr, $body: expr
 	) => {
-		if $value {
-			$body
-		} else {
-			Default::default()
-		}
+		if $value { $body } else { Default::default() }
 	};
 }
 
@@ -66,6 +58,43 @@ macro_rules! parse_list {
 			if $tokens.next_is($crate::lexer::TokenType::Comma) {
 				let _ = $tokens.pop($crate::lexer::TokenType::Comma, $context)?;
 			} else {
+				break;
+			}
+		}
+
+		$tokens.pop($list_type.closing(), $context)?
+	}};
+
+	(
+		$tokens: expr, $context: expr, $list_type: expr, $opener: ident, $body: block
+	) => {{
+		use $crate::parser::TokenQueueFunctionality as _;
+
+		$opener = $tokens.pop($list_type.opening(), $context)?;
+		while !$tokens.next_is($list_type.closing()) {
+			$body
+			if $tokens.next_is($crate::lexer::TokenType::Comma) {
+				let _ = $tokens.pop($crate::lexer::TokenType::Comma, $context)?;
+			} else {
+				break;
+			}
+		}
+
+		$tokens.pop($list_type.closing(), $context)?
+	}};
+
+	(
+		$tokens: expr, $context: expr, $list_type: expr, $opener: ident, $comma: ident, $body: block
+	) => {{
+		use $crate::parser::TokenQueueFunctionality as _;
+
+		$opener = $tokens.pop($list_type.opening(), $context)?;
+		while !$tokens.next_is($list_type.closing()) {
+			$body
+			if $tokens.next_is($crate::lexer::TokenType::Comma) {
+				$comma = Some($tokens.pop($crate::lexer::TokenType::Comma, $context)?);
+			} else {
+				$comma = None;
 				break;
 			}
 		}

@@ -1,9 +1,8 @@
 use std::{fmt::Display, path::PathBuf};
 
 use convert_case::{Case, Casing as _};
-use indexmap::IndexSet;
 
-use crate::{Context, STDLIB, Span, Spanned, ast::statements::Statement, lexer::TokenType, typechecker::Type};
+use crate::{STDLIB, Span, Spanned, lexer::TokenType};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Copy)]
 pub enum Severity {
@@ -68,13 +67,13 @@ pub enum DiagnosticInfo {
 	GroupValueNotKnownAtCompileTime,
 
 	#[error("Invalid run expression: run has no effect on this type of expression")]
-	RunNonFunctionCall,
+	RunLiteral,
 
 	#[error("Iterate over non-iterable: This type of value can't be iterated over")]
 	IterateOverNonList,
 
-	#[error("Call non-callable: This type of value can't be called")]
-	CallNonFunction,
+	#[error("Call non-callable: Attempted to call a {0}; Only actions can be called")]
+	CallNonFunction(String),
 
 	#[error("Unknown variable: \"{0}\"")]
 	UnknownVariable(String),
@@ -90,9 +89,6 @@ pub enum DiagnosticInfo {
 
 	#[error("Unknown property: No property \"{0}\" exists on this value")]
 	NoSuchField(String),
-
-	#[error("Type mismatch: This value cannot be assigned to this type")]
-	TypeMismatch(Type, Type),
 
 	#[error("Missing property: Missing property \"{0}\"")]
 	MissingField(String),
@@ -110,7 +106,7 @@ pub enum DiagnosticInfo {
 	UnexpectedTokenExpected { expected: &'static str, actual: TokenType },
 
 	#[error("Invalid top-level statement: Only declarations can appear at the top level of a module.")]
-	InvalidTopLevelStatement { statement: Statement },
+	InvalidTopLevelStatement,
 
 	#[error("Invalid format string: The string \"{0}\" is not properly formatted.")]
 	InvalidFormatString(String),
@@ -118,11 +114,17 @@ pub enum DiagnosticInfo {
 	#[error("Unexpected token: Expected {expected} but found {actual}")]
 	UnexpectedToken { expected: TokenType, actual: TokenType },
 
+	#[error("Incorrect number of arguments: Expected {expected} arguments to action but received {actual}")]
+	IncorrectArgumentCount { expected: usize, actual: usize },
+
 	#[error("Unexpected end of file: Expected {expected} but found end of file")]
 	UnexpectedEOF { expected: TokenType },
 
 	#[error("Unexpected end of file: Expected more tokens")]
 	UnexpectedGenericEOF,
+
+	#[error("Bad top level declaration: This declaration cannot be fully resolved at compile-time")]
+	BadTopLevelDeclaration,
 
 	#[error("Duplicate variable: The variable \"{name}\" was declared twice")]
 	DuplicateVariableDeclaration { name: String },
@@ -142,22 +144,23 @@ impl DiagnosticInfo {
 			| Self::ExtendToBeNonGroup
 			| Self::ExtraField(_)
 			| Self::MissingField(_)
-			| Self::TypeMismatch(..)
 			| Self::NoSuchField(_)
 			| Self::UnreachableCode
 			| Self::MissingTailStatement
 			| Self::ExpressionUsedAsType
 			| Self::UnknownVariable(_)
-			| Self::CallNonFunction
+			| Self::BadTopLevelDeclaration
+			| Self::CallNonFunction(_)
 			| Self::IterateOverNonList
 			| Self::GroupValueNotKnownAtCompileTime
-			| Self::RunNonFunctionCall
+			| Self::RunLiteral
 			| Self::UnexpectedTokenExpected { .. }
 			| Self::DuplicateGroupField(_)
 			| Self::InvalidTopLevelStatement { .. }
 			| Self::InvalidFormatString(_)
 			| Self::DuplicateVariableDeclaration { .. }
 			| Self::UnexpectedEOF { .. }
+			| Self::IncorrectArgumentCount { .. }
 			| Self::UnexpectedToken { .. }
 			| Self::UnexpectedGenericEOF => Severity::AlwaysError,
 
@@ -194,13 +197,13 @@ impl Diagnostic {
 }
 
 impl Spanned for Diagnostic {
-	fn span(&self, _context: &Context) -> Span {
+	fn span(&self) -> Span {
 		self.span
 	}
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
-pub struct Diagnostics(IndexSet<Diagnostic>);
+pub struct Diagnostics(Vec<Diagnostic>);
 
 impl Display for Diagnostics {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -214,8 +217,8 @@ impl Display for Diagnostics {
 
 impl Diagnostics {
 	/// Creates an empty diagnostic set.
-	pub fn empty() -> Self {
-		Self(IndexSet::new())
+	pub const fn empty() -> Self {
+		Self(Vec::new())
 	}
 
 	/// Returns the diagnostics that are warnings, as well as their spans.
@@ -272,7 +275,7 @@ impl Diagnostics {
 	///
 	/// - `diagnostic` - The diagnostic to add
 	pub fn push(&mut self, diagnostic: Diagnostic) {
-		let _ = self.0.insert(diagnostic);
+		self.0.push(diagnostic);
 	}
 
 	/// Returns whether this diagnostic set has no diagnostics in it.
@@ -280,7 +283,7 @@ impl Diagnostics {
 	/// # Returns
 	///
 	/// Whether there are zero diagnostics in this diagnostic set.
-	pub fn is_empty(&self) -> bool {
+	pub const fn is_empty(&self) -> bool {
 		self.0.is_empty()
 	}
 
@@ -290,7 +293,7 @@ impl Diagnostics {
 }
 
 impl IntoIterator for Diagnostics {
-	type IntoIter = <IndexSet<Diagnostic> as IntoIterator>::IntoIter;
+	type IntoIter = <Vec<Diagnostic> as IntoIterator>::IntoIter;
 	type Item = Diagnostic;
 
 	fn into_iter(self) -> Self::IntoIter {
@@ -309,7 +312,7 @@ impl<'diagnostics> Iterator for DiagnosticsIterator<'diagnostics> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.index += 1;
-		self.diagnostics.0.get_index(self.index - 1)
+		self.diagnostics.0.get(self.index - 1)
 	}
 }
 

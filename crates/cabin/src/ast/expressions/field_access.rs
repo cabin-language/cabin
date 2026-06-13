@@ -1,95 +1,93 @@
-use super::ExpressionOrPointer;
+use derive_getters::Getters;
+
 use crate::{
+	Context,
 	Span,
 	Spanned,
-	api::{context::Context, scope::ScopeId},
-	ast::expressions::{Expression, identifier::Identifier, operators::PrimaryExpression},
-	comptime::{CompileTime, memory::ExpressionPointer},
-	diagnostics::Diagnostic,
-	lexer::TokenType,
+	ast::expressions::{Expression, binary::PrimaryExpression, evaluated::EvaluatedExpression, identifier::Identifier},
+	comptime::{Evaluate, memory::Pointer},
+	diagnostics::{Diagnostic, DiagnosticInfo},
+	lexer::{Token, TokenType},
+	log,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
-	transpiler::{TranspileError, TranspileToC},
 };
 
 #[derive(Debug, Clone)]
 pub struct FieldAccess {
-	left: ExpressionPointer,
-	right: Identifier,
-	scope_id: ScopeId,
-	span: Span,
+	pub(crate) left: Expression,
+	pub(crate) right: Identifier,
+	pub(crate) tokens: FieldAccessTokens,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct FieldAccessTokens {
+	pub(crate) operator: Token,
 }
 
 impl TryParse for FieldAccess {
-	type Output = ExpressionPointer;
+	type Output = Expression;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let mut expression = PrimaryExpression::try_parse(tokens, context)?;
-		let start = expression.span(context);
+
 		while tokens.next_is(TokenType::Dot) {
-			let _ = tokens.pop(TokenType::Dot, context)?;
+			let operator = tokens.pop(TokenType::Dot, context)?;
 			let right = Identifier::try_parse(tokens, context)?;
-			let end = right.span(context);
-			expression = Expression::FieldAccess(Self {
+			expression = Expression::FieldAccess(Box::new(FieldAccess {
 				left: expression,
 				right,
-				scope_id: context.scope.unique_id(),
-				span: start.to(end),
-			})
-			.store_in_memory(context);
+				tokens: FieldAccessTokens { operator },
+			}));
 		}
 
 		Ok(expression)
 	}
 }
 
-impl CompileTime for FieldAccess {
-	type Output = ExpressionOrPointer;
+impl Evaluate for FieldAccess {
+	type Output = Pointer;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		let left_evaluated = self.left.evaluate_at_compile_time(context);
+	fn evaluate(self, context: &mut Context) -> Self::Output {
+		log!(context, "Evaluating field access");
+		let left = self.left.evaluate(context);
+		if let Some(object) = left.value(context).as_object() {
+			let field_value = object.get_field_value(self.right.source_identifier());
 
-		// Resolvable at compile-time
-		if let Ok(pointer) = left_evaluated.try_as_literal(context) {
-			let literal = pointer.evaluated_literal(context).to_owned();
-			let field_value = literal.double_colon(&self.right, context);
-			ExpressionOrPointer::Pointer(field_value)
+			if let Some(pointer) = field_value {
+				return pointer;
+			}
+
+			context.add_diagnostic(Diagnostic {
+				span: self.right.span(),
+				info: DiagnosticInfo::NoSuchField(self.right.source_identifier().to_owned()),
+				file: context.file.clone(),
+			});
 		}
-		// Not resolvable at compile-time - return the original expression
-		else {
-			ExpressionOrPointer::Expression(Expression::FieldAccess(FieldAccess {
-				left: left_evaluated,
-				right: self.right,
-				scope_id: self.scope_id,
-				span: self.span,
-			}))
-		}
-	}
-}
 
-impl TranspileToC for FieldAccess {
-	fn to_c(&self, context: &mut Context, output: Option<String>) -> Result<String, TranspileError> {
-		Ok(format!(
-			"void* left;{}{}->{};",
-			self.left.to_c(context, Some("left".to_owned()))?,
-			if let Some(name) = output { format!("{name} = ") } else { String::new() },
-			self.right.to_c(context, None)?
-		))
+		EvaluatedExpression::FieldAccess(EvaluatedFieldAccess {
+			left,
+			right: self.right,
+			tokens: self.tokens,
+		})
+		.store(context)
 	}
 }
 
 impl Spanned for FieldAccess {
-	fn span(&self, _context: &Context) -> Span {
-		self.span
+	fn span(&self) -> Span {
+		self.left.span().to(self.right.span())
 	}
 }
 
-impl FieldAccess {
-	pub const fn new(left: ExpressionPointer, right: Identifier, scope_id: ScopeId, span: Span) -> FieldAccess {
-		FieldAccess { left, right, scope_id, span }
-	}
+#[derive(Debug, Clone, Getters)]
+pub struct EvaluatedFieldAccess {
+	pub(crate) left: Pointer,
+	pub(crate) right: Identifier,
+	pub(crate) tokens: FieldAccessTokens,
 }
 
-pub trait GetProperty {
-	fn double_colon(&self, name: &Identifier, context: &mut Context) -> ExpressionPointer;
-	fn dot(&self, name: &Identifier, context: &mut Context) -> ExpressionPointer;
+impl Spanned for EvaluatedFieldAccess {
+	fn span(&self) -> Span {
+		self.left.span().to(self.right.span())
+	}
 }

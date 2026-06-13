@@ -1,74 +1,85 @@
+use derive_getters::Getters;
+
 use crate::{
+	Context,
 	Span,
-	api::context::Context,
-	ast::expressions::Spanned,
-	comptime::{CompileTime, memory::ExpressionPointer},
-	interpreter::Runtime,
-	transpiler::{TranspileError, TranspileToC},
+	ast::expressions::{Expression, Spanned, evaluated::EvaluatedExpression},
+	comptime::Evaluate,
+	diagnostics::Diagnostic,
+	lexer::{Token, TokenType},
+	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	transpiler::ToCabin,
 };
 
-/// A `Run` expression in the language. Run-expressions forcibly run an expression at runtime instead of compile-time. Since
-/// Cabin runs all code at compile-time by default, this is the only way to forcibly run an expression at runtime.
-///
-/// Note that an expressions sub-expressions are still run at compile-time. For example, consider the expression:
-///
-/// ```
-/// run ((1 + 2) + (3 + 4))
-/// ```
-///
-/// This evaluates at compile-time to:
-///
-/// ```
-/// run (3 + 7)
-/// ```
-///
-/// To fully run the entire expression at runtime, one would have to nest run expressions:
-///
-/// ```
-/// run (run (1 + 2) + run (3 + 4))
-/// ```
-///
-/// The syntax for this expression is:
-///
-/// `run <expression>`
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 pub struct RunExpression {
-	expression: ExpressionPointer,
-	span: Span,
+	expression: Expression,
+	tokens: RunExpressionTokens,
 }
 
-impl CompileTime for RunExpression {
+#[derive(Debug, Clone, Getters)]
+pub struct RunExpressionTokens {
+	keyword_run: Token,
+	left_parenthesis: Token,
+	right_parenthesis: Token,
+}
+
+impl TryParse for RunExpression {
 	type Output = RunExpression;
 
-	fn evaluate_at_compile_time(self, _context: &mut Context) -> Self::Output {
-		// TODO: evaluate subexpressions
-		self
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+		let keyword_run = tokens.pop(TokenType::KeywordRun, context)?;
+		let left_parenthesis = tokens.pop(TokenType::LeftParenthesis, context)?;
+		let expression = Expression::try_parse(tokens, context)?;
+		let right_parenthesis = tokens.pop(TokenType::RightParenthesis, context)?;
+
+		Ok(RunExpression {
+			expression,
+			tokens: RunExpressionTokens {
+				keyword_run,
+				left_parenthesis,
+				right_parenthesis,
+			},
+		})
 	}
 }
 
-impl Runtime for RunExpression {
-	type Output = ExpressionPointer;
+impl Evaluate for RunExpression {
+	type Output = EvaluatedRunExpression;
 
-	fn evaluate_at_runtime(self, context: &mut Context) -> Self::Output {
-		self.expression.evaluate_at_runtime(context)
+	fn evaluate(self, context: &mut Context) -> Self::Output {
+		EvaluatedRunExpression {
+			expression: self.expression.evaluate_subexpressions(context),
+			tokens: self.tokens,
+		}
 	}
 }
 
-impl TranspileToC for RunExpression {
-	fn to_c(&self, context: &mut Context, output: Option<String>) -> Result<String, TranspileError> {
-		self.expression.to_c(context, output)
+impl ToCabin for RunExpression {
+	fn to_cabin(&self) -> String {
+		format!("run({})", self.expression.to_cabin())
 	}
 }
 
 impl Spanned for RunExpression {
-	fn span(&self, _context: &Context) -> Span {
-		self.span.to_owned()
+	fn span(&self) -> Span {
+		self.tokens.keyword_run.span.to(self.tokens.right_parenthesis.span)
 	}
 }
 
-/// Indicates that this type of expression can be prefixed by the `run` keyword. In this case,
-/// the expression needs to implement how the `run` keyword should act on it via
-/// `evaluate_subexpressions_at_compile_time()`.
-pub trait RuntimeableExpression {
-	fn evaluate_subexpressions_at_compile_time(self, context: &mut Context) -> Self;
+#[derive(Debug, Clone, Getters)]
+pub struct EvaluatedRunExpression {
+	expression: EvaluatedExpression,
+	tokens: RunExpressionTokens,
+}
+
+pub trait Runtimeable {
+	type Output;
+	fn evaluate_subexpressions(self, context: &mut Context) -> Self::Output;
+}
+
+impl Spanned for EvaluatedRunExpression {
+	fn span(&self) -> Span {
+		self.tokens.keyword_run.span.to(self.tokens.right_parenthesis.span)
+	}
 }

@@ -87,7 +87,6 @@ dependencies = [
  "colored",
  "convert_case",
  "derive-getters",
- "indexmap",
  "regex-macro",
  "serde",
  "serde-inline-default",

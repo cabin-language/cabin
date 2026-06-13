@@ -1,112 +1,146 @@
-use std::collections::HashMap;
+use derive_getters::Getters;
 
-use super::{literal::EvaluatedLiteral, parameter::EvaluatedParameter};
 use crate::{
+	Context,
 	Span,
 	Spanned,
-	api::{context::Context, scope::ScopeType},
+	api::scope::ScopeType,
 	ast::{
-		expressions::{Expression, identifier::Identifier, parameter::Parameter},
-		misc::tag::TagList,
+		expressions::{Expression, identifier::Identifier},
+		misc::{
+			compile_time_parameter::{CompileTimeParameters, EvaluatedCompileTimeParameters},
+			tag::{EvaluatedTagList, TagList},
+		},
 	},
-	comptime::{
-		CompileTime,
-		memory::{ExpressionPointer, LiteralPointer},
-	},
+	comptime::{Evaluate, memory::Pointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	if_then_else_default,
 	if_then_some,
-	lexer::TokenType,
-	parse_list,
-	parser::{ListType, Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
-	typechecker::Type,
+	lexer::{Token, TokenType},
+	log,
+	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
+	util::ExitScope as _,
 };
 
-///
-/// Normal extension:
-///
-/// ```cabin
-/// let Square = extend Number {
-///     square = action(this: Number) {
-///         it is this * this;
-///     };
-/// };
-/// ```
-///
-/// Extension to another type:
-///
-/// ```cabin
-/// let AddPoints = extend Point tobe AddableTo<Point, Point> {
-///     plus = action(this: Point, other: Point): Point {
-///         it is new Point {
-///             x = this.x + other.x,
-///             y = this.y + other.y
-///         };
-///     };
-/// };
-/// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 pub struct Extend {
-	type_to_extend: ExpressionPointer,
-	type_to_be: Option<ExpressionPointer>,
-	fields: HashMap<Identifier, ExpressionPointer>,
-	span: Span,
-	compile_time_parameters: Vec<Parameter>,
+	compile_time_parameters: Option<CompileTimeParameters>,
+	type_to_extend: Expression,
+	as_clause: Option<ExtendAsClause>,
+	fields: Vec<ExtendField>,
+	tokens: ExtendTokens,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct ExtendField {
+	tags: Option<TagList>,
+	name: Identifier,
+	value: Expression,
+	tokens: ExtendFieldTokens,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct ExtendFieldTokens {
+	equal: Token,
+	comma: Option<Token>,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct ExtendAsClause {
+	as_type: Expression,
+	tokens: ExtendAsClauseTokens,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct ExtendAsClauseTokens {
+	keyword_as: Token,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct ExtendTokens {
+	keyword_extend: Token,
+	left_brace: Token,
+	right_brace: Token,
 }
 
 impl TryParse for Extend {
 	type Output = Extend;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
-		let start = tokens.pop(TokenType::KeywordExtend, context)?.span;
+		let keyword_extend = tokens.pop(TokenType::KeywordExtend, context)?;
 
 		let extend_scope = context.scope.enter_new_scope(ScopeType::Extend);
 
-		let compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
-			let mut parameters = Vec::new();
-			let _ = parse_list!(tokens, context, ListType::AngleBracketed, {
-				let parameter = Parameter::try_parse(tokens, context)?;
-				let name = parameter.name().to_owned();
-				let error = Expression::error(Span::none(), context);
-				if let Err(error) = context.scope.declare_new_variable(name.clone(), error) {
+		let compile_time_parameters = CompileTimeParameters::try_parse(tokens, context).ok();
+		if let Some(compile_time_parameters) = &compile_time_parameters {
+			for parameter in compile_time_parameters.parameters() {
+				if let Err(error) = context.scope.declare_new_variable_from_id(parameter.name(), context.memory.calloc(), extend_scope) {
 					context.add_diagnostic(Diagnostic {
-						file: context.file.clone(),
-						span: name.span(context),
+						span: parameter.name().span(),
 						info: error,
+						file: context.file.clone(),
 					});
 				};
-				parameters.push(parameter);
+			}
+		}
+
+		let type_to_extend = Expression::try_parse(tokens, context).or_exit_scope(context)?;
+
+		let as_clause = if_then_some!(tokens.next_is(TokenType::KeywordAs), {
+			(
+				tokens.pop(TokenType::KeywordAs, context).or_exit_scope(context)?,
+				Expression::try_parse(tokens, context).or_exit_scope(context)?,
+			)
+		});
+
+		let mut fields = Vec::new();
+		let left_brace = tokens.pop(TokenType::LeftBrace, context).or_exit_scope(context)?;
+		while !tokens.next_is(TokenType::RightBrace) {
+			// tags
+			let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context).or_exit_scope(context)?);
+
+			// name
+			let name = Identifier::try_parse(tokens, context).or_exit_scope(context)?;
+
+			// value
+			let equal = tokens.pop(TokenType::Equal, context).or_exit_scope(context)?;
+			let value = Expression::try_parse(tokens, context).or_exit_scope(context)?;
+
+			let comma = tokens.pop(TokenType::Comma, context).ok();
+			let has_comma = comma.is_some();
+
+			// add field
+			fields.push(ExtendField {
+				tags,
+				name,
+				value,
+				tokens: ExtendFieldTokens { equal, comma },
 			});
-			parameters
-		});
 
-		let type_to_extend = Expression::parse(tokens, context);
+			if !has_comma {
+				break;
+			}
+		}
 
-		let type_to_be = if_then_some!(tokens.next_is(TokenType::KeywordAs), {
-			let _ = tokens.pop(TokenType::KeywordAs, context)?;
-			Expression::parse(tokens, context)
-		});
+		let right_brace = tokens.pop(TokenType::RightBrace, context).or_exit_scope(context)?;
 
-		let mut fields = HashMap::new();
-		let end = parse_list!(tokens, context, ListType::Braced, {
-			// Parse tags
-			let _tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
+		let extend = Extend {
+			type_to_extend,
+			as_clause: as_clause.map(|(keyword_as, as_type)| ExtendAsClause {
+				as_type,
+				tokens: ExtendAsClauseTokens { keyword_as },
+			}),
+			fields,
+			compile_time_parameters,
+			tokens: ExtendTokens {
+				keyword_extend,
+				left_brace,
+				right_brace,
+			},
+		};
 
-			// Name
-			let name = Identifier::try_parse(tokens, context)?;
-
-			// Value
-			let _ = tokens.pop(TokenType::Equal, context)?;
-			let value = Expression::parse(tokens, context);
-
-			// Add field
-			_ = fields.insert(name, value);
-		})
-		.span;
-
-		if fields.is_empty() && type_to_be.is_none() {
+		if extend.fields.is_empty() && extend.as_clause.is_none() {
 			context.add_diagnostic(Diagnostic {
-				span: start.to(end),
+				span: extend.span(),
 				file: context.file.clone(),
 				info: DiagnosticInfo::EmptyExtension,
 			});
@@ -114,93 +148,75 @@ impl TryParse for Extend {
 
 		context.scope.exit_scope(extend_scope).unwrap();
 
-		Ok(Extend {
-			type_to_extend,
-			type_to_be,
-			fields,
-			span: start.to(end),
-			compile_time_parameters,
-		})
+		Ok(extend)
 	}
 }
 
-impl CompileTime for Extend {
+impl Evaluate for Extend {
 	type Output = EvaluatedExtend;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		let type_to_extend = Type::Literal(self.type_to_extend.evaluate_to_literal(context));
-		let type_to_be = self.type_to_be.map(|to_be| Type::Literal(to_be.evaluate_to_literal(context)));
+	fn evaluate(self, context: &mut Context) -> Self::Output {
+		log!(context, "Evaluating expression");
+		let type_to_extend = self.type_to_extend.evaluate(context);
+		let as_clause = self.as_clause.map(|as_clause| EvaluatedExtendAsClause {
+			as_type: as_clause.as_type.evaluate(context),
+			tokens: as_clause.tokens,
+		});
 
-		let mut fields = HashMap::new();
-		for (name, value) in self.fields {
-			let value = value.evaluate_to_literal(context);
-			_ = fields.insert(name, value);
+		let mut fields = Vec::new();
+		for field in self.fields {
+			fields.push(EvaluatedExtendField {
+				tags: field.tags.evaluate(context),
+				name: field.name,
+				value: field.value.evaluate(context),
+				tokens: field.tokens,
+			});
 		}
 
 		// Evaluate compile-time parameters
-		let compile_time_parameters = self
-			.compile_time_parameters
-			.into_iter()
-			.map(|parameter| parameter.evaluate_at_compile_time(context))
-			.collect::<Vec<_>>();
-
-		// Validate fields
-		if let Some(Type::Literal(type_literal)) = &type_to_be {
-			if let EvaluatedLiteral::Group(group) = type_literal.evaluated_literal(context).to_owned() {
-				// Missing fields
-				for (field_name, _field_value) in &fields {
-					if !fields.contains_key(field_name) {
-						context.add_diagnostic(Diagnostic {
-							span: self.span.to(self.type_to_be.as_ref().unwrap().span(context)),
-							info: DiagnosticInfo::MissingField(field_name.source_identifier().to_owned()),
-							file: context.file.clone(),
-						});
-					}
-				}
-
-				// Extra fields
-				for (field_name, field_value) in &fields {
-					if !group.fields.contains_key(field_name) {
-						let literal = field_value.evaluated_literal(context).to_owned();
-						context.add_diagnostic(Diagnostic {
-							span: field_name.span(context).to(literal.span(context)),
-							info: DiagnosticInfo::ExtraField(field_name.source_identifier().to_owned()),
-							file: context.file.clone(),
-						});
-					}
-				}
-			}
-			// Not group
-			else {
-				context.add_diagnostic(Diagnostic {
-					span: self.type_to_be.as_ref().unwrap().span(context),
-					info: DiagnosticInfo::ExtendToBeNonGroup,
-					file: context.file.clone(),
-				});
-			}
-		}
+		let compile_time_parameters = self.compile_time_parameters.evaluate(context);
 
 		EvaluatedExtend {
 			type_to_extend,
-			type_to_be,
-			span: self.span,
+			as_clause,
 			fields,
 			compile_time_parameters,
+			tokens: self.tokens,
 		}
 	}
 }
 
 impl Spanned for Extend {
-	fn span(&self, _context: &Context) -> Span {
-		self.span
+	fn span(&self) -> Span {
+		self.tokens.keyword_extend.span.to(self.tokens.right_brace.span)
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 pub struct EvaluatedExtend {
-	type_to_extend: Type,
-	type_to_be: Option<Type>,
-	fields: HashMap<Identifier, LiteralPointer>,
-	span: Span,
-	compile_time_parameters: Vec<EvaluatedParameter>,
+	compile_time_parameters: Option<EvaluatedCompileTimeParameters>,
+	type_to_extend: Pointer,
+	as_clause: Option<EvaluatedExtendAsClause>,
+	fields: Vec<EvaluatedExtendField>,
+	tokens: ExtendTokens,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct EvaluatedExtendField {
+	tags: Option<EvaluatedTagList>,
+	name: Identifier,
+	value: Pointer,
+	tokens: ExtendFieldTokens,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct EvaluatedExtendAsClause {
+	as_type: Pointer,
+	tokens: ExtendAsClauseTokens,
+}
+
+impl Spanned for EvaluatedExtend {
+	fn span(&self) -> Span {
+		self.tokens.keyword_extend.span.to(self.tokens.right_brace.span)
+	}
 }

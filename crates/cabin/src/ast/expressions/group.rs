@@ -1,83 +1,83 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use convert_case::{Case, Casing as _};
+use derive_getters::Getters;
 
 use crate::{
 	Span,
 	Spanned,
 	api::{context::Context, scope::ScopeType},
 	ast::{
-		expressions::{Expression, group, identifier::Identifier, parameter::Parameter},
-		misc::tag::TagList,
+		expressions::{Expression, identifier::Identifier, object::Object},
+		misc::{
+			compile_time_parameter::{CompileTimeParameters, EvaluatedCompileTimeParameters},
+			tag::{EvaluatedTagList, TagList},
+		},
 	},
-	comptime::{
-		CompileTime,
-		memory::{ExpressionPointer, LiteralPointer},
-	},
+	comptime::{Evaluate, memory::Pointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	if_then_else_default,
 	if_then_some,
 	lexer::{Token, TokenType},
-	parse_list,
-	parser::{ListType, Parse as _, TokenQueueFunctionality as _, TryParse},
-	typechecker::{Type, Typed as _},
+	log,
+	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 };
+
+#[derive(Debug, Clone, Getters)]
+pub struct Group {
+	compile_time_parameters: Option<CompileTimeParameters>,
+	fields: Vec<GroupField>,
+	tokens: GroupTokens,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct GroupTokens {
+	keyword_group: Token,
+	left_brace: Token,
+	right_brace: Token,
+}
 
 #[derive(Debug, Clone)]
 pub struct GroupField {
+	tags: Option<TagList>,
 	name: Identifier,
-	default_value: Option<ExpressionPointer>,
-	field_type: Option<ExpressionPointer>,
-	documentation: Option<String>,
-	visible: bool,
+	field_type: Option<Expression>,
+	default_value: Option<Expression>,
+	tokens: GroupFieldTokens,
 }
 
-#[derive(Debug, Clone)]
-pub struct GroupFieldLiteral {
-	name: Identifier,
-	default_value: Option<LiteralPointer>,
-	pub field_type: Type,
-}
-
-#[derive(Debug, Clone)]
-pub struct Group {
-	fields: HashMap<Identifier, GroupField>,
-	span: Span,
-	pub name: Option<Identifier>,
+#[derive(Debug, Clone, Getters)]
+pub struct GroupFieldTokens {
+	colon: Option<Token>,
+	equals: Option<Token>,
+	comma: Option<Token>,
+	visible: Option<Token>,
 }
 
 impl TryParse for Group {
 	type Output = Group;
 
-	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
-		let start = tokens.pop(TokenType::KeywordGroup, context)?.span;
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+		let keyword_group = tokens.pop(TokenType::KeywordGroup, context)?;
 		let group_scope = context.scope.enter_new_scope(ScopeType::Group);
 
-		let _compile_time_parameters = if_then_else_default!(tokens.next_is(TokenType::LeftAngleBracket), {
-			let mut compile_time_parameters = Vec::new();
-			let _ = parse_list!(tokens, context, ListType::AngleBracketed, {
-				let parameter = Parameter::try_parse(tokens, context).inspect_err(|_err| {
-					context.scope.exit_scope(group_scope).unwrap();
-				})?;
-				let name = parameter.name().to_owned();
-				let error = Expression::error(Span::none(), context);
-				if let Err(error) = context.scope.declare_new_variable(name.clone(), error) {
+		let compile_time_parameters = CompileTimeParameters::try_parse(tokens, context).ok();
+		if let Some(compile_time_parameters) = &compile_time_parameters {
+			for parameter in compile_time_parameters.parameters() {
+				if let Err(error) = context.scope.declare_new_variable_from_id(parameter.name(), context.memory.calloc(), group_scope) {
 					context.add_diagnostic(Diagnostic {
-						file: context.file.clone(),
-						span: name.span(context),
+						span: parameter.name().span(),
 						info: error,
+						file: context.file.clone(),
 					});
-				}
-				compile_time_parameters.push(parameter);
-			});
-			compile_time_parameters
-		});
+				};
+			}
+		}
+
+		let left_brace = tokens.pop(TokenType::LeftBrace, context)?;
 
 		// Fields
-		let mut fields = HashMap::new();
-		let end = parse_list!(tokens, context, ListType::Braced, {
-			let mut documentation = if_then_some!(tokens.next_is(TokenType::Comment), tokens.pop(TokenType::Comment, context).unwrap().value);
-
+		let mut fields = Vec::new();
+		while !tokens.next_is(TokenType::RightBrace) {
 			//  Group field tags
 			let tags = if_then_some!(
 				tokens.next_is(TokenType::TagOpening),
@@ -85,120 +85,172 @@ impl TryParse for Group {
 					context.scope.exit_scope(group_scope).unwrap();
 				})?
 			);
-			let visible = if_then_some!(tokens.next_is(TokenType::KeywordVisible), tokens.pop(TokenType::KeywordVisible, context).unwrap()).is_some();
 
-			if documentation.is_none() && tokens.next_is(TokenType::Comment) {
-				documentation = Some(tokens.pop(TokenType::Comment, context).unwrap().value);
-			}
+			// field modifiers
+			let visible = if_then_some!(tokens.next_is(TokenType::KeywordVisible), tokens.pop(TokenType::KeywordVisible, context).unwrap());
 
-			// Group field name
+			// field name
 			let name = Identifier::try_parse(tokens, context).inspect_err(|_err| {
 				context.scope.exit_scope(group_scope).unwrap();
 			})?;
+
 			if !name.source_identifier().is_case(Case::Snake) {
 				context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
-					span: name.span(context),
+					span: name.span(),
 					info: DiagnosticInfo::NonSnakeCaseName {
 						original_name: name.source_identifier().to_owned(),
 					},
 				});
 			}
 
-			if fields.keys().any(|field_name| field_name == &name) {
+			// check for duplicate fields
+			if fields.iter().any(|field: &GroupField| field.name == name) {
 				context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
-					span: name.span(context),
+					span: name.span(),
 					info: DiagnosticInfo::DuplicateGroupField(name.source_identifier().to_owned()),
 				});
 			}
 
-			// Group field type
-			let field_type = if_then_some!(tokens.next_is(TokenType::Colon), {
-				let _ = tokens.pop(TokenType::Colon, context).inspect_err(|_err| {
-					context.scope.exit_scope(group_scope).unwrap();
-				})?;
-				Expression::parse(tokens, context)
-			});
+			// field type
+			let (colon, field_type) = if_then_some!(tokens.next_is(TokenType::Colon), {
+				(
+					tokens.pop(TokenType::Colon, context).inspect_err(|_err| {
+						context.scope.exit_scope(group_scope).unwrap();
+					})?,
+					Expression::try_parse(tokens, context)?,
+				)
+			})
+			.unzip();
 
-			// Group field value
-			let value = if_then_some!(tokens.next_is(TokenType::Equal), {
-				let _ = tokens.pop(TokenType::Equal, context).inspect_err(|_err| {
-					context.scope.exit_scope(group_scope).unwrap();
-				})?;
-				let value = Expression::parse(tokens, context);
-				if let Some(tags) = tags {
-					value.expression_mut(context).set_tags(tags);
-				}
+			// field value
+			let (equals, value) = if_then_some!(tokens.next_is(TokenType::Equal), {
+				(
+					tokens.pop(TokenType::Equal, context).inspect_err(|_err| {
+						context.scope.exit_scope(group_scope).unwrap();
+					})?,
+					Expression::try_parse(tokens, context)?,
+				)
+			})
+			.unzip();
 
-				value
-			});
+			// comma
+			let comma = tokens.pop(TokenType::Comma, context).ok();
+			let has_comma = comma.is_some();
 
-			// Add field
-			_ = fields.insert(name.clone(), GroupField {
+			// add field
+			fields.push(GroupField {
+				tags,
 				name,
 				default_value: value,
 				field_type,
-				documentation,
-				visible,
+				tokens: GroupFieldTokens { colon, equals, comma, visible },
 			});
-		})
-		.span;
+
+			if !has_comma {
+				break;
+			}
+		}
+
+		let right_brace = tokens.pop(TokenType::RightBrace, context)?;
+
 		context.scope.exit_scope(group_scope).unwrap();
 
 		Ok(Group {
 			fields,
-			span: start.to(end),
-			name: None,
+			compile_time_parameters,
+			tokens: GroupTokens {
+				keyword_group,
+				left_brace,
+				right_brace,
+			},
 		})
 	}
 }
 
-impl CompileTime for Group {
+impl Evaluate for Group {
 	type Output = EvaluatedGroup;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		let mut fields = HashMap::new();
+	fn evaluate(self, context: &mut Context) -> Self::Output {
+		log!(context, "Evaluating group");
+		let mut fields = Vec::new();
+		let span = self.span();
 
-		for (name, field) in self.fields {
-			// Field value
-			let value = field.default_value.map(|value| value.evaluate_to_literal(context));
+		for field in self.fields {
+			let tags = field.tags.evaluate(context);
+			let default_value = field.default_value.evaluate(context);
+			let field_type = field.field_type.evaluate(context);
 
-			// Field type
-			let field_type = if let Some(field_type) = field.field_type {
-				Type::Literal(field_type.evaluate_to_literal(context))
-			} else if let Some(default_value) = field.default_value {
-				default_value.get_type(context)
-			} else {
-				Type::Literal(LiteralPointer::ERROR)
-			};
-
-			// Add the field
-			_ = fields.insert(name.clone(), GroupFieldLiteral {
-				name,
-				default_value: value,
+			fields.push(EvaluatedGroupField {
+				name: field.name,
+				tokens: field.tokens,
+				tags,
+				default_value,
 				field_type,
 			});
 		}
 
-		// Store in memory and return a pointer
+		let obj = Object::new(
+			context.ident("Group"),
+			HashMap::from([(
+				"fields".to_owned(),
+				Object::list(
+					fields
+						.iter()
+						.map(|field| {
+							Object::new(
+								context.ident("Property"),
+								HashMap::from([("name".to_owned(), field.name.stringify(context).store(context))]),
+								field.name.span(),
+							)
+							.store(context)
+						})
+						.collect(),
+					context,
+					span,
+				)
+				.store(context),
+			)]),
+			span,
+		)
+		.store(context);
+
 		EvaluatedGroup {
+			object: obj,
 			fields,
-			span: self.span,
-			name: self.name,
+			compile_time_parameters: self.compile_time_parameters.evaluate(context),
+			tokens: self.tokens,
 		}
 	}
 }
 
 impl Spanned for Group {
-	fn span(&self, _context: &Context) -> Span {
-		self.span
+	fn span(&self) -> Span {
+		self.tokens.keyword_group.span.to(self.tokens.right_brace.span)
 	}
 }
 
-#[derive(Debug, Clone)]
+impl Spanned for EvaluatedGroup {
+	fn span(&self) -> Span {
+		self.tokens.keyword_group.span.to(self.tokens.right_brace.span)
+	}
+}
+
+#[derive(Debug, Clone, Getters)]
 pub struct EvaluatedGroup {
-	pub fields: HashMap<Identifier, GroupFieldLiteral>,
-	span: Span,
-	pub name: Option<Identifier>,
+	compile_time_parameters: Option<EvaluatedCompileTimeParameters>,
+	fields: Vec<EvaluatedGroupField>,
+	tokens: GroupTokens,
+
+	object: Pointer,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct EvaluatedGroupField {
+	tags: Option<EvaluatedTagList>,
+	name: Identifier,
+	field_type: Option<Pointer>,
+	default_value: Option<Pointer>,
+	tokens: GroupFieldTokens,
 }

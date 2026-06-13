@@ -5,16 +5,16 @@ use indoc::indoc;
 use url::Url;
 
 use crate::{
+	Logger,
 	lsp::text_document::{
-		diagnostics::{get_diagnostics, PublishDiagnosticParams},
-		did_change::TextDocumentDidChangeEvent,
-		hover::{HoverResult, MarkupContents},
 		Position,
 		TextDocumentIdentifier,
 		TextDocumentItem,
 		VersionTextDocumentIdentifier,
+		diagnostics::{PublishDiagnosticParams, get_diagnostics},
+		did_change::TextDocumentDidChangeEvent,
+		hover::{HoverResult, MarkupContents},
 	},
-	Logger,
 };
 mod text_document;
 
@@ -194,11 +194,7 @@ impl Request {
 								name.map(|name| {
 									let documentation = name
 										.value(project.context_mut())
-										.and_then(|expr| {
-											expr.expression(project.context())
-												.get_documentation()
-												.map(|documentation| format!("\n---\n{documentation}"))
-										})
+										.and_then(|expr| expr.value(project.context()).get_documentation().map(|documentation| format!("\n---\n{documentation}")))
 										.map(|str| str.to_owned())
 										.unwrap_or(String::new());
 									format!(

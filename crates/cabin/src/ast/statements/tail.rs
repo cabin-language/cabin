@@ -1,21 +1,26 @@
+use derive_getters::Getters;
+
 use crate::{
 	Span,
 	Spanned,
 	api::context::Context,
 	ast::expressions::{Expression, identifier::Identifier},
-	comptime::{CompileTime, memory::ExpressionPointer},
+	comptime::{Evaluate, memory::Pointer},
 	diagnostics::Diagnostic,
-	interpreter::Runtime,
-	lexer::TokenType,
-	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
-	transpiler::TranspileToC,
+	lexer::{Token, TokenType},
+	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 };
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Getters)]
 pub struct TailStatement {
-	pub label: Identifier,
-	pub value: ExpressionPointer,
-	pub span: Span,
+	label: Identifier,
+	value: Expression,
+	tokens: TailStatementTokens,
+}
+
+#[derive(Debug, Clone)]
+pub struct TailStatementTokens {
+	is: Token,
 }
 
 impl TryParse for TailStatement {
@@ -23,53 +28,43 @@ impl TryParse for TailStatement {
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let label = Identifier::try_parse(tokens, context)?;
-
-		let _ = tokens.pop(TokenType::KeywordIs, context)?;
-		let value = Expression::parse(tokens, context);
+		let is = tokens.pop(TokenType::KeywordIs, context)?;
+		let value = Expression::try_parse(tokens, context)?;
 
 		Ok(TailStatement {
-			span: label.span(context).to(value.span(context)),
 			label,
 			value,
+			tokens: TailStatementTokens { is },
 		})
 	}
 }
 
-impl CompileTime for TailStatement {
-	type Output = TailStatement;
+impl Evaluate for TailStatement {
+	type Output = EvaluatedTailStatement;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		let value = self.value.evaluate_at_compile_time(context);
-		TailStatement {
+	fn evaluate(self, context: &mut Context) -> Self::Output {
+		EvaluatedTailStatement {
 			label: self.label,
-			value,
-			span: self.span,
+			value: self.value.evaluate(context),
+			tokens: self.tokens,
 		}
 	}
 }
-
-impl Runtime for TailStatement {
-	type Output = TailStatement;
-
-	fn evaluate_at_runtime(self, context: &mut Context) -> Self::Output {
-		let value = self.value.evaluate_at_runtime(context);
-		TailStatement {
-			label: self.label,
-			value,
-			span: self.span,
-		}
-	}
-}
-
-impl TranspileToC for TailStatement {
-	fn to_c(&self, context: &mut Context, _output: Option<String>) -> Result<String, crate::transpiler::TranspileError> {
-		let label = self.label.to_c(context, None)?;
-		Ok(format!("{}\ngoto label_end_{};", self.value.to_c(context, Some(label.clone()))?, label))
-	}
-}
-
 impl Spanned for TailStatement {
-	fn span(&self, _context: &Context) -> Span {
-		self.span
+	fn span(&self) -> Span {
+		self.label.span().to(self.value.span())
+	}
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct EvaluatedTailStatement {
+	label: Identifier,
+	value: Pointer,
+	tokens: TailStatementTokens,
+}
+
+impl Spanned for EvaluatedTailStatement {
+	fn span(&self) -> Span {
+		self.label.span().to(self.value.span())
 	}
 }

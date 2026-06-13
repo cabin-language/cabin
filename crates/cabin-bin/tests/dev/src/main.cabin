@@ -1,4 +1,16 @@
-#[runtime<"call at runtime">]
-let some_func = action {};
+let Person = group {
+	first_name: Text,
+	last_name: Text,
+	age: Number
+};
 
-some_func(3);
+let ryan = new Person {
+	first_name = "ryan",
+	last_name = "feldman",
+	age = 21
+};
+
+let Animal = group {
+	type: Text,
+	age: Number
+};

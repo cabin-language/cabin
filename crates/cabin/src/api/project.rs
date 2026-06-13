@@ -1,14 +1,11 @@
-use std::{
-	fmt::Write as _,
-	path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use crate::{
 	Context,
 	api::{config::Config, diagnostics::Diagnostics},
-	ast::{expressions::identifier::Identifier, misc::program::Program},
-	comptime::CompileTime as _,
-	transpiler::TranspileToC as _,
+	ast::misc::program::EvaluatedProgram,
+	comptime::Evaluate as _,
+	diagnostics::Diagnostic,
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -34,7 +31,7 @@ pub struct Project {
 	root_directory: PathBuf,
 	config: Config,
 	context: Context,
-	program: Option<Program>,
+	program: Option<EvaluatedProgram>,
 	main_file_contents: String,
 }
 
@@ -109,65 +106,29 @@ impl Project {
 		&mut self.context
 	}
 
-	pub fn run_compile_time_code(&mut self) -> &Diagnostics {
-		let program = crate::parse_program(&self.main_file_contents, &mut self.context);
+	pub fn run_compile_time_code(&mut self) -> Result<&Diagnostics, Diagnostic> {
+		let program = crate::parse_program(&self.main_file_contents, &mut self.context)?;
 
-		self.program = Some(program.evaluate_at_compile_time(&mut self.context));
+		self.program = Some(program.evaluate(&mut self.context));
 
-		self.context.diagnostics()
+		Ok(self.context.diagnostics())
 	}
 
-	pub fn check(&mut self) -> &Diagnostics {
+	pub fn check(&mut self) -> Result<&Diagnostics, Diagnostic> {
 		self.context.side_effects = false;
 
-		let program = crate::parse_program(&self.main_file_contents, &mut self.context);
+		let program = crate::parse_program(&self.main_file_contents, &mut self.context)?;
 		if !self.context.diagnostics().is_empty() {
-			return self.context.diagnostics();
+			return Ok(self.context.diagnostics());
 		}
 
-		self.program = Some(program.evaluate_at_compile_time(&mut self.context));
+		self.program = Some(program.evaluate(&mut self.context));
 		self.context.side_effects = true;
 
-		self.context.diagnostics()
-	}
-
-	/// Returns the name at the given byte position in the source code, or `None` if there is no
-	/// name at that byte position. The returned name contains environment (scope) information, so
-	/// this requires tokenizing and parsing the program, if it wasn't already.
-	pub fn name_at(&mut self, name_position: usize) -> Option<Identifier> {
-		self.context.side_effects = false;
-
-		self.context.name_query = Some(name_position);
-		let program = crate::parse_program(&self.main_file_contents, &mut self.context);
-		if !self.context.diagnostics().is_empty() {
-			return None;
-		}
-
-		self.program = Some(program.evaluate_at_compile_time(&mut self.context));
-		self.context.side_effects = true;
-
-		self.context().name_query_result.clone()
+		Ok(self.context.diagnostics())
 	}
 
 	pub const fn printed(&self) -> bool {
 		self.context.has_printed
-	}
-
-	pub fn transpile(&mut self) -> Result<String, Diagnostics> {
-		if self.program.is_none() {
-			let diagnostics = self.run_compile_time_code();
-			if !diagnostics.errors().is_empty() {
-				return Err(diagnostics.to_owned());
-			}
-		}
-
-		let mut c_code = "#include <stdio.h>\n#include<stdlib.h>\n\nint main(int argc, char* argv[]) {\n\n".to_owned();
-
-		let body = self.program.as_ref().unwrap().to_c(&mut self.context, None).unwrap();
-		body.lines().for_each(|line| writeln!(c_code, "\t{line}").unwrap());
-
-		c_code += "\n\n\treturn 0;\n}";
-
-		Ok(c_code)
 	}
 }

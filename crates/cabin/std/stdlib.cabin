@@ -4,8 +4,9 @@ let visible Any = group {
 
 let visible Text = group {};
 
-#[default]
-let visible AddText = extend Text as Addable {
+let visible Module = group {};
+
+let visible add_text = extend Text as Addable {
 	plus = action(this: This, other: This): This,
 };
 
@@ -15,6 +16,7 @@ let visible Builtin = group {
 
 let visible This = group {};
 let visible List = group {};
+let visible EitherVariant = group {};
 
 let visible Number = group {}; 
 
@@ -25,6 +27,10 @@ let visible Optional = either<Data: Any> {
 
 let visible Group = group {
 	fields: Any,
+};
+
+let visible Property = group {
+	name: Text
 };
 
 let visible Function = group {
@@ -63,12 +69,12 @@ let visible Addable = group<Operand: Any, Result: Any> {
 }; 
 
 #[default]
-let visible AddNumbers = extend Number as Addable { 
+let visible add_numbers = extend Number as Addable { 
 	#[no_side_effects]
 	plus = action(this: Number, other: Number): Number,
 };
 
-let visible Attempt = either<Data, Error> {
+let visible Attempt = either<Data: Any, Error: Any> {
 	data: Data,
 	error: Error
 };
@@ -89,24 +95,24 @@ let visible system = new Any {
 
 	terminal = new Any {
 
-		#[builtin<"terminal.print">]
+		#[builtin<"system.terminal.write">]
 		write = action(object: Any),
 
-		#[builtin<"terminal.input">] 
-		input = action(): Text,
+		#[builtin<"system.terminal.input">] 
+		input = action: Text,
 
 		#[runtime<"Use log() for logging information at compile-time">]
 		print = action(object: Any) {
-			system.terminal.write(object);
+			system.terminal.write("object");
 		},
 
 		#[compile_time<"Use print() for logging information at runtime">]
 		log = action(object: Any) {
-			system.terminal.write(object);	
+			system.terminal.write("object");	
 		},
 
 		debug = action<T: Any>(object: T): T {
-			system.terminal.write(object);
+			system.terminal.write("object");
 			return is object;
 		},
 	},
@@ -126,8 +132,7 @@ let visible Ordered = group {
 	visible compared_to: action(this: This, other: This): Ordering
 };
 
-#[default]
-let visible OrderedsAreComparable = extend Ordered as Comparable {
+let visible ordereds_are_comparable = extend Ordered as Comparable {
 	equals = action(this: This, other: This): Boolean {
 		return is this.compared_to(other) == Ordering.equal;
 	}

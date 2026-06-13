@@ -17,9 +17,6 @@ members = [
 
 [workspace.dependencies]
 cabin = { version = "0.1.0", path = "crates/cabin" } 
-cabin-bin = { version = "0.1.0", path = "crates/cabin-bin" } 
-cabin-language-server = { version = "0.1.0", path = "crates/cabin-language-server" } 
-cabin-web = { version = "0.1.0", path = "crates/cabin-web" } 
 tree-sitter-cabin = { version = "0.1.0", path = "crates/tree-sitter-cabin" } 
 wasm-fields = { version = "0.1.0", path = "crates/wasm-fields" } 
 
@@ -97,6 +94,7 @@ iter_on_empty_collections = "warn"
 iter_on_single_items = "warn"
 iter_with_drain = "warn"
 large_digit_groups = "warn"
+large_enum_variant = "allow"
 let_underscore_must_use = "deny"
 linkedlist = "warn"
 macro_use_imports = "warn"
@@ -117,7 +115,7 @@ mismatching_type_param_order = "warn"
 missing_assert_message = "warn"
 missing_const_for_fn = "warn"
 # missing_docs_in_private_items = "warn"
-missing_errors_doc = "warn"
+# missing_errors_doc = "warn"
 mixed_read_write_in_expression = "deny"
 multiple_inherent_impl = "warn"
 mut_mut = "warn"

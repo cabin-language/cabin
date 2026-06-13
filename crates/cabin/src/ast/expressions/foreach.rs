@@ -1,108 +1,141 @@
-use super::ExpressionOrPointer;
+use derive_getters::Getters;
+
 use crate::{
 	Span,
 	Spanned,
-	api::{context::Context, scope::ScopeId, traits::TryAs as _},
-	ast::{
-		expressions::{Expression, block::Block, identifier::Identifier},
-		sugar::list::LiteralList,
-	},
-	comptime::{CompileTime, memory::ExpressionPointer},
+	api::context::Context,
+	ast::expressions::{EvaluatedExpression, Expression, block::Block, identifier::Identifier},
+	comptime::{Check as _, Evaluate, memory::Pointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	lexer::TokenType,
-	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	lexer::{Token, TokenType},
+	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
+	scope::ScopeType,
 };
 
-#[derive(Debug, Clone)]
-pub struct ForEachLoop {
+#[derive(Debug, Clone, Getters)]
+pub struct ForLoop {
 	/// The name of the variable that acts as the element when iterating. For example, in a loop such as
 	/// `for fruit in fruits { ... }`, this would refer to the name `fruit`.
 	binding_name: Identifier,
 
-	/// The expression being iterated over. For example, in a loop such as `foreach fruit in fruits { ... }`, this refers to the
+	/// The expression being iterated over. For example, in a loop such as `for fruit in fruits { ... }`, this refers to the
 	/// expression `fruits`.
-	iterable: ExpressionPointer,
+	iterable: Expression,
 
 	/// The body of the loop. This is the code that gets run when each iteration of the loop.
 	body: Block,
 
-	/// The scope id of for the *inside* of the loop.
-	inner_scope_id: ScopeId,
-
-	/// The span of the entire for loop expression. See `Spanned::span` for more details.
-	span: Span,
+	tokens: ForLoopTokens,
 }
 
-impl TryParse for ForEachLoop {
-	type Output = ForEachLoop;
+#[derive(Debug, Clone, Getters)]
+pub struct ForLoopTokens {
+	keyword_for: Token,
+	keyword_in: Token,
+}
+
+impl TryParse for ForLoop {
+	type Output = ForLoop;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
-		let start = tokens.pop(TokenType::KeywordForEach, context)?.span;
+		let keyword_for = tokens.pop(TokenType::KeywordForEach, context)?;
 
 		let binding_name = Identifier::try_parse(tokens, context)?;
 
-		let _ = tokens.pop(TokenType::KeywordIn, context)?;
+		let keyword_in = tokens.pop(TokenType::KeywordIn, context)?;
 
-		let iterable = Expression::parse(tokens, context);
+		let iterable = Expression::try_parse(tokens, context)?;
 
-		let body = Block::try_parse(tokens, context)?;
+		let body = Block::try_parse(tokens, context, ScopeType::ForLoop)?;
 
-		let end = body.span(context);
-
-		// Add the binding name to scope
-		let inner_scope_id = body.inner_scope_id();
-		let error = Expression::error(Span::none(), context);
-		if let Err(error) = context.scope.declare_new_variable_from_id(binding_name.clone(), error, inner_scope_id) {
+		if context.scope.get_variable_from_id(binding_name.source_identifier(), body.inner_scope_id()).is_some() {
 			context.add_diagnostic(Diagnostic {
 				file: context.file.clone(),
-				span: binding_name.span(context),
-				info: error,
+				span: binding_name.span(),
+				info: DiagnosticInfo::DuplicateVariableDeclaration {
+					name: binding_name.source_identifier().to_owned(),
+				},
 			});
 		}
 
-		Ok(ForEachLoop {
+		Ok(ForLoop {
 			binding_name,
 			body,
 			iterable,
-			inner_scope_id,
-			span: start.to(end),
+			tokens: ForLoopTokens { keyword_for, keyword_in },
 		})
 	}
 }
 
-impl CompileTime for ForEachLoop {
-	type Output = ExpressionOrPointer;
+impl Evaluate for ForLoop {
+	type Output = Pointer;
 
-	fn evaluate_at_compile_time(mut self, context: &mut Context) -> Self::Output {
-		self.iterable = self.iterable.evaluate_at_compile_time(context);
-
-		let literal = self.iterable.try_as_literal(context);
-		if let Ok(pointer) = literal {
-			if !pointer.evaluated_literal(context).is::<LiteralList>() {
+	fn evaluate(self, context: &mut Context) -> Self::Output {
+		let iterable = self.iterable.evaluate(context);
+		if let Some(object) = iterable.value(context).clone().as_object() {
+			let Some(elements) = object.list_elements() else {
 				context.add_diagnostic(Diagnostic {
-					file: context.file.clone(),
-					span: self.iterable.span(context),
+					span: iterable.span(),
 					info: DiagnosticInfo::IterateOverNonList,
+					file: context.file.clone(),
 				});
-				return ExpressionOrPointer::Expression(Expression::ForEachLoop(self));
-			}
 
-			let elements = pointer.evaluated_literal(context).try_as::<LiteralList>().cloned().unwrap_or_else(|_| LiteralList::empty());
+				return EvaluatedExpression::ForLoop(EvaluatedForLoop {
+					binding_name: self.binding_name,
+					iterable,
+					body: self.body,
+					tokens: self.tokens,
+				})
+				.store(context);
+			};
 
-			let snapshot = context.snapshot();
-			for element in &*elements {
-				context.scope.reassign_variable_from_id(&self.binding_name, (*element).into(), self.inner_scope_id);
-				let _value = self.body.clone().evaluate_eager(context);
+			let list_is_fully_known = elements.iter().all(|element| element.is_fully_known(context));
+
+			for element in elements {
+				context.scope.reassign_variable_from_id(&self.binding_name, *element, self.body.inner_scope_id());
+
+				if list_is_fully_known {
+					let _body_value = self.body.clone().evaluate(context);
+				} else {
+					self.body.check(context);
+				}
 			}
-			context.roll_back(snapshot);
 		}
 
-		ExpressionOrPointer::Expression(Expression::ForEachLoop(self))
+		EvaluatedExpression::ForLoop(EvaluatedForLoop {
+			binding_name: self.binding_name,
+			iterable,
+			body: self.body,
+			tokens: self.tokens,
+		})
+		.store(context)
 	}
 }
 
-impl Spanned for ForEachLoop {
-	fn span(&self, _context: &Context) -> Span {
-		self.span
+impl Spanned for ForLoop {
+	fn span(&self) -> Span {
+		self.tokens.keyword_for.span.to(self.body.span())
 	}
+}
+
+impl Spanned for EvaluatedForLoop {
+	fn span(&self) -> Span {
+		self.tokens.keyword_for.span.to(self.body.span())
+	}
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct EvaluatedForLoop {
+	/// The name of the variable that acts as the element when iterating. For example, in a loop such as
+	/// `for fruit in fruits { ... }`, this would refer to the name `fruit`.
+	binding_name: Identifier,
+
+	/// The expression being iterated over. For example, in a loop such as `for fruit in fruits { ... }`, this refers to the
+	/// expression `fruits`.
+	iterable: Pointer,
+
+	/// The body of the loop. This is the code that gets run when each iteration of the loop.
+	body: Block,
+
+	tokens: ForLoopTokens,
 }

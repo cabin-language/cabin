@@ -4,77 +4,54 @@ use crate::{
 	Span,
 	Spanned,
 	api::context::Context,
-	comptime::{CompileTime, memory::ExpressionPointer},
+	ast::expressions::{evaluated::EvaluatedExpression, object::Object},
+	comptime::{Evaluate, memory::Pointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
+	log,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
-	scope::ScopeId,
-	transpiler::{TranspileError, TranspileToC},
-	typechecker::{Type, Typed},
+	scope::ScopeRef,
+	transpiler::ToCabin,
 };
 
-#[derive(Clone, Eq)]
+#[derive(Clone)]
 pub struct Identifier {
 	/// The internal string value of this name. This is the value as it appears in the Cabin source code; In other words,
 	/// it's unmangled.
 	token: Token,
 
-	/// Whether or not this name should be "mangled" when transpiling it to C.
-	///
-	/// When transpiling to C, all names are changed to a new "mangled" name to avoid conflicts with internal names and
-	/// values inserted by the compiler.
-	///
-	/// For regular identifiers in the language, this is always `true`; But some special exceptions are made when the
-	/// compiler needs to insert names into the program.
-	should_mangle: bool,
-
 	/// The unique ID of the scope that this name is used in. This is used to get the value
 	/// that the name points to, because it needs to get the value from the scope it's used.
-	scope_id: ScopeId,
-
-	pub documentation: Option<String>,
+	scope_id: ScopeRef,
 }
 
 impl TryParse for Identifier {
-	type Output = Self;
+	type Output = Identifier;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> anyhow::Result<Self::Output, Diagnostic> {
 		let token = tokens.pop(TokenType::Identifier, context)?;
 
 		let identifier = Identifier {
 			token,
-			should_mangle: true,
 			scope_id: context.scope.unique_id(),
-			documentation: None,
 		};
-
-		if let Some(name_query) = context.name_query
-			&& identifier.token.span.contains(name_query)
-		{
-			context.name_query_result = Some(identifier.clone());
-		}
 
 		Ok(identifier)
 	}
 }
 
-impl CompileTime for Identifier {
-	type Output = Identifier;
+impl Evaluate for Identifier {
+	type Output = Pointer;
 
-	fn evaluate_at_compile_time(self, _context: &mut Context) -> Self::Output {
-		self
+	fn evaluate(self, context: &mut Context) -> Self::Output {
+		log!(context, "Evaluating identifier");
+		self.value(context).unwrap_or_else(|| EvaluatedExpression::Identifier(self).store(context))
 	}
 }
 
-impl TranspileToC for Identifier {
-	fn to_c(&self, _context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
-		Ok(self.mangled_name())
-	}
-}
-
-impl Typed for Identifier {
-	fn get_type(&self, context: &mut Context) -> Type {
-		self.value(context).unwrap_or(ExpressionPointer::ERROR).get_type(context)
+impl ToCabin for Identifier {
+	fn to_cabin(&self) -> String {
+		self.token.value.clone()
 	}
 }
 
@@ -85,7 +62,7 @@ impl AsRef<Identifier> for Identifier {
 }
 
 impl Spanned for Identifier {
-	fn span(&self, _context: &Context) -> Span {
+	fn span(&self) -> Span {
 		self.token.span
 	}
 }
@@ -95,6 +72,8 @@ impl PartialEq for Identifier {
 		self.token.value == other.token.value
 	}
 }
+
+impl Eq for Identifier {}
 
 impl Hash for Identifier {
 	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -115,7 +94,7 @@ impl Debug for Identifier {
 }
 
 impl Identifier {
-	pub fn value(&self, context: &mut Context) -> Option<ExpressionPointer> {
+	pub fn value(&self, context: &mut Context) -> Option<Pointer> {
 		context
 			.scope
 			.get_variable_from_id(self.source_identifier(), self.scope_id)
@@ -123,27 +102,27 @@ impl Identifier {
 				context.add_diagnostic(Diagnostic {
 					file: context.file.clone(),
 					info: DiagnosticInfo::UnknownVariable(self.source_identifier().to_owned()),
-					span: self.span(context),
+					span: self.span(),
 				});
 			})
 			.ok()
 	}
 
+	pub fn stringify(&self, context: &Context) -> Object {
+		Object::text(self.source_identifier(), context, self.span())
+	}
+
 	pub fn create_virtual<'str, S: Into<Cow<'str, str>>>(name: S, context: &Context) -> Identifier {
 		Identifier {
 			token: Token::create_virtual(TokenType::Identifier, name),
-			should_mangle: true,
 			scope_id: context.scope.unique_id(),
-			documentation: None,
 		}
 	}
 
 	pub const fn synthetic(token: Token, context: &Context) -> Identifier {
 		Identifier {
 			token,
-			should_mangle: true,
 			scope_id: context.scope.unique_id(),
-			documentation: None,
 		}
 	}
 
@@ -152,10 +131,6 @@ impl Identifier {
 	}
 
 	pub fn mangled_name(&self) -> String {
-		if self.should_mangle {
-			format!("u_{}", self.token.value)
-		} else {
-			self.source_identifier().to_owned()
-		}
+		format!("u_{}", self.token.value)
 	}
 }

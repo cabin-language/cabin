@@ -30,3 +30,7 @@ pub trait TranspileToC {
 		Ok(String::new())
 	}
 }
+
+pub trait ToCabin {
+	fn to_cabin(&self) -> String;
+}

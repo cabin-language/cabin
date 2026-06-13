@@ -1,14 +1,9 @@
-use std::collections::VecDeque;
-
 use crate::{
 	Context,
 	Span,
-	api::traits::TryAs as _,
-	ast::{
-		expressions::{Expression, literal::EvaluatedLiteral},
-		sugar::string::Text,
-	},
-	comptime::memory::ExpressionPointer,
+	Spanned as _,
+	ast::expressions::object::Object,
+	comptime::memory::Pointer,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 };
 
@@ -31,13 +26,26 @@ use crate::{
 /// If there is no built-in function with the given name, an error is returned.
 ///
 /// Also, if the built-in function throws an error while being called, that error is returned as well.
-pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, arguments: Vec<ExpressionPointer>, span: Span) -> ExpressionPointer {
+pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut arguments: Vec<Pointer>, span: Span) -> Pointer {
 	match name {
-		"terminal.print" => {
-			let mut arguments = VecDeque::from(arguments);
-			let pointer = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
-			let returned_object = call_builtin_at_compile_time("Any.to_string", context, vec![pointer], span);
-			let string_value = returned_object.as_literal(context).evaluated_literal(context).try_as::<Text>().unwrap().value.to_owned();
+		"system.terminal.write" => {
+			let Some(pointer) = arguments.pop() else {
+				context.add_diagnostic(Diagnostic {
+					span,
+					info: DiagnosticInfo::IncorrectArgumentCount { expected: 1, actual: 0 },
+					file: context.file.clone(),
+				});
+
+				return context.none();
+			};
+
+			let string_value = call_builtin_at_compile_time("Any.to_text", context, vec![pointer], span)
+				.value(context)
+				.as_object()
+				.unwrap()
+				.get_text()
+				.unwrap()
+				.to_owned();
 
 			if context.side_effects {
 				if !context.has_printed && !context.interactive {
@@ -48,7 +56,7 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, arguments
 			}
 
 			// Add hint diagnostic
-			if pointer != ExpressionPointer::ERROR && !context.interactive {
+			if !context.interactive {
 				context.add_diagnostic(Diagnostic {
 					span,
 					info: DiagnosticInfo::Info(string_value),
@@ -56,76 +64,55 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, arguments
 				});
 			}
 
-			Expression::error(Span::none(), context)
+			context.none()
 		},
-		"terminal.debug" => {
-			let mut arguments = VecDeque::from(arguments);
-			let pointer = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
-			let returned_object = call_builtin_at_compile_time("Any.to_string", context, vec![pointer], span);
-			let string_value = returned_object.as_literal(context).evaluated_literal(context).try_as::<Text>().unwrap().value.to_owned();
 
-			if context.side_effects {
-				if !context.has_printed && !context.interactive {
-					context.has_printed = true;
-					println!();
-				}
-				println!("{string_value}");
-			}
-
-			// Add hint diagnostic
-			if pointer != ExpressionPointer::ERROR && !context.interactive {
-				context.add_diagnostic(Diagnostic {
-					span,
-					info: DiagnosticInfo::Info(string_value),
-					file: context.file.clone(),
-				});
-			}
-
-			Expression::error(Span::none(), context)
-		},
 		"Text.plus" => {
-			let mut arguments = VecDeque::from(arguments);
-			let this = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
-			let other = arguments.pop_front().unwrap_or_else(|| Expression::error(span, context));
+			let Some(this) = arguments.pop() else {
+				context.add_diagnostic(Diagnostic {
+					span,
+					info: DiagnosticInfo::IncorrectArgumentCount { expected: 2, actual: 0 },
+					file: context.file.clone(),
+				});
 
-			let EvaluatedLiteral::Text(string) = this.as_literal(context).evaluated_literal(context).to_owned() else {
-				unreachable!()
+				return context.none();
 			};
-			let EvaluatedLiteral::Text(string2) = other.as_literal(context).evaluated_literal(context) else {
-				unreachable!()
+			let Some(other) = arguments.pop() else {
+				context.add_diagnostic(Diagnostic {
+					span,
+					info: DiagnosticInfo::IncorrectArgumentCount { expected: 2, actual: 1 },
+					file: context.file.clone(),
+				});
+
+				return context.none();
 			};
 
-			Expression::EvaluatedLiteral(EvaluatedLiteral::Text(Text {
-				value: string.value + &string2.value,
-				span,
-			}))
-			.store_in_memory(context)
+			let left = this.value(context).as_object().unwrap().get_text().unwrap();
+			let right = other.value(context).as_object().unwrap().get_text().unwrap();
+
+			Object::text(format!("{left}{right}"), context, span).store(context)
 		},
+
 		"terminal.input" => {
 			let mut line = String::new();
 			let _ = std::io::stdin().read_line(&mut line).unwrap();
 			line = line.get(0..line.len() - 1).unwrap().to_owned();
-			Expression::EvaluatedLiteral(EvaluatedLiteral::Text(Text { value: line, span: Span::none() })).store_in_memory(context)
+			Object::text(line, context, span).store(context)
 		},
 
-		"Any.to_string" => {
-			#[allow(clippy::or_fun_call, reason = "False positive; Returning reference")]
-			let this = arguments
-				.first()
-				.unwrap_or(&Expression::error(span, context))
-				.as_literal(context)
-				.evaluated_literal(context);
+		"Any.to_text" => {
+			let Some(this) = arguments.pop() else {
+				context.add_diagnostic(Diagnostic {
+					span,
+					info: DiagnosticInfo::IncorrectArgumentCount { expected: 2, actual: 0 },
+					file: context.file.clone(),
+				});
 
-			Expression::EvaluatedLiteral(EvaluatedLiteral::Text(Text {
-				span: Span::none(),
-				value: match this {
-					EvaluatedLiteral::Number(number) => number.to_string(),
-					EvaluatedLiteral::Text(string) => string.value.clone(),
-					_ => "<object>".to_owned(),
-				},
-			}))
-			.store_in_memory(context)
+				return context.none();
+			};
+
+			Object::text(this.value(context).as_object().unwrap().to_text(context), context, this.span()).store(context)
 		},
-		_ => ExpressionPointer::ERROR,
+		_ => unreachable!(),
 	}
 }

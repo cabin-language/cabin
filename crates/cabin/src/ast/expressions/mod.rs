@@ -1,8 +1,10 @@
 use std::fmt::Debug;
 
-use literal::UnevaluatedLiteral;
 // This is required because of a bug in `try_as`
-use try_as::traits::{self as try_as_traits, TryAsMut};
+use try_as::{
+	macros::{From, TryAsMut, TryAsRef},
+	traits::{self as try_as_traits, TryAsMut},
+};
 
 use crate::{
 	Span,
@@ -10,33 +12,42 @@ use crate::{
 	api::context::Context,
 	ast::{
 		expressions::{
+			action::Action,
+			binary::BinaryExpression,
 			block::Block,
+			either::Either,
+			error::ErrorExpression,
+			evaluated::EvaluatedExpression,
+			extend::Extend,
 			field_access::FieldAccess,
-			foreach::ForEachLoop,
+			foreach::ForLoop,
 			function_call::FunctionCall,
+			group::Group,
 			identifier::Identifier,
 			if_expression::IfExpression,
-			literal::EvaluatedLiteral,
+			list::List,
 			new::NewExpression,
-			operators::BinaryExpression,
-			parameter::Parameter,
-			run::{RunExpression, RuntimeableExpression},
-			unary::UnaryOperation,
+			number::Number,
+			parenthesized::ParenthesizedExpression,
+			run::{RunExpression, Runtimeable},
+			string::Text,
+			unary::UnaryExpression,
 		},
 		misc::tag::TagList,
-		sugar::list::List,
 	},
-	comptime::{CompileTime, memory::ExpressionPointer},
+	comptime::{Evaluate, memory::Pointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
-	interpreter::Runtime,
-	parser::{Parse, TokenQueue, TokenQueueFunctionality as _, TryParse as _},
-	transpiler::{TranspileError, TranspileToC},
-	typechecker::{Type, Typed},
+	log,
+	parser::{Parse, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	transpiler::ToCabin,
 };
 
 pub mod action;
+pub mod binary;
 pub mod block;
 pub mod either;
+pub mod error;
+pub mod evaluated;
 pub mod extend;
 pub mod field_access;
 pub mod foreach;
@@ -44,216 +55,175 @@ pub mod function_call;
 pub mod group;
 pub mod identifier;
 pub mod if_expression;
-pub mod literal;
+pub mod list;
 pub mod new;
-pub mod operators;
-pub mod parameter;
+pub mod number;
+pub mod object;
+pub mod parenthesized;
 pub mod run;
+pub mod string;
 pub mod unary;
 pub mod while_loop;
 
-#[derive(Debug, Clone, try_as::macros::From, try_as::macros::TryInto, try_as::macros::TryAsRef, try_as::macros::TryAsMut)]
+#[derive(Debug, Clone, From, try_as::macros::TryInto, TryAsRef, TryAsMut)]
 pub enum Expression {
-	Block(Block),
-	FieldAccess(FieldAccess),
-	FunctionCall(FunctionCall),
-	If(IfExpression),
+	Number(Number),
+	Text(Text),
 	Identifier(Identifier),
-	New(NewExpression),
-	ForEachLoop(ForEachLoop),
-	Run(RunExpression),
-	Unary(UnaryOperation),
-	Parameter(Parameter),
-	Literal(UnevaluatedLiteral),
-	EvaluatedLiteral(EvaluatedLiteral),
 	List(List),
+
+	Action(Box<Action>),
+	Group(Group),
+	Either(Either),
+	New(NewExpression),
+	Extend(Box<Extend>),
+
+	Block(Block),
+	FieldAccess(Box<FieldAccess>),
+	FunctionCall(Box<FunctionCall>),
+	If(Box<IfExpression>),
+	Binary(Box<BinaryExpression>),
+	ForEachLoop(Box<ForLoop>),
+	Run(Box<RunExpression>),
+	Unary(Box<UnaryExpression>),
+
+	Parenthesized(Box<ParenthesizedExpression>),
+	ErrorExpression(ErrorExpression),
 }
 
-impl Parse for Expression {
-	type Output = ExpressionPointer;
+impl TryParse for Expression {
+	type Output = Expression;
 
-	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
-		let start = tokens.front().unwrap().span;
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+		log!(context, "Parsing expression");
 		let result = BinaryExpression::try_parse(tokens, context);
 		match result {
-			Ok(expression) => expression,
+			Ok(expression) => Ok(expression),
 			Err(error) => {
+				log!(context, "Error: Parsing expression: {}", error.info);
 				context.add_diagnostic(error);
+				let mut error_tokens = Vec::new();
 				if let Ok(token_type) = tokens.peek_type(context) {
-					let _ = tokens.pop(token_type, context).unwrap();
+					error_tokens.push(tokens.pop(token_type, context).unwrap());
+					Ok(Expression::ErrorExpression(ErrorExpression::new(error_tokens)))
+				} else {
+					Err(Diagnostic {
+						span: Span::none(),
+						info: DiagnosticInfo::UnexpectedGenericEOF,
+						file: context.file.clone(),
+					})
 				}
-				let end = tokens.front().unwrap().span;
-				Expression::error(start.to(end), context)
 			},
 		}
 	}
 }
 
-#[derive(Debug)]
-pub enum ExpressionOrPointer {
-	Expression(Expression),
-	Pointer(ExpressionPointer),
-}
+impl Evaluate for Expression {
+	type Output = Pointer;
 
-impl CompileTime for Expression {
-	type Output = ExpressionOrPointer;
-
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+	fn evaluate(self, context: &mut Context) -> Self::Output {
+		log!(context, "Evaluating expression");
 		match self {
-			Self::Block(block) => ExpressionOrPointer::Pointer(block.evaluate_eager(context)),
-			Self::FieldAccess(field_access) => field_access.evaluate_at_compile_time(context),
-			Self::FunctionCall(function_call) => function_call.evaluate_at_compile_time(context),
-			Self::If(if_expression) => if_expression.evaluate_at_compile_time(context),
-			Self::Identifier(name) => ExpressionOrPointer::Expression(Expression::Identifier(name.evaluate_at_compile_time(context))),
-			Self::New(constructor) => ExpressionOrPointer::Expression(constructor.evaluate_at_compile_time(context)),
-			Self::ForEachLoop(for_loop) => for_loop.evaluate_at_compile_time(context),
-			Self::Run(run_expression) => ExpressionOrPointer::Expression(Expression::Run(run_expression.evaluate_at_compile_time(context))),
-			Self::EvaluatedLiteral(_) => ExpressionOrPointer::Expression(self),
-			Self::Literal(literal) => ExpressionOrPointer::Expression(Expression::EvaluatedLiteral(literal.evaluate_at_compile_time(context))),
-			Self::List(list) => ExpressionOrPointer::Expression(list.evaluate_at_compile_time(context)),
-			Self::Unary(_) | Self::Parameter(_) => todo!(),
+			Self::Block(block) => block.evaluate(context),
+			Self::Action(action) => EvaluatedExpression::Action(action.evaluate(context)).store(context),
+			Self::Group(group) => EvaluatedExpression::Group(group.evaluate(context)).store(context),
+			Self::Either(either) => EvaluatedExpression::Either(either.evaluate(context)).store(context),
+			Self::Number(number) => EvaluatedExpression::Number(number).store(context),
+			Self::Text(text) => text.evaluate(context),
+			Self::FieldAccess(field_access) => field_access.evaluate(context),
+			Self::FunctionCall(function_call) => function_call.evaluate(context),
+			Self::If(if_expression) => if_expression.evaluate(context),
+			Self::Identifier(name) => name.evaluate(context),
+			Self::New(new) => new.evaluate(context),
+			Self::ForEachLoop(for_loop) => for_loop.evaluate(context),
+			Self::Extend(extend) => EvaluatedExpression::Extend(extend.evaluate(context)).store(context),
+			Self::Run(run_expression) => EvaluatedExpression::Run(Box::new(run_expression.evaluate(context))).store(context),
+			Self::Binary(binary_expression) => binary_expression.evaluate(context),
+			Self::Parenthesized(parenthesized_expression) => EvaluatedExpression::Parenthesized(parenthesized_expression.evaluate(context)).store(context),
+			Self::Unary(unary_expression) => unary_expression.evaluate(context),
+			Self::ErrorExpression(error) => EvaluatedExpression::ErrorExpression(error).store(context),
+			Self::List(list) => EvaluatedExpression::List(list.evaluate(context)).store(context),
 		}
 	}
 }
 
-impl Runtime for Expression {
-	type Output = ExpressionOrPointer;
+impl Runtimeable for Expression {
+	type Output = EvaluatedExpression;
 
-	fn evaluate_at_runtime(self, context: &mut Context) -> Self::Output {
+	fn evaluate_subexpressions(self, context: &mut Context) -> EvaluatedExpression {
 		match self {
-			Self::Run(run_expression) => ExpressionOrPointer::Pointer(run_expression.evaluate_at_runtime(context)),
-			expression => expression.evaluate_at_compile_time(context),
-		}
-	}
-}
+			Self::FunctionCall(function_call) => EvaluatedExpression::FunctionCall(function_call.evaluate_subexpressions(context)),
+			_ => {
+				context.add_diagnostic(Diagnostic {
+					file: context.file.clone(),
+					span: self.span(),
+					info: DiagnosticInfo::RunLiteral,
+				});
 
-impl TranspileToC for Expression {
-	fn to_c(&self, _context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
-		todo!()
-	}
-
-	fn c_prelude(&self, context: &mut Context) -> Result<String, TranspileError> {
-		match self {
-			Expression::New(object) => object.c_prelude(context),
-			_ => Ok(String::new()),
-		}
-	}
-}
-
-impl Typed for Expression {
-	fn get_type(&self, context: &mut Context) -> Type {
-		match self {
-			Expression::EvaluatedLiteral(literal) => literal.get_type(context),
-			Expression::Identifier(name) => name.get_type(context),
-			value => todo!("{value:?}"),
+				// erm.....
+				self.evaluate(context).value(context).as_expression().unwrap().clone()
+			},
 		}
 	}
 }
 
 impl Expression {
-	pub fn error(span: Span, context: &mut Context) -> ExpressionPointer {
-		Expression::EvaluatedLiteral(EvaluatedLiteral::Error(span)).store_in_memory(context)
-	}
-
-	pub fn store_in_memory(self, context: &mut Context) -> ExpressionPointer {
-		context.virtual_memory.store(self)
-	}
-
 	pub fn set_tags(&mut self, tags: TagList) {
 		match self {
-			Expression::Literal(literal) => match literal {
-				UnevaluatedLiteral::Action(function) => function.set_tags(tags),
-				_ => {},
-			},
+			Self::Action(action) => action.tags = Some(tags),
 			_ => {},
 		}
 	}
+}
 
-	pub fn set_name(&mut self, name: Identifier) {
+impl ToCabin for Expression {
+	fn to_cabin(&self) -> String {
 		match self {
-			Expression::Literal(literal) => match literal {
-				UnevaluatedLiteral::Group(function) => function.name = Some(name),
-				_ => {},
-			},
-			_ => {},
-		}
-	}
-
-	pub fn set_documentation(&mut self, documentation: &str) {
-		match self {
-			Expression::Literal(literal) => match literal {
-				UnevaluatedLiteral::Action(function) => function.documentation = Some(documentation.to_owned()),
-				_ => {},
-			},
-			_ => {},
-		}
-	}
-
-	pub fn get_documentation(&self) -> Option<&str> {
-		match self {
-			Expression::Literal(literal) => match literal {
-				UnevaluatedLiteral::Action(function) => function.documentation.as_ref().map(|doc| doc.as_str()),
-				_ => None,
-			},
-			Self::EvaluatedLiteral(literal) => match literal {
-				EvaluatedLiteral::Action(function) => function.documentation.as_ref().map(|doc| doc.as_str()),
-				_ => None,
-			},
-			_ => None,
-		}
-	}
-
-	pub const fn kind_name(&self) -> &'static str {
-		match self {
-			Expression::Block(_) => "block",
-			Expression::FieldAccess(_) => "field access",
-			Expression::FunctionCall(_) => "function call",
-			Expression::If(_) => "if expression",
-			Expression::Identifier(_) => "name",
-			Expression::New(_) => "object constructor",
-			Expression::ForEachLoop(_) => "for loop",
-			Expression::Run(_) => "run expression",
-			Expression::Unary(_) => "unary operation",
-			Expression::Parameter(_) => "parameter",
-			Expression::EvaluatedLiteral(literal) => literal.kind_name(),
-			Expression::Literal(literal) => literal.kind_name(),
-			Expression::List(_) => "list",
+			Expression::Block(block) => todo!(),
+			Expression::FieldAccess(field_access) => todo!(),
+			Expression::FunctionCall(function_call) => todo!(),
+			Expression::Group(group) => todo!(),
+			Expression::Either(either) => todo!(),
+			Expression::If(if_expression) => todo!(),
+			Expression::Binary(binary_expression) => todo!(),
+			Expression::Identifier(identifier) => todo!(),
+			Expression::New(new_expression) => todo!(),
+			Expression::Number(number) => todo!(),
+			Expression::Text(text) => todo!(),
+			Expression::ForEachLoop(for_loop) => todo!(),
+			Expression::Run(run_expression) => todo!(),
+			Expression::Unary(unary_expression) => todo!(),
+			Expression::Parenthesized(parenthesized_expression) => todo!(),
+			Expression::List(list) => todo!(),
+			Expression::ErrorExpression(error_expression) => todo!(),
+			Expression::Action(action) => todo!(),
+			Expression::Extend(extend) => todo!(),
 		}
 	}
 }
 
 impl Spanned for Expression {
-	fn span(&self, context: &Context) -> Span {
+	fn span(&self) -> Span {
 		match self {
-			Expression::Identifier(name) => name.span(context),
-			Expression::Run(run_expression) => run_expression.span(context),
-			Expression::Block(block) => block.span(context),
-			Expression::New(object_constructor) => object_constructor.span(context),
-			Expression::FunctionCall(function_call) => function_call.span(context),
-			Expression::If(if_expression) => if_expression.span(context),
-			Expression::FieldAccess(field_access) => field_access.span(context),
-			Expression::ForEachLoop(for_each_loop) => for_each_loop.span(context),
-			Expression::Parameter(parameter) => parameter.span(context),
-			Expression::Unary(unary) => unary.span(context),
-			Expression::EvaluatedLiteral(literal) => literal.span(context),
-			Expression::Literal(literal) => literal.span(context),
-			Expression::List(list) => list.span(context),
-		}
-	}
-}
-
-impl RuntimeableExpression for Expression {
-	fn evaluate_subexpressions_at_compile_time(self, context: &mut Context) -> Self {
-		match self {
-			Self::FunctionCall(function_call) => Expression::FunctionCall(function_call.evaluate_subexpressions_at_compile_time(context)),
-			_ => {
-				context.add_diagnostic(Diagnostic {
-					file: context.file.clone(),
-					span: self.span(context),
-					info: DiagnosticInfo::RunNonFunctionCall,
-				});
-				self
-			},
+			Expression::Identifier(name) => name.span(),
+			Expression::Run(run_expression) => run_expression.span(),
+			Expression::Block(block) => block.span(),
+			Expression::New(object_constructor) => object_constructor.span(),
+			Expression::FunctionCall(function_call) => function_call.span(),
+			Expression::If(if_expression) => if_expression.span(),
+			Expression::FieldAccess(field_access) => field_access.span(),
+			Expression::ForEachLoop(for_each_loop) => for_each_loop.span(),
+			Expression::Unary(unary) => unary.span(),
+			Expression::List(list) => list.span(),
+			Expression::Group(group) => group.span(),
+			Expression::Either(either) => either.span(),
+			Expression::Binary(binary_expression) => binary_expression.span(),
+			Expression::Number(number) => number.span(),
+			Expression::Text(text) => text.span(),
+			Expression::Action(action) => action.span(),
+			Expression::Extend(extend) => extend.span(),
+			Expression::Parenthesized(parenthesized_expression) => parenthesized_expression.span(),
+			Expression::ErrorExpression(error_expression) => error_expression.span(),
 		}
 	}
 }

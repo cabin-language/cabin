@@ -88,10 +88,12 @@ pub enum TokenType {
 
 	RightArrow,
 
+	KeywordMod,
 	KeywordExtend,
 	KeywordAnd,
 	KeywordOr,
 	KeywordAs,
+	KeywordRun,
 
 	/// The `if` keyword token type. This is used similar to how it is in other languages: It runs a block of code if some condition is true.
 	///
@@ -189,6 +191,8 @@ pub enum TokenType {
 	/// the language like @? There should be a general design discussion about what identifiers should be valid.
 	Identifier,
 
+	LessThanOrEqual,
+	GreaterThanOrEqual,
 	LessThan,
 	GreaterThan,
 
@@ -306,6 +310,8 @@ impl TokenType {
 			Self::KeywordGo => regex!(r"^go\b"),
 			Self::KeywordVisible => regex!(r"^visible\b"),
 			Self::KeywordEditable => regex!(r"^editable\b"),
+			Self::KeywordRun => regex!(r"^run\b"),
+			Self::KeywordMod => regex!(r"^mod\b"),
 
 			// Left opening groupings
 			Self::LeftAngleBracket => regex!("^<"),
@@ -337,6 +343,8 @@ impl TokenType {
 			Self::LessThan => regex!(r"^\s+<"),
 			Self::GreaterThan => regex!(r"^\s+>"),
 			Self::RightArrow => regex!(r"^->"),
+			Self::LessThanOrEqual => regex!(r"<="),
+			Self::GreaterThanOrEqual => regex!(r">="),
 			Self::ExclamationPoint => regex!(r"^!"),
 			Self::QuestionMark => regex!(r"^\?"),
 
@@ -395,7 +403,7 @@ impl std::fmt::Display for TokenType {
 }
 
 /// A token in source code.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Token {
 	/// The type of the token.
 	pub token_type: TokenType,
@@ -467,12 +475,14 @@ pub fn tokenize(code: &str, context: &mut Context) -> VecDeque<Token> {
 		};
 
 		// Add the token
-		let token = Token {
-			token_type,
-			value,
-			span: Span { start: position, length },
-		};
-		tokens.push(token);
+		if token_type != TokenType::Whitespace {
+			let token = Token {
+				token_type,
+				value,
+				span: Span { start: position, length },
+			};
+			tokens.push(token);
+		}
 		position += length;
 
 		code = code.get(length..).unwrap().to_owned();

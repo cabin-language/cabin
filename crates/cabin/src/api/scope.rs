@@ -2,14 +2,13 @@ use std::{
 	collections::HashMap,
 	fmt::Debug,
 	ops::{Deref, DerefMut},
-	sync::atomic::{AtomicUsize, Ordering},
 };
 
-use crate::{api::context::Context, ast::expressions::identifier::Identifier, comptime::memory::ExpressionPointer, diagnostics::DiagnosticInfo};
+use crate::{api::context::Context, ast::expressions::identifier::Identifier, comptime::memory::Pointer, diagnostics::DiagnosticInfo};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ScopeId(usize);
+pub struct ScopeRef(usize);
 
-impl ScopeId {
+impl ScopeRef {
 	pub const fn global() -> Self {
 		Self(0)
 	}
@@ -23,9 +22,11 @@ impl ScopeId {
 /// and doing so will show their type. However, in the future, this may be used for other purposes, so it's good to leave here regardless
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum ScopeType {
-	/// The function declaration scope type. This is used for the body of a function declaration. Note that this is not in any way related to a scope that
-	/// a function is declared in, but represents the scope *inside* of a function's body.
 	Action,
+	ForLoop,
+	If,
+	Otherwise,
+	OtherwiseIf,
 	Parameters,
 	Extend,
 	File,
@@ -33,12 +34,8 @@ pub enum ScopeType {
 	Either,
 	While,
 	OneOf,
-	/// The global scope type. This should only ever be used on a single scope in the whole program: The global scope.
 	Global,
-	/// The group scope type. This is used for inside group declarations. The only variables that are added to
-	/// scopes of this type are compile-time parameters on groups.
 	Group,
-	/// The block scope type. This is used for the inside of expression blocks.
 	Block,
 }
 
@@ -69,7 +66,7 @@ pub struct Scope {
 	/// The variables declared in this scope. Note that this only holds the variables declared in this exact specific scope, and does not count the
 	/// variables declared in any parent scope, even though those are accessible in the language from this one. To get a variable from anywhere up
 	/// the parent tree, use `scope.get_variable`, which will traverse up the scope tree and check all parents.
-	variables: HashMap<Identifier, ExpressionPointer>,
+	variables: HashMap<Identifier, Pointer>,
 
 	/// in Rust with regular semantics can get *really* tricky - You need to either resort to lots of unsafe code with raw pointers (and probably pinning),
 	/// or use some fancy reference counting wrappers like `Rc<RefCell<Scope>>` and `Weak<RefCell<Scope>>`. Even in doing so, the implementation is not
@@ -97,7 +94,7 @@ impl Scope {
 	/// # Returns
 	/// A reference to the declaration data of the variable that exists in this scope with the given name. If none exists, `None` is returned. If it does exist
 	/// and `Some` is returned, the returned reference will have the same lifetime as this `Scope` object, as well as the given scopes slice.
-	fn get_variable<'scopes>(&'scopes self, name: &str, scopes: &'scopes [Self]) -> Option<ExpressionPointer> {
+	fn get_variable<'scopes>(&'scopes self, name: &str, scopes: &'scopes [Self]) -> Option<Pointer> {
 		self.variables
 			.iter()
 			.find_map(|(other, value)| (other.source_identifier() == name).then_some(value))
@@ -115,7 +112,7 @@ impl Scope {
 	///
 	/// # Returns
 	/// An `Err` if no variable with the given name exists in the current scope.
-	fn reassign_variable_direct(&mut self, name: &Identifier, value: ExpressionPointer) -> Result<(), ExpressionPointer> {
+	fn reassign_variable_direct(&mut self, name: &Identifier, value: Pointer) -> Result<(), Pointer> {
 		if let Some(variable) = self.variables.get_mut(name) {
 			*variable = value;
 			Ok(())
@@ -171,8 +168,6 @@ pub struct ScopeTree {
 	current_scope: usize,
 }
 
-static INDENT: AtomicUsize = AtomicUsize::new(0);
-
 impl ScopeTree {
 	/// Creates a new scope data with an empty global scope. This should only be used once in each program to create the main scope data.
 	/// The current scope is set to the global scope.
@@ -193,7 +188,7 @@ impl ScopeTree {
 		}
 	}
 
-	pub fn get_variable(&self, name: &str) -> Option<ExpressionPointer> {
+	pub fn get_variable(&self, name: &str) -> Option<Pointer> {
 		self.current().get_variable(name, &self.scopes)
 	}
 
@@ -220,11 +215,11 @@ impl ScopeTree {
 	///
 	/// # Returns
 	/// An immutable reference to the scope with this id, or `None` if no scope exists with the given id.
-	pub fn get_scope_from_id(&self, id: ScopeId) -> &Scope {
+	pub fn get_scope_from_id(&self, id: ScopeRef) -> &Scope {
 		self.scopes.get(id.0).unwrap()
 	}
 
-	pub fn get_scope_mut_from_id(&mut self, id: ScopeId) -> &mut Scope {
+	pub fn get_scope_mut_from_id(&mut self, id: ScopeRef) -> &mut Scope {
 		self.scopes.get_mut(id.0).unwrap()
 	}
 
@@ -236,17 +231,17 @@ impl ScopeTree {
 	///
 	/// # Returns
 	/// A reference to the variable declaration, or `None` if the variable does not exist in the current scope.
-	pub fn get_variable_from_id(&self, name: &str, id: ScopeId) -> Option<ExpressionPointer> {
+	pub fn get_variable_from_id(&self, name: &str, id: ScopeRef) -> Option<Pointer> {
 		self.get_scope_from_id(id).get_variable(name, &self.scopes)
 	}
 
-	pub fn get_builtin(&self, name: &str) -> Option<ExpressionPointer> {
-		self.get_variable_from_id(name, ScopeId::stdlib())
+	pub fn get_builtin(&self, name: &str) -> Option<Pointer> {
+		self.get_variable_from_id(name, ScopeRef::stdlib())
 	}
 
 	/// Enters a new scope. This creates a new scope with the given scope type, and sets the current scope to be that one. The newly created scope is added
 	/// to the children of this scope, and its parent will be this scope. When you're done with this scope, use `exit_scope()`.
-	pub fn enter_new_scope(&mut self, scope_type: ScopeType) -> ScopeId {
+	pub fn enter_new_scope(&mut self, scope_type: ScopeType) -> ScopeRef {
 		self.scopes.push(Scope {
 			variables: HashMap::new(),
 			index: self.scopes.len(),
@@ -261,7 +256,7 @@ impl ScopeTree {
 		// INDENT.fetch_add(1, Ordering::Relaxed);
 		self.current_mut().children.push(new_id);
 		self.current_scope = self.scopes.len() - 1;
-		ScopeId(self.current_scope)
+		ScopeRef(self.current_scope)
 	}
 
 	/// Exits the current scope. This sets the current scope of this scope data to be the parent of the current scope. This will only return an `Err` if
@@ -271,7 +266,7 @@ impl ScopeTree {
 	/// # Errors
 	///
 	/// If this is currently the global scope
-	pub fn exit_scope(&mut self, id: ScopeId) -> anyhow::Result<()> {
+	pub fn exit_scope(&mut self, id: ScopeRef) -> anyhow::Result<()> {
 		assert!(
 			self.current_scope == id.0,
 			"Attempted to exit scope {}, but current scope is {} of type {:?}",
@@ -291,8 +286,8 @@ impl ScopeTree {
 	///
 	/// # Returns
 	/// The unique ID of the current scope
-	pub const fn unique_id(&self) -> ScopeId {
-		ScopeId(self.current_scope)
+	pub const fn unique_id(&self) -> ScopeRef {
+		ScopeRef(self.current_scope)
 	}
 
 	/// Sets the current scope to the given id, and returns the previous scope id. This is used for things like function calls, where the current scope is
@@ -304,10 +299,10 @@ impl ScopeTree {
 	/// # Returns
 	/// The id of the previously current scope
 	#[must_use]
-	pub const fn set_current_scope(&mut self, id: ScopeId) -> ScopeReverter {
+	pub const fn set_current_scope(&mut self, id: ScopeRef) -> ScopeReverter {
 		let previous = self.current_scope;
 		self.current_scope = id.0;
-		ScopeReverter(ScopeId(previous))
+		ScopeReverter(ScopeRef(previous))
 	}
 
 	/// Declares a new variable in the scope with the given id with the given value and tags. This should only be used to declare a new variable,
@@ -322,7 +317,7 @@ impl ScopeTree {
 	///
 	/// # Errors
 	/// Returns an error if a variable already exists with the given name in the scope with the given id.
-	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Identifier>, value: ExpressionPointer, id: ScopeId) -> Result<(), DiagnosticInfo> {
+	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Identifier>, value: Pointer, id: ScopeRef) -> Result<(), DiagnosticInfo> {
 		let name = name.into();
 		let old = self.scopes.get_mut(id.0).unwrap().variables.insert(name.clone(), value);
 		old.map_or(Ok(()), |_| {
@@ -332,7 +327,7 @@ impl ScopeTree {
 		})
 	}
 
-	pub fn remove_variable_from_id(&mut self, name: impl Into<Identifier>, id: ScopeId) {
+	pub fn remove_variable_from_id(&mut self, name: impl Into<Identifier>, id: ScopeRef) {
 		let _ = self.scopes.get_mut(id.0).unwrap().variables.remove(&name.into());
 	}
 
@@ -347,12 +342,12 @@ impl ScopeTree {
 	///
 	/// # Errors
 	/// Returns an error if a variable already exists with the given name in the current scope.
-	pub fn declare_new_variable(&mut self, name: impl Into<Identifier>, value: ExpressionPointer) -> Result<(), DiagnosticInfo> {
-		self.declare_new_variable_from_id(name, value, ScopeId(self.current_scope))
+	pub fn declare_new_variable(&mut self, name: impl Into<Identifier>, value: Pointer) -> Result<(), DiagnosticInfo> {
+		self.declare_new_variable_from_id(name, value, ScopeRef(self.current_scope))
 	}
 
 	pub fn remove_variable(&mut self, name: impl Into<Identifier>) {
-		self.remove_variable_from_id(name, ScopeId(self.current_scope));
+		self.remove_variable_from_id(name, ScopeRef(self.current_scope));
 	}
 
 	/// as only the current scope is stored, so this operation is `O(n)`, where `n` is the height of the scope tree.
@@ -379,7 +374,7 @@ impl ScopeTree {
 	///
 	/// # Errors
 	/// Errors if no variable with the given name exists in the current scope.
-	pub fn reassign_variable_from_id(&mut self, name: &Identifier, mut value: ExpressionPointer, id: ScopeId) {
+	pub fn reassign_variable_from_id(&mut self, name: &Identifier, mut value: Pointer, id: ScopeRef) {
 		// Traverse up the parent tree looking for the declaration and reassign it
 		let mut current = Some(id.0);
 		while let Some(current_index) = current {
@@ -409,17 +404,17 @@ impl ScopeTree {
 	///
 	/// # Errors
 	/// Returns an error if no variable with the given name exists in the current scope.
-	pub fn reassign_variable(&mut self, name: &Identifier, value: ExpressionPointer) {
-		self.reassign_variable_from_id(name, value, ScopeId(self.current_scope));
+	pub fn reassign_variable(&mut self, name: &Identifier, value: Pointer) {
+		self.reassign_variable_from_id(name, value, ScopeRef(self.current_scope));
 	}
 
-	pub const fn get_stdlib_id() -> ScopeId {
-		ScopeId(1)
+	pub const fn get_stdlib_id() -> ScopeRef {
+		ScopeRef(1)
 	}
 
-	pub fn new_scope_id(&mut self, scope_type: ScopeType) -> ScopeId {
+	pub fn new_scope_id(&mut self, scope_type: ScopeType) -> ScopeRef {
 		let old = self.enter_new_scope(scope_type);
-		let id = ScopeId(self.current_scope);
+		let id = ScopeRef(self.current_scope);
 		self.exit_scope(old).unwrap();
 		id
 	}
@@ -523,7 +518,7 @@ impl Levenshtein for str {
 	}
 }
 
-pub struct ScopeReverter(ScopeId);
+pub struct ScopeReverter(ScopeRef);
 
 impl ScopeReverter {
 	pub const fn revert(&self, context: &mut Context) {

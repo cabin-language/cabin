@@ -4,31 +4,33 @@ use crate::{
 	api::context::Context,
 	ast::{
 		expressions::Expression,
-		statements::{declaration::Declaration, tail::TailStatement},
+		statements::{
+			declaration::{Declaration, EvaluatedDeclaration},
+			tail::{EvaluatedTailStatement, TailStatement},
+		},
 	},
-	comptime::{CompileTime, memory::ExpressionPointer},
-	diagnostics::Diagnostic,
-	interpreter::Runtime,
+	comptime::{Evaluate, memory::Pointer},
+	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::TokenType,
-	parser::{Parse, TokenQueue, TokenQueueFunctionality as _, TryParse as _},
-	transpiler::{TranspileError, TranspileToC},
+	log,
+	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 };
 
 pub mod declaration;
 pub mod tail;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum Statement {
 	Declaration(Declaration),
 	Tail(TailStatement),
-	Expression(ExpressionPointer),
+	Expression(Expression),
 	Error(Span),
 }
 
-impl Parse for Statement {
+impl TryParse for Statement {
 	type Output = Statement;
 
-	fn parse(tokens: &mut TokenQueue, context: &mut Context) -> Self::Output {
+	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Statement, Diagnostic> {
 			let statement = match tokens.peek_type(context)? {
 				TokenType::KeywordLet | TokenType::TagOpening => Declaration::try_parse(tokens, context)?,
@@ -38,7 +40,7 @@ impl Parse for Statement {
 					tail
 				},
 				_ => {
-					let expression = Statement::Expression(Expression::parse(tokens, context));
+					let expression = Statement::Expression(Expression::try_parse(tokens, context)?);
 					let _ = tokens.pop(TokenType::Semicolon, context)?;
 					expression
 				},
@@ -46,9 +48,8 @@ impl Parse for Statement {
 			Ok(statement)
 		}
 
-		let start = tokens.front().unwrap().span;
 		match try_parse(tokens, context) {
-			Ok(statement) => statement,
+			Ok(statement) => Ok(statement),
 			Err(error) => {
 				context.add_diagnostic(error);
 				while let Ok(token_type) = tokens.peek_type(context) {
@@ -59,57 +60,50 @@ impl Parse for Statement {
 
 					let _ = tokens.pop(token_type, context).unwrap();
 				}
-				let end = tokens.front().map_or(Span::none(), |front| front.span);
-				Statement::Error(start.to(end))
+
+				if !tokens.is_empty() {
+					Ok(Statement::Error(Span::none()))
+				} else {
+					Err(Diagnostic {
+						span: Span::none(),
+						info: DiagnosticInfo::UnexpectedGenericEOF,
+						file: context.file.clone(),
+					})
+				}
 			},
 		}
 	}
 }
 
-impl CompileTime for Statement {
-	type Output = Statement;
+impl Evaluate for Statement {
+	type Output = EvaluatedStatement;
 
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
+	fn evaluate(self, context: &mut Context) -> Self::Output {
+		log!(context, "Evaluating statement");
 		match self {
-			Statement::Declaration(declaration) => Statement::Declaration(declaration.evaluate_at_compile_time(context)),
-			Statement::Expression(expression) => Statement::Expression(expression.evaluate_at_compile_time(context)),
-			Statement::Tail(tail) => Statement::Tail(tail.evaluate_at_compile_time(context)),
-			Statement::Error(span) => Statement::Error(span),
+			Statement::Declaration(declaration) => EvaluatedStatement::Declaration(declaration.evaluate(context)),
+			Statement::Expression(expression) => EvaluatedStatement::Expression(expression.evaluate(context)),
+			Statement::Tail(tail) => EvaluatedStatement::Tail(tail.evaluate(context)),
+			Statement::Error(span) => EvaluatedStatement::Error(span),
 		}
-	}
-}
-
-impl Runtime for Statement {
-	type Output = Statement;
-
-	fn evaluate_at_runtime(self, context: &mut Context) -> Self::Output {
-		match self {
-			Statement::Declaration(declaration) => Statement::Declaration(declaration.evaluate_at_runtime(context)),
-			Statement::Expression(expression) => Statement::Expression(expression.evaluate_at_runtime(context)),
-			Statement::Tail(tail) => Statement::Tail(tail.evaluate_at_runtime(context)),
-			Statement::Error(span) => Statement::Error(span),
-		}
-	}
-}
-
-impl TranspileToC for Statement {
-	fn to_c(&self, context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
-		Ok(match self {
-			Statement::Declaration(declaration) => declaration.to_c(context, None)?,
-			Statement::Tail(tail) => tail.to_c(context, None)?,
-			Statement::Expression(expression) => expression.to_c(context, None)?,
-			Statement::Error(_) => return Err(TranspileError::TranspileError),
-		})
 	}
 }
 
 impl Spanned for Statement {
-	fn span(&self, context: &Context) -> Span {
+	fn span(&self) -> Span {
 		match self {
-			Self::Declaration(declaration) => declaration.span(context),
-			Self::Tail(tail) => tail.span(context),
-			Self::Expression(expression) => expression.span(context),
+			Self::Declaration(declaration) => declaration.span(),
+			Self::Tail(tail) => tail.span(),
+			Self::Expression(expression) => expression.span(),
 			Self::Error(span) => *span,
 		}
 	}
+}
+
+#[derive(Debug, Clone)]
+pub enum EvaluatedStatement {
+	Expression(Pointer),
+	Declaration(EvaluatedDeclaration),
+	Tail(EvaluatedTailStatement),
+	Error(Span),
 }

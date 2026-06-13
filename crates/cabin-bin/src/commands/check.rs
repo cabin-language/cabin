@@ -18,7 +18,7 @@ impl CabinCommand for CheckCommand {
 
 		println!("{} {}...", "\nChecking".bold().green(), project.config().information.name.bold());
 
-		if !check_errors(project.check().to_owned(), &project, true, false) {
+		if !check_errors(project.check().unwrap().to_owned(), &project, true, false) {
 			return;
 		}
 	}

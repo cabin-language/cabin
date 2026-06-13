@@ -1,107 +1,206 @@
-use super::ExpressionOrPointer;
+use derive_getters::Getters;
+
 use crate::{
+	Context,
 	Span,
 	Spanned,
-	api::{context::Context, scope::ScopeId},
-	ast::expressions::{Expression, block::Block},
-	comptime::{CompileTime, memory::ExpressionPointer},
+	ast::expressions::{EvaluatedExpression, Expression, block::Block},
+	comptime::{Check as _, Evaluate, memory::Pointer},
 	diagnostics::Diagnostic,
-	lexer::TokenType,
+	lexer::{Token, TokenType},
 	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
-	transpiler::{TranspileError, TranspileToC},
+	scope::ScopeType,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 pub struct IfExpression {
-	condition: ExpressionPointer,
-	body: ExpressionPointer,
-	else_body: Option<ExpressionPointer>,
-	span: Span,
+	condition: Expression,
+	body: Block,
+	otherwise_ifs: Vec<OtherwiseIf>,
+	otherwise: Option<Otherwise>,
+	tokens: IfTokens,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct IfTokens {
+	keyword_if: Token,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct OtherwiseIf {
+	condition: Expression,
+	body: Block,
+	tokens: OtherwiseIfTokens,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct Otherwise {
+	body: Block,
+	tokens: OtherwiseTokens,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct OtherwiseTokens {
+	keyword_otherwise: Token,
+}
+
+#[derive(Debug, Clone, Getters)]
+pub struct OtherwiseIfTokens {
+	keyword_otherwise: Token,
+	keyword_if: Token,
 }
 
 impl TryParse for IfExpression {
 	type Output = IfExpression;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
-		let start = tokens.pop(TokenType::KeywordIf, context)?.span;
-		let condition = Expression::parse(tokens, context);
-		let body = Block::try_parse(tokens, context)?;
-		let mut end = body.span(context);
-		let else_body = if tokens.next_is(TokenType::KeywordOtherwise) {
-			let _ = tokens.pop(TokenType::KeywordOtherwise, context).unwrap();
-			let else_body = Block::try_parse(tokens, context)?;
-			end = else_body.span(context);
-			Some(else_body)
+		let keyword_if = tokens.pop(TokenType::KeywordIf, context)?;
+		let condition = Expression::try_parse(tokens, context)?;
+		let body = Block::try_parse(tokens, context, ScopeType::If)?;
+
+		let mut otherwise_ifs = Vec::new();
+		while tokens.next_is(TokenType::KeywordOtherwise) && tokens.get(1).is_some_and(|t| t.token_type == TokenType::KeywordIf) {
+			let keyword_otherwise = tokens.pop(TokenType::KeywordOtherwise, context).unwrap();
+			let otherwise_keyword_if = tokens.pop(TokenType::KeywordIf, context).unwrap();
+			let otherwise_condition = Expression::try_parse(tokens, context)?;
+			let otherwise_body = Block::try_parse(tokens, context, ScopeType::OtherwiseIf)?;
+			otherwise_ifs.push(OtherwiseIf {
+				condition: otherwise_condition,
+				body: otherwise_body,
+				tokens: OtherwiseIfTokens {
+					keyword_otherwise,
+					keyword_if: otherwise_keyword_if,
+				},
+			});
+		}
+
+		let otherwise = if tokens.next_is(TokenType::KeywordOtherwise) {
+			let keyword_otherwise = tokens.pop(TokenType::KeywordOtherwise, context).unwrap();
+			let otherwise_body = Block::try_parse(tokens, context, ScopeType::Otherwise)?;
+			Some(Otherwise {
+				body: otherwise_body,
+				tokens: OtherwiseTokens { keyword_otherwise },
+			})
 		} else {
 			None
 		};
 
 		Ok(IfExpression {
 			condition,
-			body: Expression::Block(body).store_in_memory(context),
-			else_body: else_body.map(|else_body| Expression::Block(else_body).store_in_memory(context)),
-			span: start.to(end),
+			body,
+			otherwise_ifs,
+			otherwise,
+			tokens: IfTokens { keyword_if },
 		})
 	}
 }
 
-impl CompileTime for IfExpression {
-	type Output = ExpressionOrPointer;
-
-	#[allow(clippy::almost_swapped, reason = "False positive; context.side_effects is reassigned")]
-	fn evaluate_at_compile_time(self, context: &mut Context) -> Self::Output {
-		// Check condition
-		let condition = self.condition.evaluate_at_compile_time(context);
-		let cabin_true = context.scope.get_variable_from_id("true", ScopeId::global()).unwrap();
-		let condition_is_true = condition == cabin_true;
-
-		// Evaluate body
-		let snapshot = context.snapshot();
-		let body = self.body.evaluate_at_compile_time(context);
-
-		// IF the condition was false, then the if body shouldnt have side effects--
-		// so revert to the previous snapshot
-		if !condition_is_true {
-			context.roll_back(snapshot);
-		}
-
-		// Evaluate else body
-		let else_snapshot = context.snapshot();
-		let else_body = self.else_body.map(|else_body| else_body.evaluate_at_compile_time(context));
-
-		// IF the condition was true, then the else body shouldnt have side effects--
-		// so revert to the previous snapshot
-		if condition_is_true {
-			context.roll_back(else_snapshot);
-		}
-
-		// Fully evaluated: return the value (only if true)
-		if condition_is_true {
-			todo!()
-		}
-		// Else body
-		else if let Some(_else_body) = &else_body {
-			todo!()
-		}
-
-		// Non-literal: Return as an if-expression
-		ExpressionOrPointer::Expression(Expression::If(IfExpression {
-			condition,
-			body,
-			else_body,
-			span: self.span,
-		}))
-	}
+#[derive(Debug, Clone, Getters)]
+pub struct EvaluatedIfExpression {
+	condition: Pointer,
+	body: Block,
+	otherwise_ifs: Vec<EvaluatedOtherwiseIf>,
+	otherwise: Option<Otherwise>,
+	tokens: IfTokens,
 }
 
-impl TranspileToC for IfExpression {
-	fn to_c(&self, context: &mut Context, _output: Option<String>) -> Result<String, TranspileError> {
-		Ok(format!("if ({}) {}", self.condition.to_c(context, None)?, self.body.to_c(context, None)?))
+#[derive(Debug, Clone, Getters)]
+pub struct EvaluatedOtherwiseIf {
+	condition: Pointer,
+	body: Block,
+	tokens: OtherwiseIfTokens,
+}
+
+impl Evaluate for IfExpression {
+	type Output = Pointer;
+
+	fn evaluate(self, context: &mut Context) -> Self::Output {
+		// evaluate condition
+		let condition = self.condition.evaluate(context);
+		let cabin_true = context.get_true();
+		let condition_is_true = condition == cabin_true;
+
+		// static analysis
+		self.body.check(context);
+		if let Some(otherwise) = self.otherwise.as_ref() {
+			otherwise.body.check(context);
+		}
+		for otherwise_if in &self.otherwise_ifs {
+			otherwise_if.body.check(context);
+		}
+
+		// main if
+		if condition_is_true {
+			return self.body.evaluate(context);
+		}
+
+		// otherwise ifs
+		let mut otherwise_ifs = Vec::new();
+		for otherwise_if in self.otherwise_ifs {
+			let otherwise_condition = otherwise_if.condition.evaluate(context);
+			let otherwise_condition_is_true = otherwise_condition == cabin_true;
+			if otherwise_condition_is_true {
+				return otherwise_if.body.evaluate(context);
+			}
+
+			otherwise_ifs.push(EvaluatedOtherwiseIf {
+				condition: otherwise_condition,
+				body: otherwise_if.body,
+				tokens: otherwise_if.tokens,
+			});
+		}
+
+		// otherwise
+		let evaluated_otherwise = if let Some(otherwise) = self.otherwise {
+			if !condition_is_true {
+				return otherwise.body.evaluate(context);
+			}
+			otherwise.body.check(context);
+			Some(otherwise)
+		} else {
+			None
+		};
+
+		// Non-literal: Return as an if-expression
+		EvaluatedExpression::If(EvaluatedIfExpression {
+			condition,
+			body: self.body,
+			otherwise_ifs,
+			otherwise: evaluated_otherwise,
+			tokens: self.tokens,
+		})
+		.store(context)
 	}
 }
 
 impl Spanned for IfExpression {
-	fn span(&self, _context: &Context) -> Span {
-		self.span
+	fn span(&self) -> Span {
+		let start = self.tokens.keyword_if.span;
+
+		if let Some(otherwise) = &self.otherwise {
+			return start.to(otherwise.body.span());
+		}
+
+		if let Some(last_otherwise_if) = self.otherwise_ifs.last() {
+			return start.to(last_otherwise_if.body.span());
+		}
+
+		start.to(self.body.span())
+	}
+}
+
+impl Spanned for EvaluatedIfExpression {
+	fn span(&self) -> Span {
+		let start = self.tokens.keyword_if.span;
+
+		if let Some(otherwise) = &self.otherwise {
+			return start.to(otherwise.body.span());
+		}
+
+		if let Some(last_otherwise_if) = self.otherwise_ifs.last() {
+			return start.to(last_otherwise_if.body.span());
+		}
+
+		start.to(self.body.span())
 	}
 }

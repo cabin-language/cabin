@@ -5,12 +5,11 @@ use api::io::Io;
 // Re-exports
 pub use crate::api::{context::Context, project::Project, span::*, *};
 use crate::{
-	api::diagnostics::Diagnostics,
+	api::diagnostics::{Diagnostic, Diagnostics},
 	ast::misc::{module::Module, program::Program},
-	comptime::CompileTime as _,
-	interpreter::Runtime as _,
+	comptime::Evaluate as _,
 	lexer::Token,
-	parser::Parse as _,
+	parser::{Parse as _, TryParse as _},
 };
 
 /// The `ast` module, short for "abstract syntax tree". This module holds each of the specific
@@ -25,7 +24,7 @@ pub mod interpreter;
 pub mod lexer;
 pub mod parser;
 pub mod transpiler;
-pub mod typechecker;
+pub mod util;
 
 /// The `api` module. This module holds a bunch of utilities and abstractions within the compiler.
 pub mod api;
@@ -57,9 +56,9 @@ pub const STDLIB: &str = include_str!("../std/stdlib.cabin");
 /// correct permissions), an error is returned. If the file is read successfully, this will return
 /// `Ok`, even if the program isn't formatted correctly or parseable correctly. To check if the
 /// program was syntactically correct, check `context.diagnostics()` on your `context` object.
-pub fn parse_library_file<P: AsRef<Path>, System: Io>(path: P, context: &mut Context) -> Result<Module, std::io::Error> {
+pub fn parse_library_file<P: AsRef<Path>, System: Io>(path: P, context: &mut Context) -> anyhow::Result<Module> {
 	let code = std::fs::read_to_string(path.as_ref().join("src/library.cabin"))?;
-	Ok(parse_library(&code, context))
+	Ok(parse_library(&code, context)?)
 }
 
 /// Parses a Cabin library from its source code. A library is like a program, except it may only contain
@@ -84,14 +83,14 @@ pub fn parse_library_file<P: AsRef<Path>, System: Io>(path: P, context: &mut Con
 /// correct permissions), an error is returned. If the file is read successfully, this will return
 /// `Ok`, even if the program isn't formatted correctly or parseable correctly. To check if the
 /// program was syntactically correct, check `context.diagnostics()` on your `context` object.
-pub fn parse_library(code: &str, context: &mut Context) -> Module {
+pub fn parse_library(code: &str, context: &mut Context) -> Result<Module, Diagnostic> {
 	let mut tokens = lexer::tokenize(code, context);
-	Module::parse(&mut tokens, context)
+	Module::try_parse(&mut tokens, context)
 }
 
-pub fn parse_program(code: &str, context: &mut Context) -> Program {
+pub fn parse_program(code: &str, context: &mut Context) -> Result<Program, Diagnostic> {
 	let mut tokens = lexer::tokenize(code, context);
-	Program::parse(&mut tokens, context)
+	Program::try_parse(&mut tokens, context)
 }
 
 /// Tokenizes a string of Cabin code, returning the tokens and any diagnostics (such as errors)
@@ -108,31 +107,4 @@ pub fn parse_program(code: &str, context: &mut Context) -> Program {
 pub fn tokenize(code: &str) -> (VecDeque<Token>, Diagnostics) {
 	let mut context = Context::default();
 	(lexer::tokenize(code, &mut context), context.diagnostics().to_owned())
-}
-
-/// Runs Cabin in "interpreter mode" on the given code. This will not compile the code to a native
-/// binary; Instead, it'll be interpreted line-by-line. This is mainly used for the `cabin
-/// interactive` command, which runs a cabin REPL, as well as the Cabin online playground. Any
-/// errors (or other information) that occur will be stored on the context's `diagnostics`.
-///
-/// # Parameters
-///
-/// - `code` - The Cabin source code as a string
-/// - `context` - The program's context; This contains global data about the program. If you're
-pub fn interpret(code: &str, context: &mut Context) {
-	let mut tokens = lexer::tokenize(code, context);
-	let program = Program::parse(&mut tokens, context);
-	let evaluated = program.evaluate_at_compile_time(context);
-	let _ = evaluated.evaluate_at_runtime(context);
-}
-
-pub fn interpret_with_logs(code: &str, context: &mut Context) {
-	context.println("Running...");
-	context.println("\tChecking syntax and types...");
-	let mut tokens = lexer::tokenize(code, context);
-	let program = Program::parse(&mut tokens, context);
-	context.println("\tRunning compile-time code...");
-	let evaluated = program.evaluate_at_compile_time(context);
-	context.println("\tRunning runtime code...");
-	let _ = evaluated.evaluate_at_runtime(context);
 }
