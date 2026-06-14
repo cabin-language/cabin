@@ -7,7 +7,7 @@ use crate::{
 	comptime::{Evaluate, memory::Pointer},
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
-	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 };
 
 #[derive(Debug, Clone, Getters)]

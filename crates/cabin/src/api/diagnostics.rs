@@ -1,4 +1,4 @@
-use std::{fmt::Display, ops::Not, path::PathBuf};
+use std::{fmt::Display, ops::Not as _, path::PathBuf};
 
 use convert_case::{Case, Casing as _};
 

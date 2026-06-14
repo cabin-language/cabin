@@ -7,9 +7,8 @@ pub use crate::api::{context::Context, project::Project, span::*, *};
 use crate::{
 	api::diagnostics::{Diagnostic, Diagnostics},
 	ast::misc::{module::Module, program::Program},
-	comptime::Evaluate as _,
 	lexer::Token,
-	parser::{Parse as _, TryParse as _},
+	parser::TryParse as _,
 };
 
 /// The `ast` module, short for "abstract syntax tree". This module holds each of the specific

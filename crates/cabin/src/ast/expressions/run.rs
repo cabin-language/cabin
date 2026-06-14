@@ -7,7 +7,7 @@ use crate::{
 	comptime::Evaluate,
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
-	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::ToCabin,
 };
 

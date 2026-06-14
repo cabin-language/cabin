@@ -119,11 +119,19 @@ impl TryParse for Parameters {
 	}
 }
 
+impl Parameters {
+	pub fn pop_first(&mut self) {
+		self.parameters.remove(0);
+	}
+}
+
 impl Spanned for Parameters {
 	fn span(&self) -> Span {
 		self.tokens.left_parenthesis.span.to(self.tokens.right_parenthesis.span)
 	}
 }
+
+impl Parameters {}
 
 #[derive(Debug, Clone, Getters)]
 pub struct EvaluatedParameters {
@@ -153,7 +161,19 @@ impl EvaluatedParameters {
 		self.parameters.iter()
 	}
 
-	pub fn len(&self) -> usize {
+	pub fn first(&self) -> Option<&EvaluatedParameter> {
+		self.parameters.first()
+	}
+
+	pub fn pop_first(&mut self) {
+		let _ = self.parameters.remove(0);
+	}
+
+	pub const fn len(&self) -> usize {
 		self.parameters.len()
+	}
+
+	pub const fn is_empty(&self) -> bool {
+		self.len() == 0
 	}
 }

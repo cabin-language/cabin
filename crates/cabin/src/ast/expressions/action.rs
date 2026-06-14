@@ -148,6 +148,7 @@ impl Evaluate for Action {
 			parameter_scope: self.parameter_scope,
 			tokens: self.tokens,
 			tags,
+			this: None,
 		}
 	}
 }
@@ -185,6 +186,7 @@ pub struct EvaluatedAction {
 	parameter_scope: ScopeRef,
 	tokens: ActionTokens,
 	tags: Option<EvaluatedTagList>,
+	pub(crate) this: Option<Pointer>,
 }
 
 #[derive(Debug, Clone, Getters)]
@@ -214,5 +216,13 @@ impl Spanned for EvaluatedAction {
 		}
 
 		start.to(start)
+	}
+}
+
+impl EvaluatedAction {
+	pub fn takes_this(&self, context: &Context) -> bool {
+		self.parameters()
+			.as_ref()
+			.is_some_and(|parameters| parameters.first().is_some_and(|first| *first.parameter_type() == context.ident("This")))
 	}
 }

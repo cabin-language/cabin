@@ -61,14 +61,14 @@ impl TryParse for Statement {
 					let _ = tokens.pop(token_type, context).unwrap();
 				}
 
-				if !tokens.is_empty() {
-					Ok(Statement::Error(Span::none()))
-				} else {
+				if tokens.is_empty() {
 					Err(Diagnostic {
 						span: Span::none(),
 						info: DiagnosticInfo::UnexpectedGenericEOF,
 						file: context.file.clone(),
 					})
+				} else {
+					Ok(Statement::Error(Span::none()))
 				}
 			},
 		}

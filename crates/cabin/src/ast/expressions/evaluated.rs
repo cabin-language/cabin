@@ -6,7 +6,6 @@ use crate::{
 	Spanned,
 	ast::expressions::{
 		action::EvaluatedAction,
-		binary::EvaluatedBinaryExpression,
 		block::EvaluatedBlock,
 		either::EvaluatedEither,
 		error::ErrorExpression,
@@ -44,7 +43,6 @@ pub enum EvaluatedExpression {
 	Run(Box<EvaluatedRunExpression>),
 	ErrorExpression(ErrorExpression),
 	Extend(EvaluatedExtend),
-	Binary(EvaluatedBinaryExpression),
 	FunctionCall(EvaluatedFunctionCall),
 }
 
@@ -70,7 +68,6 @@ impl EvaluatedExpression {
 			EvaluatedExpression::List(_) => "list",
 			EvaluatedExpression::Group(_) => "group",
 			EvaluatedExpression::Either(_) => "either",
-			EvaluatedExpression::Binary(_) => "binary expression",
 			EvaluatedExpression::FunctionCall(_) => "action call",
 			EvaluatedExpression::Number(_) => "number",
 			EvaluatedExpression::ForLoop(_) => "for loop",
@@ -93,7 +90,6 @@ impl Spanned for EvaluatedExpression {
 			EvaluatedExpression::Run(run) => run.span(),
 			EvaluatedExpression::Either(either) => either.span(),
 			EvaluatedExpression::Number(number) => number.span(),
-			EvaluatedExpression::Binary(binary) => binary.span(),
 			EvaluatedExpression::List(list) => list.span(),
 			EvaluatedExpression::Extend(extend) => extend.span(),
 			EvaluatedExpression::ErrorExpression(error_expression) => error_expression.span(),

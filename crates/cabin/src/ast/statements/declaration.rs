@@ -67,7 +67,7 @@ impl TryParse for Declaration {
 		let keyword_let = tokens.pop(TokenType::KeywordLet, context)?;
 
 		let keyword_visible = if_then_some!(tokens.next_is(TokenType::KeywordVisible), tokens.pop(TokenType::KeywordVisible, context).unwrap());
-		let keyword_editable = if_then_some!(tokens.next_is(TokenType::KeywordEditable), tokens.pop(TokenType::KeywordVisible, context).unwrap());
+		let keyword_editable = if_then_some!(tokens.next_is(TokenType::KeywordEditable), tokens.pop(TokenType::KeywordEditable, context).unwrap());
 
 		// name
 		let name = Identifier::try_parse(tokens, context)?;

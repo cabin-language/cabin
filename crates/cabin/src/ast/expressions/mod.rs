@@ -38,7 +38,7 @@ use crate::{
 	comptime::{Evaluate, memory::Pointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	log,
-	parser::{Parse, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 	transpiler::ToCabin,
 };
 

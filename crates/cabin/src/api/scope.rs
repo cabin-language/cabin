@@ -151,6 +151,14 @@ impl Scope {
 	pub fn set_label(&mut self, name: Identifier) {
 		self.label = Some(name);
 	}
+
+	fn available_variables<'scopes>(&'scopes self, scopes: &'scopes [Self]) -> HashMap<Identifier, Pointer> {
+		let mut map = self.variables.clone();
+		if let Some(parent) = self.parent {
+			map.extend(scopes.get(parent).unwrap().available_variables(scopes));
+		}
+		map
+	}
 }
 
 /// Current scope data for the language. The scopes in the language are a tree data structure, with the root being the global scope. This can be hard to implement
@@ -421,6 +429,10 @@ impl ScopeTree {
 
 	pub fn has_variable(&self, name: &str) -> bool {
 		self.get_variable(name).is_some()
+	}
+
+	pub fn available_variables(&self) -> HashMap<Identifier, Pointer> {
+		self.current().available_variables(&self.scopes)
 	}
 }
 

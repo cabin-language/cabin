@@ -5,13 +5,10 @@ use crate::{
 	Diagnostics,
 	STDLIB,
 	api::{diagnostics::Diagnostic, scope::ScopeTree},
-	ast::expressions::{
-		function_call::{EvaluatedFunctionCall, FunctionCall},
-		identifier::Identifier,
-	},
+	ast::expressions::{evaluated::EvaluatedExpression, extend::EvaluatedExtend, function_call::EvaluatedFunctionCall, identifier::Identifier},
 	comptime::{
 		Evaluate as _,
-		memory::{Pointer, VirtualMemory},
+		memory::{Pointer, Storable, VirtualMemory},
 	},
 	scope::ScopeRef,
 };
@@ -304,8 +301,27 @@ impl Context {
 		self.scope.get_variable_from_id("Any", ScopeRef::global()).unwrap()
 	}
 
-	pub fn ident(&self, name: &'static str) -> Pointer {
-		self.scope.get_variable_from_id(name, ScopeRef::stdlib()).expect(&format!("Couldnt find {name}"))
+	pub(crate) fn ident(&self, name: &'static str) -> Pointer {
+		#[allow(clippy::panic, reason = "dev error")]
+		self.scope.get_variable_from_id(name, ScopeRef::stdlib()).unwrap_or_else(|| {
+			dbg!(&self.diagnostics);
+			panic!("Could not find {name}");
+		})
+	}
+
+	pub fn extensions(&self) -> Vec<&EvaluatedExtend> {
+		self.scope
+			.available_variables()
+			.into_values()
+			.filter_map(|value| match value.value(self) {
+				Storable::Expression(EvaluatedExpression::Extend(extend)) => Some(extend),
+				_ => None,
+			})
+			.collect()
+	}
+
+	pub fn extensions_for(&self, group: Pointer) -> Vec<&EvaluatedExtend> {
+		self.extensions().into_iter().filter(|extension| *extension.type_to_extend() == group).collect()
 	}
 }
 

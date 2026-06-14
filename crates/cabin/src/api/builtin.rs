@@ -1,3 +1,5 @@
+use std::{collections::VecDeque, io::Write as _};
+
 use crate::{
 	Context,
 	Span,
@@ -26,10 +28,10 @@ use crate::{
 /// If there is no built-in function with the given name, an error is returned.
 ///
 /// Also, if the built-in function throws an error while being called, that error is returned as well.
-pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut arguments: Vec<Pointer>, span: Span) -> Pointer {
+pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut arguments: VecDeque<Pointer>, span: Span) -> Pointer {
 	match name {
 		"system.terminal.write" => {
-			let Some(pointer) = arguments.pop() else {
+			let Some(pointer) = arguments.pop_front() else {
 				context.add_diagnostic(Diagnostic {
 					span,
 					info: DiagnosticInfo::IncorrectArgumentCount { expected: 1, actual: 0 },
@@ -39,7 +41,7 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut argum
 				return context.none();
 			};
 
-			let string_value = call_builtin_at_compile_time("Any.to_text", context, vec![pointer], span)
+			let string_value = call_builtin_at_compile_time("Any.to_text", context, vec![pointer].into(), span)
 				.value(context)
 				.as_object()
 				.unwrap()
@@ -52,14 +54,15 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut argum
 					context.has_printed = true;
 					println!();
 				}
-				println!("{string_value}");
+				print!("{string_value}");
+				std::io::stdout().flush().unwrap();
 			}
 
 			// Add hint diagnostic
 			if !context.interactive {
 				context.add_diagnostic(Diagnostic {
 					span,
-					info: DiagnosticInfo::Info(string_value),
+					info: DiagnosticInfo::Info(string_value.trim().to_owned()),
 					file: context.file.clone(),
 				});
 			}
@@ -68,7 +71,7 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut argum
 		},
 
 		"Text.plus" => {
-			let Some(this) = arguments.pop() else {
+			let Some(this) = arguments.pop_front() else {
 				context.add_diagnostic(Diagnostic {
 					span,
 					info: DiagnosticInfo::IncorrectArgumentCount { expected: 2, actual: 0 },
@@ -77,7 +80,7 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut argum
 
 				return context.none();
 			};
-			let Some(other) = arguments.pop() else {
+			let Some(other) = arguments.pop_front() else {
 				context.add_diagnostic(Diagnostic {
 					span,
 					info: DiagnosticInfo::IncorrectArgumentCount { expected: 2, actual: 1 },
@@ -101,7 +104,7 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut argum
 		},
 
 		"Any.to_text" => {
-			let Some(this) = arguments.pop() else {
+			let Some(this) = arguments.pop_front() else {
 				context.add_diagnostic(Diagnostic {
 					span,
 					info: DiagnosticInfo::IncorrectArgumentCount { expected: 2, actual: 0 },

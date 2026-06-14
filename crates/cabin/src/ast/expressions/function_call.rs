@@ -158,7 +158,7 @@ impl Evaluate for FunctionCall {
 		};
 
 		// Arguments
-		let arguments = {
+		let mut arguments = {
 			let mut evaluated_arguments = Vec::new();
 			for argument in self.arguments {
 				let evaluated = argument.evaluate(context);
@@ -170,7 +170,6 @@ impl Evaluate for FunctionCall {
 		// If not all arguments are known at compile-time, we can't call the function at compile time. In this case, we just
 		// return a function call expression, and it'll get transpiled to C and called at runtime.
 		if arguments.iter().map(|argument| argument.is_fully_known(context)).any(|value| !value) {
-			let _ = context.call_stack.pop().unwrap();
 			return EvaluatedExpression::FunctionCall(EvaluatedFunctionCall {
 				callee: function,
 				compile_time_arguments,
@@ -192,6 +191,9 @@ impl Evaluate for FunctionCall {
 		// callee is an action
 		if let Some(action) = function.value(context).as_expression().and_then(|expr| expr.try_as::<EvaluatedAction>().ok()) {
 			let action = action.clone();
+			if let Some(this) = action.this() {
+				arguments.insert(0, *this);
+			}
 
 			// validate compile-time arguments
 			for (argument, _parameter) in compile_time_arguments.iter().zip(action.compile_time_parameters().iter()) {
@@ -280,7 +282,7 @@ impl Evaluate for FunctionCall {
 
 			// call builtin function
 			if let Some(internal_name) = builtin_name {
-				let return_value = call_builtin_at_compile_time(&internal_name, context, arguments, span);
+				let return_value = call_builtin_at_compile_time(&internal_name, context, arguments.into(), span);
 				let _ = context.call_stack.pop().unwrap();
 
 				if let Some(outer) = context.call_stack.last()

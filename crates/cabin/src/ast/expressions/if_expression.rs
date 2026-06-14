@@ -8,7 +8,7 @@ use crate::{
 	comptime::{Check as _, Evaluate, memory::Pointer},
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
-	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 	scope::ScopeType,
 };
 

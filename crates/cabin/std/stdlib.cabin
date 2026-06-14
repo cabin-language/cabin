@@ -6,16 +6,12 @@ let visible Text = group {};
 
 let visible Module = group {};
 
-let visible add_text = extend Text as Addable {
-	plus = action(this: This, other: This): This,
-};
-
 let visible Builtin = group {
 	internal_name: Text
 };
 
 let visible This = group {};
-let visible List = group {};
+
 let visible EitherVariant = group {};
 
 let visible Number = group {}; 
@@ -33,7 +29,7 @@ let visible Property = group {
 	name: Text
 };
 
-let visible Function = group {
+let visible Action = group {
 	visible parameters: Any,
 	visible return_type: Any,
 	visible compile_time_parameters: Any,
@@ -91,6 +87,53 @@ let visible builtin = action<name: Text> {
 	return is new Builtin { internal_name = name };
 };
 
+let visible add_text = extend Text as Addable {
+	#[builtin<"Text.plus">]
+	plus = action(this: This, other: This): This,
+};
+
+
+let visible List = group<T: Any> {
+
+	#[builtin<"List.insert">]
+	visible insert = action(this: This, index: Number, value: T),
+
+	#[builtin<"List.get">]
+	visible get = action(this: This, index: Number): T,
+
+	#[builtin<"List.set">]
+	visible set = action(this: This, index: Number, value: T),
+
+	#[builtin<"List.length">]
+	visible length = action(this: This, index: Number, value: T),
+
+	#[builtin<"List.remove_at">]
+	visible remove_at = action(this: This, index: Number),
+
+	visible add = action(this: This, value: T) {
+		this.insert(this.length, value);
+	},
+	
+	visible prepend = action(this: This, value: T) {
+		this.insert(0, value);
+	},
+
+	visible indices = action(this: This): List {
+		let editable index = 0;
+		let editable result = [];
+
+		for value in this {
+			result.add([index, value]);
+		};
+
+		return is result;
+	},
+
+	visible remove = action(this: This, value: T) {
+		let editable index = 0;
+	},
+};
+
 let visible system = new Any {
 
 	terminal = new Any {
@@ -103,16 +146,16 @@ let visible system = new Any {
 
 		#[runtime<"Use log() for logging information at compile-time">]
 		print = action(object: Any) {
-			system.terminal.write(object);
+			system.terminal.write("{object}\n");
 		},
 
 		#[compile_time<"Use print() for logging information at runtime">]
 		log = action(object: Any) {
-			system.terminal.write(object);	
+			system.terminal.write("{object}\n");	
 		},
 
 		debug = action<T: Any>(object: T): T {
-			system.terminal.write(object);
+			system.terminal.write("{object}\n");
 			return is object;
 		},
 	},

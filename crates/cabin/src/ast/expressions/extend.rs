@@ -103,7 +103,10 @@ impl TryParse for Extend {
 
 			// value
 			let equal = tokens.pop(TokenType::Equal, context).or_exit_scope(context)?;
-			let value = Expression::try_parse(tokens, context).or_exit_scope(context)?;
+			let mut value = Expression::try_parse(tokens, context).or_exit_scope(context)?;
+			if let Some(tags) = &tags {
+				value.set_tags(tags.clone());
+			}
 
 			let comma = tokens.pop(TokenType::Comma, context).ok();
 			let has_comma = comma.is_some();

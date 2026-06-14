@@ -1,9 +1,11 @@
+use derive_getters::Getters;
+
 use crate::{
 	Context,
 	ast::statements::{EvaluatedStatement, Statement},
 	comptime::Evaluate,
 	diagnostics::Diagnostic,
-	parser::{Parse, TokenQueue, TryParse},
+	parser::{TokenQueue, TryParse},
 	scope::{ScopeRef, ScopeType},
 };
 
@@ -44,7 +46,7 @@ impl Evaluate for Program {
 		}
 	}
 }
-#[derive(Debug)]
+#[derive(Debug, Clone, Getters)]
 pub struct EvaluatedProgram {
 	statements: Vec<EvaluatedStatement>,
 	inner_scope: ScopeRef,

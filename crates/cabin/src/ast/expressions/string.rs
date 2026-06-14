@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use derive_getters::Getters;
 // Required because of a bug in `try_as`
 use try_as::traits as try_as_traits;
@@ -6,38 +8,14 @@ use crate::{
 	Span,
 	Spanned,
 	api::context::Context,
-	ast::expressions::{Expression, binary::EvaluatedBinaryExpression, evaluated::EvaluatedExpression, object::Object},
+	ast::expressions::{Expression, binary::BinaryExpression, object::Object},
 	comptime::{Evaluate, memory::Pointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType, tokenize_string},
 	log,
-	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 };
 
-/// A part of a formatted string literal. Each part is either just a regular string value, or an
-/// expression that's inserted into the formatted string. The parts are chained together as
-/// function calls at parse time, i.e.:
-///
-/// ```cabin
-/// print("Hello {name}!");
-/// ```
-///
-/// becomes:
-///
-/// ```cabin
-/// print("Hello ".plus(name.to_text()).plus("!"));
-/// ```
-///
-/// A formatted string is stored as a `Vec<StringPart>` before being converted into a function call
-/// chain such as the one shown above, so the above might be something like:
-///
-/// ```rust
-/// vec![
-///     StringPart::Literal("Hello "),
-///     StringPart::Expression(name.to_text()),
-///     StringPart::Literal("!")
-/// ]
-/// ```
 #[derive(Debug, Clone, try_as::macros::TryAsRef)]
 pub enum StringPart {
 	/// A literal string part.
@@ -65,9 +43,7 @@ pub struct LiteralPart {
 #[derive(Debug, Clone, Getters)]
 pub struct Text {
 	parts: Vec<StringPart>,
-
-	#[getter(skip)]
-	span: Span,
+	tokens: TextTokens,
 }
 
 #[derive(Debug, Clone, Getters)]
@@ -81,55 +57,61 @@ impl TryParse for Text {
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let token = tokens.pop(TokenType::String, context)?;
 		let span = token.span;
-		let with_quotes = token.value;
-		let mut without_quotes = with_quotes.get(1..with_quotes.len() - 1).unwrap().to_owned();
+		let original = token.value.strip_prefix('"').and_then(|s| s.strip_suffix('"')).unwrap().to_owned();
+		let mut without_quotes = original.chars().collect::<VecDeque<char>>();
 
-		let mut parts = vec![StringPart::Literal(LiteralPart { span, value: without_quotes })];
-		// let mut builder = without_quotes;
-		// while !without_quotes.is_empty() {
-		// 	match without_quotes.chars().next().unwrap() {
-		// 		'{' => {
-		// 			if !builder.is_empty() {
-		// 				parts.push(StringPart::Literal(LiteralPart { value: builder, span }));
-		// 				builder = String::new();
-		// 			}
+		let mut parts = Vec::new();
+		let mut builder = String::new();
 
-		// 			// Pop the opening brace
-		// 			without_quotes = without_quotes.get(1..without_quotes.len()).unwrap().to_owned();
+		let mut span_start = span.start;
+		while !without_quotes.is_empty() {
+			match without_quotes.pop_front().unwrap() {
+				'{' => {
+					if !builder.is_empty() {
+						let part_span = Span::new(span_start, builder.len());
+						parts.push(StringPart::Literal(LiteralPart {
+							span: part_span,
+							value: builder.replace(r"\n", "\n"),
+						}));
+						span_start = part_span.end() + 1;
+						builder.clear();
+					}
 
-		// 			// Parse an expression
-		// 			let mut expr_tokens = tokenize_string(&without_quotes);
-		// 			let expression = Expression::try_parse(&mut expr_tokens, context)?;
-		// 			parts.push(StringPart::Expression(expression));
+					let mut expr_tokens = tokenize_string(&without_quotes.iter().collect::<String>());
+					let expression = Expression::try_parse(&mut expr_tokens, context)?;
+					let length = expression.span().length();
+					parts.push(StringPart::Expression(expression));
+					span_start += length;
 
-		// 			// Recollect remaining tokens into string
-		// 			// TODO: bug here
-		// 			// without_quotes = expr_tokens.into_iter().map(|expr_token| expr_token.value).collect();
+					for _ in 0..length {
+						let _ = without_quotes.pop_front();
+					}
 
-		// 			// Pop closing brace
-		// 			if !without_quotes.starts_with('}') {
-		// 				return Err(Diagnostic {
-		// 					file: context.file.clone(),
-		// 					span: token.span,
-		// 					info: DiagnosticInfo::InvalidFormatString(with_quotes),
-		// 				});
-		// 			}
+					if without_quotes.pop_front() != Some('}') {
+						return Err(Diagnostic {
+							info: DiagnosticInfo::InvalidFormatString(original),
+							file: context.file.clone(),
+							span,
+						});
+					}
+				},
 
-		// 			without_quotes = without_quotes.get(1..without_quotes.len()).unwrap().to_owned();
-		// 		},
+				c => builder.push(c),
+			}
+		}
 
-		// 		normal_character => {
-		// 			without_quotes = without_quotes.get(1..without_quotes.len()).unwrap().to_owned();
-		// 			builder.push(normal_character);
-		// 		},
-		// 	}
-		// }
+		if !builder.is_empty() {
+			let part_span = Span::new(span_start, builder.len());
+			parts.push(StringPart::Literal(LiteralPart {
+				span: part_span,
+				value: builder.replace(r"\n", "\n"),
+			}));
+		}
 
-		// if !builder.is_empty() {
-		// 	parts.push(StringPart::Literal(LiteralPart { value: builder, span }));
-		// }
-
-		Ok(Text { parts, span })
+		Ok(Text {
+			parts,
+			tokens: TextTokens { string: token },
+		})
 	}
 }
 
@@ -146,28 +128,29 @@ impl Evaluate for Text {
 			};
 		}
 
-		let parts = self.parts.into_iter().map(|part| part.into_expression().evaluate(context)).collect::<Vec<_>>();
-		let mut parts = parts.into_iter();
-
+		let mut parts = self.parts.into_iter().map(|part| part.into_expression());
 		let mut expression = parts.next().unwrap();
+
 		for part in parts {
-			expression = EvaluatedExpression::Binary(EvaluatedBinaryExpression::synthetic(expression, Token::synthetic(TokenType::Plus, "+", Span::none()), part)).store(context);
+			expression = Expression::Binary(Box::new(BinaryExpression::synthetic(expression, Token::synthetic(TokenType::Plus, "+", part.span()), part)));
 		}
 
-		expression
+		expression.evaluate(context)
 	}
 }
 
 impl Spanned for Text {
 	fn span(&self) -> Span {
-		self.span
+		self.tokens.string.span
 	}
 }
 
 impl Text {
 	pub fn literal(literal: LiteralPart) -> Text {
 		Text {
-			span: literal.span,
+			tokens: TextTokens {
+				string: Token::synthetic(TokenType::String, &literal.value, literal.span),
+			},
 			parts: vec![StringPart::Literal(literal)],
 		}
 	}

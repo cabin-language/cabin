@@ -15,8 +15,8 @@ use crate::{
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 	log,
-	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse as _},
-	util::ExitScope,
+	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse as _},
+	util::ExitScope as _,
 };
 
 #[derive(Debug, Clone, Getters)]

@@ -7,17 +7,10 @@ use crate::{
 	Span,
 	Spanned as _,
 	ast::{
-		expressions::{
-			action::{Action, EvaluatedAction},
-			either::EvaluatedEither,
-			evaluated::EvaluatedExpression,
-			extend::EvaluatedExtend,
-			group::EvaluatedGroup,
-			object::Object,
-		},
+		expressions::{action::EvaluatedAction, either::EvaluatedEither, evaluated::EvaluatedExpression, extend::EvaluatedExtend, group::EvaluatedGroup, object::Object},
 		statements::{
 			Statement,
-			declaration::{self, Declaration, EvaluatedDeclaration},
+			declaration::{Declaration, EvaluatedDeclaration},
 		},
 	},
 	comptime::{
@@ -27,7 +20,6 @@ use crate::{
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	parser::{TokenQueue, TryParse},
 	scope::{ScopeRef, ScopeType},
-	traits::TryAs,
 };
 
 #[derive(Debug)]
@@ -113,11 +105,12 @@ pub struct EvaluatedModule {
 
 impl EvaluatedModule {
 	pub(crate) fn get_object<'ctx>(&self, name: &'static str, context: &'ctx Context) -> &'ctx Object {
+		#[allow(clippy::panic, reason = "dev error")]
 		let decl = self
 			.declarations
 			.iter()
 			.find_map(|declaration| (declaration.inner.name().source_identifier() == name).then(|| declaration.value(context)))
-			.unwrap();
+			.unwrap_or_else(|| panic!("Cannot find {name} in module"));
 
 		match decl {
 			TopLevelDeclarationValue::Object(object) => object,
@@ -151,9 +144,9 @@ impl EvaluatedModule {
 	pub(crate) fn into_object(self, context: &Context) -> Object {
 		let mut fields = HashMap::new();
 		for declaration in self.declarations {
-			let name = declaration.inner.name().source_identifier().to_string();
+			let name = declaration.inner.name().source_identifier().to_owned();
 			let value = *declaration.inner.value();
-			fields.insert(name, value);
+			let _ = fields.insert(name, value);
 		}
 		Object::new(context.ident("Module"), fields, Span::none())
 	}

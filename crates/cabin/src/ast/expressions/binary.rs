@@ -200,6 +200,17 @@ impl TryParse for PrimaryExpression {
 	}
 }
 
+impl BinaryExpression {
+	pub const fn synthetic(left: Expression, operator: Token, right: Expression) -> BinaryExpression {
+		BinaryExpression {
+			left,
+			right,
+			operation: BinaryOperation::from_token_type(operator.token_type).unwrap(),
+			tokens: BinaryExpressionTokens { operator },
+		}
+	}
+}
+
 impl Evaluate for BinaryExpression {
 	type Output = Pointer;
 
@@ -211,31 +222,6 @@ impl Evaluate for BinaryExpression {
 }
 
 impl Spanned for BinaryExpression {
-	fn span(&self) -> Span {
-		self.left.span().to(self.right.span())
-	}
-}
-
-#[derive(Clone, Debug, Getters)]
-pub struct EvaluatedBinaryExpression {
-	left: Pointer,
-	operation: BinaryOperation,
-	right: Pointer,
-	tokens: BinaryExpressionTokens,
-}
-
-impl EvaluatedBinaryExpression {
-	pub const fn synthetic(left: Pointer, operator: Token, right: Pointer) -> EvaluatedBinaryExpression {
-		EvaluatedBinaryExpression {
-			left,
-			operation: BinaryOperation::from_token_type(operator.token_type).unwrap(),
-			right,
-			tokens: BinaryExpressionTokens { operator },
-		}
-	}
-}
-
-impl Spanned for EvaluatedBinaryExpression {
 	fn span(&self) -> Span {
 		self.left.span().to(self.right.span())
 	}

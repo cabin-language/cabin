@@ -18,7 +18,7 @@ pub struct TailStatement {
 	tokens: TailStatementTokens,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 pub struct TailStatementTokens {
 	is: Token,
 }
@@ -50,6 +50,7 @@ impl Evaluate for TailStatement {
 		}
 	}
 }
+
 impl Spanned for TailStatement {
 	fn span(&self) -> Span {
 		self.label.span().to(self.value.span())

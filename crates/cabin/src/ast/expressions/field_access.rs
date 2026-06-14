@@ -5,7 +5,10 @@ use crate::{
 	Span,
 	Spanned,
 	ast::expressions::{Expression, binary::PrimaryExpression, evaluated::EvaluatedExpression, identifier::Identifier},
-	comptime::{Evaluate, memory::Pointer},
+	comptime::{
+		Evaluate,
+		memory::{Pointer, Storable},
+	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 	log,
@@ -51,11 +54,34 @@ impl Evaluate for FieldAccess {
 		log!(context, "Evaluating field access");
 		let span = self.span();
 		let left = self.left.evaluate(context);
+
 		if let Some(object) = left.value(context).as_object() {
 			let field_value = object.get_field_value(self.right.source_identifier());
 
 			if let Some(pointer) = field_value {
+				if let Storable::Expression(EvaluatedExpression::Action(action)) = pointer.value(context)
+					&& action.takes_this(context)
+				{
+					let mut bound = action.clone();
+					bound.this = Some(left);
+					return EvaluatedExpression::Action(bound).store(context);
+				}
+
 				return pointer.with_span(span);
+			}
+
+			for extension in context.extensions_for(*object.group()) {
+				if let Some(field) = extension.fields().iter().find(|field| field.name() == &self.right) {
+					if let Storable::Expression(EvaluatedExpression::Action(action)) = field.value().value(context)
+						&& action.takes_this(context)
+					{
+						let mut bound = action.clone();
+						bound.this = Some(left);
+						return EvaluatedExpression::Action(bound).store(context);
+					}
+
+					return field.value().with_span(span);
+				}
 			}
 
 			context.add_diagnostic(Diagnostic {

@@ -8,11 +8,10 @@ use crate::{
 		misc::tag::{EvaluatedTagList, TagList},
 	},
 	comptime::{Evaluate, memory::Pointer},
-	context,
 	diagnostics::Diagnostic,
 	if_then_some,
 	lexer::{Token, TokenType},
-	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 };
 
 #[derive(Debug, Clone, Getters)]
