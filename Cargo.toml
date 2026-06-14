@@ -17,6 +17,9 @@ members = [
 
 [workspace.dependencies]
 cabin = { version = "0.1.0", path = "crates/cabin" } 
+cabin-bin = { version = "0.1.0", path = "crates/cabin-bin" } 
+cabin-language-server = { version = "0.1.0", path = "crates/cabin-language-server"}
+cabin-web = { version = "0.1.0", path = "crates/cabin-web" } 
 tree-sitter-cabin = { version = "0.1.0", path = "crates/tree-sitter-cabin" } 
 wasm-fields = { version = "0.1.0", path = "crates/wasm-fields" } 
 

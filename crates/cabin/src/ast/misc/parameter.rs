@@ -152,4 +152,8 @@ impl EvaluatedParameters {
 	pub fn iter(&self) -> impl Iterator<Item = &EvaluatedParameter> {
 		self.parameters.iter()
 	}
+
+	pub fn len(&self) -> usize {
+		self.parameters.len()
+	}
 }

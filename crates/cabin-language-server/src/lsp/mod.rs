@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use cabin::{lexer::TokenType, typechecker::Typed as _};
+use cabin::lexer::TokenType;
 use indoc::indoc;
 use url::Url;
 
@@ -178,38 +178,38 @@ impl Request {
 				let token = tokens.iter().find(|token| token.span.contains(span.start()));
 				let hover_text = token
 					.map(|token| match token.token_type {
-						TokenType::Identifier => {
-							let path = url::Url::parse(&norm_uri)
-								.unwrap_or_else(|error| {
-									logger.log(format!("\n**ERROR:** Could not parse URL for hover: {error}")).unwrap();
-									unreachable!()
-								})
-								.to_file_path()
-								.unwrap_or_else(|_error| {
-									logger.log("\n**ERROR:** Could not convert URL to file path for hover").unwrap();
-									unreachable!()
-								});
-							if let Ok(mut project) = cabin::Project::from_child(path) {
-								let name = project.name_at(span.start);
-								name.map(|name| {
-									let documentation = name
-										.value(project.context_mut())
-										.and_then(|expr| expr.value(project.context()).get_documentation().map(|documentation| format!("\n---\n{documentation}")))
-										.map(|str| str.to_owned())
-										.unwrap_or(String::new());
-									format!(
-										"```cabin\n{}: {}\n```{}",
-										name.source_identifier(),
-										name.get_type(project.context_mut()).name(project.context_mut()),
-										documentation
-									)
-								})
-								.unwrap_or("unknown".to_owned())
-								.to_owned()
-							} else {
-								"unknown".to_owned()
-							}
-						},
+						// TokenType::Identifier => {
+						// 	let path = url::Url::parse(&norm_uri)
+						// 		.unwrap_or_else(|error| {
+						// 			logger.log(format!("\n**ERROR:** Could not parse URL for hover: {error}")).unwrap();
+						// 			unreachable!()
+						// 		})
+						// 		.to_file_path()
+						// 		.unwrap_or_else(|_error| {
+						// 			logger.log("\n**ERROR:** Could not convert URL to file path for hover").unwrap();
+						// 			unreachable!()
+						// 		});
+						// 	if let Ok(mut project) = cabin::Project::from_child(path) {
+						// 		let name = project.name_at(span.start);
+						// 		name.map(|name| {
+						// 			let documentation = name
+						// 				.value(project.context_mut())
+						// 				.and_then(|expr| expr.value(project.context()).get_documentation().map(|documentation| format!("\n---\n{documentation}")))
+						// 				.map(|str| str.to_owned())
+						// 				.unwrap_or(String::new());
+						// 			format!(
+						// 				"```cabin\n{}: {}\n```{}",
+						// 				name.source_identifier(),
+						// 				name.get_type(project.context_mut()).name(project.context_mut()),
+						// 				documentation
+						// 			)
+						// 		})
+						// 		.unwrap_or("unknown".to_owned())
+						// 		.to_owned()
+						// 	} else {
+						// 		"unknown".to_owned()
+						// 	}
+						// },
 						TokenType::KeywordLet => indoc!(
 							r#"
 							```cabin

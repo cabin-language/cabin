@@ -49,12 +49,13 @@ impl Evaluate for FieldAccess {
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating field access");
+		let span = self.span();
 		let left = self.left.evaluate(context);
 		if let Some(object) = left.value(context).as_object() {
 			let field_value = object.get_field_value(self.right.source_identifier());
 
 			if let Some(pointer) = field_value {
-				return pointer;
+				return pointer.with_span(span);
 			}
 
 			context.add_diagnostic(Diagnostic {

@@ -10,6 +10,8 @@ let ryan = new Person {
 	age = 21
 };
 
+log(ryan.first_name);
+
 let Animal = group {
 	type: Text,
 	age: Number

@@ -143,7 +143,9 @@ impl Evaluate for FunctionCall {
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating action call");
-		let span = self.callee.span();
+
+		let span = self.span();
+
 		let function = self.callee.evaluate(context);
 
 		let compile_time_arguments = {
@@ -168,6 +170,7 @@ impl Evaluate for FunctionCall {
 		// If not all arguments are known at compile-time, we can't call the function at compile time. In this case, we just
 		// return a function call expression, and it'll get transpiled to C and called at runtime.
 		if arguments.iter().map(|argument| argument.is_fully_known(context)).any(|value| !value) {
+			let _ = context.call_stack.pop().unwrap();
 			return EvaluatedExpression::FunctionCall(EvaluatedFunctionCall {
 				callee: function,
 				compile_time_arguments,
@@ -177,6 +180,14 @@ impl Evaluate for FunctionCall {
 			})
 			.store(context);
 		}
+
+		context.call_stack.push(EvaluatedFunctionCall {
+			callee: function,
+			compile_time_arguments: compile_time_arguments.clone(),
+			arguments: arguments.clone(),
+			scope: self.scope,
+			tokens: self.tokens.clone(),
+		});
 
 		// callee is an action
 		if let Some(action) = function.value(context).as_expression().and_then(|expr| expr.try_as::<EvaluatedAction>().ok()) {
@@ -191,6 +202,18 @@ impl Evaluate for FunctionCall {
 						info: DiagnosticInfo::ExpressionUsedAsType,
 					});
 				}
+			}
+
+			let parameter_count = action.parameters().as_ref().map(|p| p.len()).unwrap_or_default();
+			if parameter_count != arguments.len() {
+				context.add_diagnostic(Diagnostic {
+					span,
+					info: DiagnosticInfo::IncorrectArgumentCount {
+						expected: parameter_count,
+						actual: arguments.len(),
+					},
+					file: context.file.clone(),
+				});
 			}
 
 			let mut builtin_name = None;
@@ -249,12 +272,25 @@ impl Evaluate for FunctionCall {
 
 				// return value
 				let return_value = block.clone().evaluate(context);
+
+				let _ = context.call_stack.pop().unwrap();
+
 				return return_value;
 			}
 
 			// call builtin function
 			if let Some(internal_name) = builtin_name {
-				return call_builtin_at_compile_time(&internal_name, context, arguments, span);
+				let return_value = call_builtin_at_compile_time(&internal_name, context, arguments, span);
+				let _ = context.call_stack.pop().unwrap();
+
+				if let Some(outer) = context.call_stack.last()
+					&& outer.callee == context.scope.get_variable("log").unwrap()
+					&& internal_name == "system.terminal.write"
+				{
+					context.diagnostics_mut().last_mut().unwrap().span = outer.span();
+				}
+
+				return return_value;
 			}
 
 			unreachable!()
@@ -267,6 +303,7 @@ impl Evaluate for FunctionCall {
 			info: DiagnosticInfo::CallNonFunction(function.kind_name(context).to_owned()),
 		});
 
+		let _ = context.call_stack.pop().unwrap();
 		EvaluatedExpression::FunctionCall(EvaluatedFunctionCall {
 			callee: function,
 			compile_time_arguments,

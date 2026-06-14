@@ -103,16 +103,16 @@ let visible system = new Any {
 
 		#[runtime<"Use log() for logging information at compile-time">]
 		print = action(object: Any) {
-			system.terminal.write("object");
+			system.terminal.write(object);
 		},
 
 		#[compile_time<"Use print() for logging information at runtime">]
 		log = action(object: Any) {
-			system.terminal.write("object");	
+			system.terminal.write(object);	
 		},
 
 		debug = action<T: Any>(object: T): T {
-			system.terminal.write("object");
+			system.terminal.write(object);
 			return is object;
 		},
 	},

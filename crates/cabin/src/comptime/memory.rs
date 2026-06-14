@@ -55,6 +55,11 @@ impl PartialEq for Pointer {
 impl Eq for Pointer {}
 
 impl Pointer {
+	/// Creates a new pointer to the same place in memory as `self`, but with the given source span.
+	pub const fn with_span(&self, span: Span) -> Pointer {
+		Pointer(self.0, span)
+	}
+
 	pub fn value(self, context: &Context) -> &Storable {
 		context.memory.get(self)
 	}

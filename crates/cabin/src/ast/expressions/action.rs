@@ -14,12 +14,12 @@ use crate::{
 			tag::{EvaluatedTagList, TagList},
 		},
 	},
-	comptime::{Check as _, Evaluate, memory::Pointer},
+	comptime::{Evaluate, memory::Pointer},
 	diagnostics::Diagnostic,
 	if_then_some,
 	lexer::{Token, TokenType},
 	log,
-	parser::{Parse as _, TokenQueue, TokenQueueFunctionality as _, TryParse},
+	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 	scope::ScopeRef,
 };
 

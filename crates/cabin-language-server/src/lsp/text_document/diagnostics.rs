@@ -2,8 +2,8 @@ use gag::Gag;
 
 use super::Range;
 use crate::{
-	lsp::{Mode, State},
 	Logger,
+	lsp::{Mode, State},
 };
 
 #[derive(serde::Serialize)]
@@ -60,7 +60,7 @@ pub fn get_diagnostics(state: &State, logger: &mut Logger, uri: &str) -> anyhow:
 	let diagnostics = {
 		let _stdout_gag = Gag::stdout()?;
 		let _stderr_gag = Gag::stderr()?;
-		project.check()
+		project.check()?
 	};
 
 	logger.log("\n*Done checking. Reporting diagnostics.*")?;

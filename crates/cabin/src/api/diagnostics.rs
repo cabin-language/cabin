@@ -1,4 +1,4 @@
-use std::{fmt::Display, path::PathBuf};
+use std::{fmt::Display, ops::Not, path::PathBuf};
 
 use convert_case::{Case, Casing as _};
 
@@ -289,6 +289,14 @@ impl Diagnostics {
 
 	pub fn clear(&mut self) {
 		self.0.clear();
+	}
+
+	pub fn pop_last(&mut self) -> Option<Diagnostic> {
+		self.0.is_empty().not().then(|| self.0.remove(self.0.len() - 1))
+	}
+
+	pub fn last_mut(&mut self) -> Option<&mut Diagnostic> {
+		self.0.last_mut()
 	}
 }
 

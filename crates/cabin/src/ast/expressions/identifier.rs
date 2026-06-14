@@ -106,6 +106,7 @@ impl Identifier {
 				});
 			})
 			.ok()
+			.map(|ptr| ptr.with_span(self.span()))
 	}
 
 	pub fn stringify(&self, context: &Context) -> Object {

@@ -5,7 +5,10 @@ use crate::{
 	Diagnostics,
 	STDLIB,
 	api::{diagnostics::Diagnostic, scope::ScopeTree},
-	ast::expressions::identifier::Identifier,
+	ast::expressions::{
+		function_call::{EvaluatedFunctionCall, FunctionCall},
+		identifier::Identifier,
+	},
 	comptime::{
 		Evaluate as _,
 		memory::{Pointer, VirtualMemory},
@@ -80,6 +83,7 @@ pub struct Context {
 	pub name_query_result: Option<Identifier>,
 	pub name_query: Option<usize>,
 	pub debug_mode: DebugMode,
+	pub call_stack: Vec<EvaluatedFunctionCall>,
 }
 
 impl Default for Context {
@@ -132,6 +136,7 @@ impl Context {
 			name_query_result: None,
 			system_io: Box::new(io),
 			interactive: false,
+			call_stack: Vec::new(),
 
 			debug_mode: DebugMode::None,
 		};
@@ -243,6 +248,10 @@ impl Context {
 	/// The diagnostics in the user's code
 	pub const fn diagnostics(&self) -> &Diagnostics {
 		&self.diagnostics
+	}
+
+	pub const fn diagnostics_mut(&mut self) -> &mut Diagnostics {
+		&mut self.diagnostics
 	}
 
 	pub fn clear_diagnostics(&mut self) {
