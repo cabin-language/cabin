@@ -8,6 +8,7 @@ use crate::{
 	Spanned,
 	api::context::Context,
 	ast::expressions::{evaluated::EvaluatedExpression, object::Object},
+	comptime::Dot,
 };
 
 #[derive(Debug, Clone)]
@@ -72,6 +73,10 @@ impl Pointer {
 		}
 	}
 
+	pub fn as_string(&self, context: &Context) -> Option<String> {
+		self.value(context).as_object().unwrap().get_text().map(|s| s.to_owned())
+	}
+
 	pub fn is_fully_known(&self, context: &Context) -> bool {
 		match self.value(context) {
 			Storable::Object(object) => object.is_fully_known(context),
@@ -91,6 +96,16 @@ impl Pointer {
 impl Spanned for Pointer {
 	fn span(&self) -> Span {
 		self.1
+	}
+}
+
+impl Dot for Pointer {
+	fn dot(&self, context: &Context, name: &str) -> Option<Pointer> {
+		match self.value(context) {
+			Storable::Object(object) => object.dot(context, name),
+			Storable::Expression(expression) => expression.dot(context, name),
+			Storable::None => None,
+		}
 	}
 }
 

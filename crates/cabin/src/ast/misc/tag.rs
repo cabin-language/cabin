@@ -7,6 +7,7 @@ use crate::{
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
+	transpiler::ToCabin,
 };
 
 #[derive(Debug, Clone, Getters)]
@@ -75,6 +76,18 @@ impl Evaluate for TagList {
 			});
 		}
 		EvaluatedTagList { values, tokens: self.tokens }
+	}
+}
+
+impl ToCabin for TagList {
+	fn to_cabin(&self) -> String {
+		format!("#[{}]", self.values.to_cabin())
+	}
+}
+
+impl ToCabin for TagListItem {
+	fn to_cabin(&self) -> String {
+		self.value.to_cabin()
 	}
 }
 

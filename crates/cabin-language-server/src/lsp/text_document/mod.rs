@@ -48,7 +48,7 @@ impl Position {
 		let mut column = 0;
 		for (position, character) in text.chars().enumerate() {
 			if line as usize == self.line && column as usize == self.character {
-				return Span::new(position, 1);
+				return Span::from_start_and_length(position, 1);
 			}
 
 			column += 1;

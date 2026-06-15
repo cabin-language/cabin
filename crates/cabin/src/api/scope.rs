@@ -68,6 +68,8 @@ pub struct Scope {
 	/// the parent tree, use `scope.get_variable`, which will traverse up the scope tree and check all parents.
 	variables: HashMap<Identifier, Pointer>,
 
+	underscores: Vec<Pointer>,
+
 	/// in Rust with regular semantics can get *really* tricky - You need to either resort to lots of unsafe code with raw pointers (and probably pinning),
 	/// or use some fancy reference counting wrappers like `Rc<RefCell<Scope>>` and `Weak<RefCell<Scope>>`. Even in doing so, the implementation is not
 	/// trivial. Using indices and an arena `Vec` is likely the best option.
@@ -152,6 +154,15 @@ impl Scope {
 		self.label = Some(name);
 	}
 
+	fn available_variables_with_underscores<'scopes>(&'scopes self, scopes: &'scopes [Self]) -> Vec<Pointer> {
+		let mut vec = self.variables.values().copied().collect::<Vec<_>>();
+		vec.extend(self.underscores.iter());
+		if let Some(parent) = self.parent {
+			vec.extend(scopes.get(parent).unwrap().available_variables_with_underscores(scopes));
+		}
+		vec
+	}
+
 	fn available_variables<'scopes>(&'scopes self, scopes: &'scopes [Self]) -> HashMap<Identifier, Pointer> {
 		let mut map = self.variables.clone();
 		if let Some(parent) = self.parent {
@@ -191,6 +202,7 @@ impl ScopeTree {
 				variables: HashMap::new(),
 				parent: None,
 				label: None,
+				underscores: Vec::new(),
 			}],
 			current_scope: 0,
 		}
@@ -257,6 +269,7 @@ impl ScopeTree {
 			children: Vec::new(),
 			scope_type,
 			label: None,
+			underscores: Vec::new(),
 		});
 
 		let new_id = self.scopes.len() - 1;
@@ -327,6 +340,12 @@ impl ScopeTree {
 	/// Returns an error if a variable already exists with the given name in the scope with the given id.
 	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Identifier>, value: Pointer, id: ScopeRef) -> Result<(), DiagnosticInfo> {
 		let name = name.into();
+
+		if name.source_identifier() == "_" {
+			self.underscores.push(value);
+			return Ok(());
+		}
+
 		let old = self.scopes.get_mut(id.0).unwrap().variables.insert(name.clone(), value);
 		old.map_or(Ok(()), |_| {
 			Err(DiagnosticInfo::DuplicateVariableDeclaration {
@@ -433,6 +452,10 @@ impl ScopeTree {
 
 	pub fn available_variables(&self) -> HashMap<Identifier, Pointer> {
 		self.current().available_variables(&self.scopes)
+	}
+
+	pub fn available_variables_with_underscores(&self) -> Vec<Pointer> {
+		self.current().available_variables_with_underscores(&self.scopes)
 	}
 }
 

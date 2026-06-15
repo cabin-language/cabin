@@ -11,6 +11,7 @@ use crate::{
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
+	transpiler::ToCabin,
 };
 
 #[derive(Debug, Clone, Getters)]
@@ -56,6 +57,12 @@ impl Evaluate for Parameter {
 impl Spanned for Parameter {
 	fn span(&self) -> Span {
 		self.name.span().to(self.parameter_type.span())
+	}
+}
+
+impl ToCabin for Parameter {
+	fn to_cabin(&self) -> String {
+		format!("{}: {}", self.name.to_cabin(), self.parameter_type.to_cabin())
 	}
 }
 
@@ -131,7 +138,11 @@ impl Spanned for Parameters {
 	}
 }
 
-impl Parameters {}
+impl ToCabin for Parameters {
+	fn to_cabin(&self) -> String {
+		format!("({})", self.parameters.iter().map(|parameter| parameter.to_cabin()).collect::<Vec<_>>().join(", "))
+	}
+}
 
 #[derive(Debug, Clone, Getters)]
 pub struct EvaluatedParameters {

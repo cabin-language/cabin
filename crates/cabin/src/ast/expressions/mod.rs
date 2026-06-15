@@ -179,25 +179,27 @@ impl Expression {
 impl ToCabin for Expression {
 	fn to_cabin(&self) -> String {
 		match self {
-			Expression::Block(block) => todo!(),
+			Expression::Action(action) => action.to_cabin(),
+			Expression::Block(block) => block.to_cabin(),
+			Expression::Identifier(identifier) => identifier.to_cabin(),
+			Expression::Run(run_expression) => run_expression.to_cabin(),
+			Expression::List(list) => list.to_cabin(),
+			Expression::Number(number) => number.to_cabin(),
+			Expression::Text(text) => text.to_cabin(),
+			Expression::Binary(binary_expression) => binary_expression.to_cabin(),
+			Expression::Parenthesized(parenthesized_expression) => parenthesized_expression.to_cabin(),
+			Expression::Either(either) => either.to_cabin(),
+			Expression::ForEachLoop(for_loop) => for_loop.to_cabin(),
+			Expression::New(new_expression) => new_expression.to_cabin(),
+
 			Expression::FieldAccess(field_access) => todo!(),
 			Expression::FunctionCall(function_call) => todo!(),
 			Expression::Group(group) => todo!(),
-			Expression::Either(either) => todo!(),
 			Expression::If(if_expression) => todo!(),
-			Expression::Binary(binary_expression) => todo!(),
-			Expression::Identifier(identifier) => todo!(),
-			Expression::New(new_expression) => todo!(),
-			Expression::Number(number) => todo!(),
-			Expression::Text(text) => todo!(),
-			Expression::ForEachLoop(for_loop) => todo!(),
-			Expression::Run(run_expression) => todo!(),
 			Expression::Unary(unary_expression) => todo!(),
-			Expression::Parenthesized(parenthesized_expression) => todo!(),
-			Expression::List(list) => todo!(),
-			Expression::ErrorExpression(error_expression) => todo!(),
-			Expression::Action(action) => todo!(),
 			Expression::Extend(extend) => todo!(),
+
+			Expression::ErrorExpression(error_expression) => todo!(),
 		}
 	}
 }

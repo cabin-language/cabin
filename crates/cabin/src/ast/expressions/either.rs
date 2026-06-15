@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Write as _};
 
 use convert_case::{Case, Casing as _};
 use derive_getters::Getters;
@@ -11,13 +11,15 @@ use crate::{
 		expressions::{Expression, identifier::Identifier, object::Object},
 		misc::compile_time_parameter::{CompileTimeParameters, EvaluatedCompileTimeParameters},
 	},
-	comptime::{Evaluate, memory::Pointer},
+	comptime::{Dot, Evaluate, memory::Pointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_some,
 	lexer::{Token, TokenType},
 	log,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 	scope::ScopeType,
+	transpiler::ToCabin,
+	util::Indent as _,
 };
 
 #[derive(Debug, Clone, Getters)]
@@ -157,6 +159,39 @@ impl Spanned for Either {
 	}
 }
 
+impl ToCabin for Either {
+	fn to_cabin(&self) -> String {
+		let mut code = "either".to_owned();
+		code += &self.compile_time_parameters.to_cabin();
+		code += " {{";
+		if !self.variants.is_empty() {
+			code += "\n";
+		}
+
+		for variant in &self.variants {
+			code += &format!("{},\n", variant.to_cabin()).indented();
+		}
+
+		// pop trailing comma
+		if !self.variants.is_empty() {
+			writeln!(code, "{}", code.get(0..code.len() - 2).unwrap().to_owned()).unwrap();
+		}
+
+		code += "}";
+		code
+	}
+}
+
+impl ToCabin for EitherVariant {
+	fn to_cabin(&self) -> String {
+		let mut code = self.name.to_cabin();
+		if let Some(subtype) = &self.subtype {
+			write!(code, ": {}", subtype.to_cabin()).unwrap();
+		}
+		code
+	}
+}
+
 impl Spanned for EvaluatedEither {
 	fn span(&self) -> Span {
 		self.tokens.keyword_either.span.to(self.tokens.right_brace.span)
@@ -194,5 +229,11 @@ impl Spanned for EitherVariant {
 		}
 
 		start.to(self.name.span())
+	}
+}
+
+impl Dot for EvaluatedEither {
+	fn dot(&self, _context: &Context, name: &str) -> Option<Pointer> {
+		self.variants.iter().find_map(|variant| (variant.name.source_identifier() == name).then(|| variant.object))
 	}
 }

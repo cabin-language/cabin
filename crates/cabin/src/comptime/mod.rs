@@ -1,4 +1,4 @@
-use crate::api::context::Context;
+use crate::{api::context::Context, comptime::memory::Pointer};
 
 pub mod memory;
 
@@ -59,4 +59,8 @@ where
 	T: ToOwned,
 	T::Owned: Evaluate,
 {
+}
+
+pub trait Dot {
+	fn dot(&self, context: &Context, name: &str) -> Option<Pointer>;
 }

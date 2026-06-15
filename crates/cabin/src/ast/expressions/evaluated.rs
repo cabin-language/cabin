@@ -22,7 +22,10 @@ use crate::{
 		parenthesized::EvaluatedParenthesizedExpression,
 		run::EvaluatedRunExpression,
 	},
-	comptime::memory::{Pointer, Storable},
+	comptime::{
+		Dot,
+		memory::{Pointer, Storable},
+	},
 };
 
 #[derive(Debug, Clone, TryAsRef)]
@@ -96,6 +99,30 @@ impl Spanned for EvaluatedExpression {
 			EvaluatedExpression::Action(action) => action.span(),
 			EvaluatedExpression::FunctionCall(action_call) => action_call.span(),
 			EvaluatedExpression::Parenthesized(parenthesized) => parenthesized.span(),
+		}
+	}
+}
+
+impl Dot for EvaluatedExpression {
+	fn dot(&self, context: &Context, name: &str) -> Option<Pointer> {
+		match self {
+			EvaluatedExpression::Either(either) => either.dot(context, name),
+
+			EvaluatedExpression::Action(action) => todo!(),
+			EvaluatedExpression::Group(group) => todo!(),
+			EvaluatedExpression::Number(number) => todo!(),
+			EvaluatedExpression::Identifier(identifier) => todo!(),
+			EvaluatedExpression::List(list) => todo!(),
+			EvaluatedExpression::New(new_expression) => todo!(),
+			EvaluatedExpression::If(if_expression) => todo!(),
+			EvaluatedExpression::Block(block) => todo!(),
+			EvaluatedExpression::FieldAccess(field_access) => todo!(),
+			EvaluatedExpression::Parenthesized(parenthesized_expression) => todo!(),
+			EvaluatedExpression::ForLoop(for_loop) => todo!(),
+			EvaluatedExpression::Run(run_expression) => todo!(),
+			EvaluatedExpression::ErrorExpression(error_expression) => todo!(),
+			EvaluatedExpression::Extend(extend) => todo!(),
+			EvaluatedExpression::FunctionCall(function_call) => todo!(),
 		}
 	}
 }

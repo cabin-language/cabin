@@ -29,7 +29,98 @@ use crate::{
 	log,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 	scope::ScopeType,
+	transpiler::ToCabin,
 };
+
+#[derive(Clone, Debug, Getters)]
+pub struct BinaryExpression {
+	left: Expression,
+	operation: BinaryOperation,
+	right: Expression,
+	tokens: BinaryExpressionTokens,
+}
+
+#[derive(Clone, Debug, Getters)]
+pub struct BinaryExpressionTokens {
+	operator: Token,
+}
+
+impl TryParse for BinaryExpression {
+	type Output = Expression;
+
+	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+		BinaryOperation::Or.parse(tokens, context)
+	}
+}
+
+impl Evaluate for BinaryExpression {
+	type Output = Pointer;
+
+	fn evaluate(self, context: &mut Context) -> Self::Output {
+		log!(context, "Evaluating binary expression");
+		let operation = *self.operation();
+		FunctionCall::from_binary_expression(self.left, operation, self.right, self.tokens.operator, context).evaluate(context)
+	}
+}
+
+impl Spanned for BinaryExpression {
+	fn span(&self) -> Span {
+		self.left.span().to(self.right.span())
+	}
+}
+
+impl ToCabin for BinaryExpression {
+	fn to_cabin(&self) -> String {
+		format!("{} {} {}", self.left.to_cabin(), self.operation.to_cabin(), self.right.to_cabin())
+	}
+}
+
+impl BinaryExpression {
+	pub const fn synthetic(left: Expression, operator: Token, right: Expression) -> BinaryExpression {
+		BinaryExpression {
+			left,
+			right,
+			operation: BinaryOperation::from_token_type(operator.token_type).unwrap(),
+			tokens: BinaryExpressionTokens { operator },
+		}
+	}
+}
+
+pub struct PrimaryExpression;
+
+impl TryParse for PrimaryExpression {
+	type Output = Expression;
+
+	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+		Ok(match tokens.peek_type(context)? {
+			TokenType::LeftParenthesis => Box::new(ParenthesizedExpression::try_parse(tokens, context)?).into(),
+			TokenType::KeywordAction => Box::new(Action::try_parse(tokens, context)?).into(),
+			TokenType::LeftBrace => Block::try_parse(tokens, context, ScopeType::Block)?.into(),
+			TokenType::Identifier => Identifier::try_parse(tokens, context)?.into(),
+			TokenType::KeywordNew => NewExpression::try_parse(tokens, context)?.into(),
+			TokenType::KeywordGroup => Group::try_parse(tokens, context)?.into(),
+			TokenType::KeywordEither => Either::try_parse(tokens, context)?.into(),
+			TokenType::KeywordIf => Box::new(IfExpression::try_parse(tokens, context)?).into(),
+			TokenType::KeywordForEach => Box::new(ForLoop::try_parse(tokens, context)?).into(),
+			TokenType::KeywordExtend => Box::new(Extend::try_parse(tokens, context)?).into(),
+			TokenType::String => Text::try_parse(tokens, context)?.into(),
+			TokenType::Number => Number::try_parse(tokens, context)?.into(),
+			TokenType::LeftBracket => List::try_parse(tokens, context)?.into(),
+
+			// bad :<
+			token_type => {
+				return Err(Diagnostic {
+					file: context.file.clone(),
+					span: tokens.current_position().unwrap(),
+					info: DiagnosticInfo::UnexpectedTokenExpected {
+						expected: "primary expression",
+						actual: token_type,
+					},
+				});
+			},
+		})
+	}
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum BinaryOperation {
@@ -143,86 +234,23 @@ impl BinaryOperation {
 	}
 }
 
-#[derive(Clone, Debug, Getters)]
-pub struct BinaryExpression {
-	left: Expression,
-	operation: BinaryOperation,
-	right: Expression,
-	tokens: BinaryExpressionTokens,
-}
-
-#[derive(Clone, Debug, Getters)]
-pub struct BinaryExpressionTokens {
-	operator: Token,
-}
-
-impl TryParse for BinaryExpression {
-	type Output = Expression;
-
-	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
-		BinaryOperation::Or.parse(tokens, context)
-	}
-}
-
-pub struct PrimaryExpression;
-
-impl TryParse for PrimaryExpression {
-	type Output = Expression;
-
-	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
-		Ok(match tokens.peek_type(context)? {
-			TokenType::LeftParenthesis => Box::new(ParenthesizedExpression::try_parse(tokens, context)?).into(),
-			TokenType::KeywordAction => Box::new(Action::try_parse(tokens, context)?).into(),
-			TokenType::LeftBrace => Block::try_parse(tokens, context, ScopeType::Block)?.into(),
-			TokenType::Identifier => Identifier::try_parse(tokens, context)?.into(),
-			TokenType::KeywordNew => NewExpression::try_parse(tokens, context)?.into(),
-			TokenType::KeywordGroup => Group::try_parse(tokens, context)?.into(),
-			TokenType::KeywordEither => Either::try_parse(tokens, context)?.into(),
-			TokenType::KeywordIf => Box::new(IfExpression::try_parse(tokens, context)?).into(),
-			TokenType::KeywordForEach => Box::new(ForLoop::try_parse(tokens, context)?).into(),
-			TokenType::KeywordExtend => Box::new(Extend::try_parse(tokens, context)?).into(),
-			TokenType::String => Text::try_parse(tokens, context)?.into(),
-			TokenType::Number => Number::try_parse(tokens, context)?.into(),
-			TokenType::LeftBracket => List::try_parse(tokens, context)?.into(),
-
-			// bad :<
-			token_type => {
-				return Err(Diagnostic {
-					file: context.file.clone(),
-					span: tokens.current_position().unwrap(),
-					info: DiagnosticInfo::UnexpectedTokenExpected {
-						expected: "primary expression",
-						actual: token_type,
-					},
-				});
-			},
-		})
-	}
-}
-
-impl BinaryExpression {
-	pub const fn synthetic(left: Expression, operator: Token, right: Expression) -> BinaryExpression {
-		BinaryExpression {
-			left,
-			right,
-			operation: BinaryOperation::from_token_type(operator.token_type).unwrap(),
-			tokens: BinaryExpressionTokens { operator },
+impl ToCabin for BinaryOperation {
+	fn to_cabin(&self) -> String {
+		match self {
+			BinaryOperation::Exponent => "^",
+			BinaryOperation::Multiply => "*",
+			BinaryOperation::Divide => "/",
+			BinaryOperation::Add => "+",
+			BinaryOperation::Subtract => "-",
+			BinaryOperation::LessThan => "<",
+			BinaryOperation::GreaterThan => ">",
+			BinaryOperation::Equal => "=",
+			BinaryOperation::NotEqual => "!=",
+			BinaryOperation::LessThanOrEqual => "<=",
+			BinaryOperation::GreaterThanOrEqual => ">=",
+			BinaryOperation::Or => "or",
+			BinaryOperation::And => "and",
 		}
-	}
-}
-
-impl Evaluate for BinaryExpression {
-	type Output = Pointer;
-
-	fn evaluate(self, context: &mut Context) -> Self::Output {
-		log!(context, "Evaluating binary expression");
-		let operation = *self.operation();
-		FunctionCall::from_binary_expression(self.left, operation, self.right, self.tokens.operator, context).evaluate(context)
-	}
-}
-
-impl Spanned for BinaryExpression {
-	fn span(&self) -> Span {
-		self.left.span().to(self.right.span())
+		.to_owned()
 	}
 }

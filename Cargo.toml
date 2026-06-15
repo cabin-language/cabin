@@ -13,12 +13,14 @@ members = [
 	"crates/cabin-language-server",
 	"crates/cabin-web",
 	"crates/tree-sitter-cabin",
-	"crates/wasm-fields"
+	"crates/wasm-fields",
+	"crates/cabin-macros"
 ]
 
 [workspace.dependencies]
 cabin = { version = "0.1.0", path = "crates/cabin" } 
 cabin-bin = { version = "0.1.0", path = "crates/cabin-bin" } 
+cabin-macros = { version = "0.1.0", path = "crates/cabin-macros" } 
 cabin-language-server = { version = "0.1.0", path = "crates/cabin-language-server"}
 cabin-web = { version = "0.1.0", path = "crates/cabin-web" } 
 tree-sitter-cabin = { version = "0.1.0", path = "crates/tree-sitter-cabin" } 

@@ -9,6 +9,7 @@ use crate::{
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
+	transpiler::ToCabin,
 };
 
 #[derive(Debug, Clone, Getters)]
@@ -86,6 +87,18 @@ impl Spanned for List {
 	}
 }
 
+impl ToCabin for List {
+	fn to_cabin(&self) -> String {
+		format!("[{}]", self.elements.to_cabin())
+	}
+}
+
+impl ToCabin for ListElement {
+	fn to_cabin(&self) -> String {
+		self.value.to_cabin()
+	}
+}
+
 #[derive(Debug, Clone, Getters)]
 pub struct EvaluatedList {
 	elements: Vec<EvaluatedListElement>,
@@ -97,6 +110,7 @@ pub struct EvaluatedListElement {
 	value: Pointer,
 	tokens: ListElementTokens,
 }
+
 impl Spanned for EvaluatedList {
 	fn span(&self) -> Span {
 		self.tokens.left_bracket.span.to(self.tokens.right_bracket.span)

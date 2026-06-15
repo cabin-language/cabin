@@ -509,11 +509,10 @@ pub fn tokenize(code: &str, context: &mut Context) -> VecDeque<Token> {
 /// # Returns
 ///
 /// A token stream of tokenized tokens, possibly including `Unknown` tokens.
-pub fn tokenize_string(string: &str) -> VecDeque<Token> {
+pub fn tokenize_string(string: &str, mut position: usize) -> VecDeque<Token> {
 	let mut code = string.to_owned();
 
 	let mut tokens = Vec::new();
-	let mut position = 0;
 
 	// We only read tokens from the start of a string, so we repeatedly loop over the code and remove the tokenized text when we find tokens.
 	// This means we can just iterate while code isn't empty.

@@ -7,6 +7,7 @@ use crate::{
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
+	transpiler::ToCabin,
 };
 
 #[derive(Debug, Clone, Getters)]
@@ -36,5 +37,23 @@ impl TryParse for Number {
 impl Spanned for Number {
 	fn span(&self) -> Span {
 		self.tokens.number.span
+	}
+}
+
+impl ToCabin for Number {
+	fn to_cabin(&self) -> String {
+		let x = self.value;
+
+		// integer
+		if (x - x.round()).abs() < f64::EPSILON {
+			return format!("{}", x.round() as i64);
+		}
+
+		// format to 10 places
+		let mut string = format!("{x:.10}");
+
+		// remove trailing 0 / decimal (in case of floating point errors)
+		string = string.trim_end_matches("0").trim_end_matches(".").to_owned();
+		string
 	}
 }

@@ -14,6 +14,7 @@ use crate::{
 	lexer::TokenType,
 	log,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
+	transpiler::ToCabin,
 };
 
 pub mod declaration;
@@ -96,6 +97,17 @@ impl Spanned for Statement {
 			Self::Tail(tail) => tail.span(),
 			Self::Expression(expression) => expression.span(),
 			Self::Error(span) => *span,
+		}
+	}
+}
+
+impl ToCabin for Statement {
+	fn to_cabin(&self) -> String {
+		match self {
+			Statement::Declaration(declaration) => todo!(),
+			Statement::Tail(tail_statement) => todo!(),
+			Statement::Expression(expression) => todo!(),
+			Statement::Error(span) => todo!(),
 		}
 	}
 }

@@ -9,6 +9,7 @@ use crate::{
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
+	transpiler::ToCabin,
 };
 
 #[derive(Debug, Clone, Getters)]
@@ -79,6 +80,12 @@ impl Evaluate for CompileTimeParameters {
 impl Spanned for CompileTimeParameters {
 	fn span(&self) -> Span {
 		self.tokens.left_angle_bracket.span.to(self.tokens.right_angle_bracket.span)
+	}
+}
+
+impl ToCabin for CompileTimeParameters {
+	fn to_cabin(&self) -> String {
+		format!("<{}>", self.parameters.iter().map(|parameter| parameter.to_cabin()).collect::<Vec<_>>().join(", "))
 	}
 }
 

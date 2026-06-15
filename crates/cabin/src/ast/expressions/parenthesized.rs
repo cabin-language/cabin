@@ -8,6 +8,7 @@ use crate::{
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
+	transpiler::ToCabin,
 };
 
 #[derive(Debug, Clone, Getters)]
@@ -43,6 +44,12 @@ impl TryParse for ParenthesizedExpression {
 impl Spanned for ParenthesizedExpression {
 	fn span(&self) -> crate::Span {
 		self.tokens.left_parenthesis.span.to(self.tokens.right_parenthesis.span)
+	}
+}
+
+impl ToCabin for ParenthesizedExpression {
+	fn to_cabin(&self) -> String {
+		format!("({})", self.expression.to_cabin())
 	}
 }
 

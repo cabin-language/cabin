@@ -1,5 +1,7 @@
 use std::{fmt::Display, path::PathBuf};
 
+use cabin_macros::{import, try_import};
+
 use super::io::{Io, StyledString, SystemIo};
 use crate::{
 	Diagnostics,
@@ -7,6 +9,7 @@ use crate::{
 	api::{diagnostics::Diagnostic, scope::ScopeTree},
 	ast::expressions::{evaluated::EvaluatedExpression, extend::EvaluatedExtend, function_call::EvaluatedFunctionCall, identifier::Identifier},
 	comptime::{
+		Dot as _,
 		Evaluate as _,
 		memory::{Pointer, Storable, VirtualMemory},
 	},
@@ -134,11 +137,10 @@ impl Context {
 			system_io: Box::new(io),
 			interactive: false,
 			call_stack: Vec::new(),
-
 			debug_mode: DebugMode::None,
 		};
 
-		// Add stdlib
+		// parse & evaluate standard library
 		let stdlib_ast = crate::parse_library(STDLIB, &mut context);
 		let stdlib_ast = stdlib_ast
 			.inspect_err(|_| {
@@ -148,91 +150,27 @@ impl Context {
 		let stdlib = stdlib_ast.evaluate(&mut context);
 
 		// Bring some stdib items into scope
-		context
-			.scope
-			.declare_new_variable(Identifier::create_virtual("Text", &context), stdlib.get_pointer("Text"))
-			.unwrap();
-		context
-			.scope
-			.declare_new_variable(Identifier::create_virtual("Number", &context), stdlib.get_pointer("Number"))
-			.unwrap();
-		context
-			.scope
-			.declare_new_variable(
-				Identifier::create_virtual("print", &context),
-				stdlib
-					.get_object("system", &context)
-					.get_field_value("terminal")
-					.unwrap()
-					.value(&context)
-					.as_object()
-					.unwrap()
-					.get_field_value("print")
-					.unwrap(),
-			)
-			.unwrap();
-		context
-			.scope
-			.declare_new_variable(
-				Identifier::create_virtual("log", &context),
-				stdlib
-					.get_object("system", &context)
-					.get_field_value("terminal")
-					.unwrap()
-					.value(&context)
-					.as_object()
-					.unwrap()
-					.get_field_value("log")
-					.unwrap(),
-			)
-			.unwrap();
-		context
-			.scope
-			.declare_new_variable(
-				Identifier::create_virtual("debug", &context),
-				stdlib
-					.get_object("system", &context)
-					.get_field_value("terminal")
-					.unwrap()
-					.value(&context)
-					.as_object()
-					.unwrap()
-					.get_field_value("debug")
-					.unwrap(),
-			)
-			.unwrap();
-		context
-			.scope
-			.declare_new_variable(
-				Identifier::create_virtual("input", &context),
-				stdlib
-					.get_object("system", &context)
-					.get_field_value("terminal")
-					.unwrap()
-					.value(&context)
-					.as_object()
-					.unwrap()
-					.get_field_value("input")
-					.unwrap(),
-			)
-			.unwrap();
-		context
-			.scope
-			.declare_new_variable(
-				Identifier::create_virtual("none", &context),
-				*stdlib
-					.get_either("Optional", &context)
-					.variants()
-					.iter()
-					.find(|variant| variant.name().source_identifier() == "none")
-					.unwrap()
-					.object(),
-			)
-			.unwrap();
+		import!(context, stdlib::Text);
+		import!(context, stdlib::Number);
+		import!(context, stdlib::List);
+		import!(context, stdlib::Any);
 
+		import!(context, stdlib::system::terminal::print);
+		import!(context, stdlib::system::terminal::log);
+		import!(context, stdlib::system::terminal::debug);
+		import!(context, stdlib::system::terminal::input);
+
+		import!(context, stdlib::Optional::none);
+		import!(context, stdlib::Optional::some);
+
+		import!(context, stdlib::add_text as _);
+		import!(context, stdlib::add_numbers as _);
+
+		// convert stdlib module into an object bring it into global scope under the name `builtin`
 		let stdlib_pointer = stdlib.into_object(&context).store(&mut context);
 		context.scope.declare_new_variable(Identifier::create_virtual("builtin", &context), stdlib_pointer).unwrap();
 
+		// return context
 		context
 	}
 
@@ -311,8 +249,8 @@ impl Context {
 
 	pub fn extensions(&self) -> Vec<&EvaluatedExtend> {
 		self.scope
-			.available_variables()
-			.into_values()
+			.available_variables_with_underscores()
+			.into_iter()
 			.filter_map(|value| match value.value(self) {
 				Storable::Expression(EvaluatedExpression::Extend(extend)) => Some(extend),
 				_ => None,

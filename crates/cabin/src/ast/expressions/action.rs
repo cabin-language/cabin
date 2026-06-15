@@ -21,6 +21,7 @@ use crate::{
 	log,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 	scope::ScopeRef,
+	transpiler::ToCabin,
 };
 
 #[derive(Debug, Clone, Getters)]
@@ -219,10 +220,27 @@ impl Spanned for EvaluatedAction {
 	}
 }
 
+impl ToCabin for Action {
+	fn to_cabin(&self) -> String {
+		let mut code = "action".to_owned();
+		code += &self.compile_time_parameters.to_cabin();
+		code += &self.parameters.to_cabin();
+		code += &self.return_type.to_cabin();
+		code += &self.body.to_cabin();
+		code
+	}
+}
+
 impl EvaluatedAction {
 	pub fn takes_this(&self, context: &Context) -> bool {
 		self.parameters()
 			.as_ref()
 			.is_some_and(|parameters| parameters.first().is_some_and(|first| *first.parameter_type() == context.ident("This")))
+	}
+}
+
+impl ToCabin for ReturnType {
+	fn to_cabin(&self) -> String {
+		format!(": {}", self.return_type.to_cabin())
 	}
 }

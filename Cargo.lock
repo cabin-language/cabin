@@ -84,6 +84,7 @@ name = "cabin"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cabin-macros",
  "colored",
  "convert_case",
  "derive-getters",
@@ -127,6 +128,14 @@ dependencies = [
  "serde",
  "serde_json",
  "url",
+]
+
+[[package]]
+name = "cabin-macros"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]

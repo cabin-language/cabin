@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use derive_getters::Getters;
 
 use crate::{
@@ -12,6 +14,8 @@ use crate::{
 	if_then_some,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
+	transpiler::ToCabin,
+	util::Indent as _,
 };
 
 #[derive(Debug, Clone, Getters)]
@@ -134,9 +138,42 @@ impl Spanned for NewExpression {
 	}
 }
 
+impl ToCabin for NewExpression {
+	fn to_cabin(&self) -> String {
+		let mut code = format!("new {} {{", self.type_name.to_cabin());
+
+		if !self.fields.is_empty() {
+			code += "\n";
+		}
+
+		for field in &self.fields {
+			code += &format!("{},\n", field.to_cabin()).indented();
+		}
+
+		// pop trailing comma
+		if !self.fields.is_empty() {
+			writeln!(code, "{}", code.get(0..code.len() - 2).unwrap().to_owned()).unwrap();
+		}
+
+		code += "}";
+		code
+	}
+}
+
 impl Spanned for EvaluatedNewExpression {
 	fn span(&self) -> Span {
 		self.tokens.keyword_new.span.to(self.tokens.right_brace.span)
+	}
+}
+
+impl ToCabin for NewField {
+	fn to_cabin(&self) -> String {
+		let mut code = String::new();
+		if self.tags.is_some() {
+			writeln!(code, "{}", self.tags.to_cabin());
+		}
+		write!(code, "{} = {}", self.name.to_cabin(), self.value.to_cabin()).unwrap();
+		code
 	}
 }
 

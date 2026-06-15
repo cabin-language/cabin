@@ -7,7 +7,7 @@ pub struct Span {
 }
 
 impl Span {
-	pub const fn new(start: usize, length: usize) -> Span {
+	pub const fn from_start_and_length(start: usize, length: usize) -> Span {
 		Span { start, length }
 	}
 

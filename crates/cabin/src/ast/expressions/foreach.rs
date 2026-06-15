@@ -10,6 +10,7 @@ use crate::{
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 	scope::ScopeType,
+	transpiler::ToCabin,
 };
 
 #[derive(Debug, Clone, Getters)]
@@ -115,6 +116,18 @@ impl Evaluate for ForLoop {
 impl Spanned for ForLoop {
 	fn span(&self) -> Span {
 		self.tokens.keyword_for.span.to(self.body.span())
+	}
+}
+
+impl ToCabin for ForLoop {
+	fn to_cabin(&self) -> String {
+		let mut code = "for ".to_owned();
+		code += &self.binding_name.to_cabin();
+		code += " in ";
+		code += &self.iterable.to_cabin();
+		code += " ";
+		code += &self.body.to_cabin();
+		code
 	}
 }
 

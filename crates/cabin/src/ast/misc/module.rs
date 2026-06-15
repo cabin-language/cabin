@@ -14,6 +14,7 @@ use crate::{
 		},
 	},
 	comptime::{
+		Dot,
 		Evaluate,
 		memory::{Pointer, Storable},
 	},
@@ -131,16 +132,6 @@ impl EvaluatedModule {
 		}
 	}
 
-	pub(crate) fn get_pointer(&self, name: &'static str) -> Pointer {
-		*self
-			.declarations
-			.iter()
-			.find(|declaration| declaration.inner.name().source_identifier() == name)
-			.unwrap()
-			.inner
-			.value()
-	}
-
 	pub(crate) fn into_object(self, context: &Context) -> Object {
 		let mut fields = HashMap::new();
 		for declaration in self.declarations {
@@ -149,6 +140,14 @@ impl EvaluatedModule {
 			let _ = fields.insert(name, value);
 		}
 		Object::new(context.ident("Module"), fields, Span::none())
+	}
+}
+
+impl Dot for EvaluatedModule {
+	fn dot(&self, _context: &Context, name: &str) -> Option<Pointer> {
+		self.declarations
+			.iter()
+			.find_map(|declaration| (declaration.inner.name().source_identifier() == name).then(|| *declaration.inner.value()))
 	}
 }
 

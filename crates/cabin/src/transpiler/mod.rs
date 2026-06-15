@@ -34,3 +34,15 @@ pub trait TranspileToC {
 pub trait ToCabin {
 	fn to_cabin(&self) -> String;
 }
+
+impl<T: ToCabin> ToCabin for Option<T> {
+	fn to_cabin(&self) -> String {
+		self.as_ref().map(|inner| inner.to_cabin()).unwrap_or_default()
+	}
+}
+
+impl<T: ToCabin> ToCabin for Vec<T> {
+	fn to_cabin(&self) -> String {
+		self.iter().map(|inner| inner.to_cabin()).collect::<Vec<_>>().join(", ")
+	}
+}

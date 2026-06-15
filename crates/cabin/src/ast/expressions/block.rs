@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use derive_getters::Getters;
 
 use crate::{
@@ -16,7 +18,8 @@ use crate::{
 	lexer::{Token, TokenType},
 	log,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse as _},
-	util::ExitScope as _,
+	transpiler::ToCabin,
+	util::{ExitScope as _, Indent as _},
 };
 
 #[derive(Debug, Clone, Getters)]
@@ -113,6 +116,27 @@ impl Evaluate for Block {
 impl Spanned for Block {
 	fn span(&self) -> Span {
 		self.tokens.left_brace.span.to(self.tokens.right_brace.span)
+	}
+}
+
+impl ToCabin for Block {
+	fn to_cabin(&self) -> String {
+		let mut code = "{".to_owned();
+
+		if !self.statements.is_empty() {
+			code += "\n";
+		}
+
+		for statement in &self.statements {
+			writeln!(code, "{}", statement.to_cabin().indented()).unwrap();
+		}
+
+		if !self.statements.is_empty() {
+			code += "\n";
+		}
+
+		code += "}";
+		code
 	}
 }
 

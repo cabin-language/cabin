@@ -92,7 +92,6 @@ let visible add_text = extend Text as Addable {
 	plus = action(this: This, other: This): This,
 };
 
-
 let visible List = group<T: Any> {
 
 	#[builtin<"List.insert">]

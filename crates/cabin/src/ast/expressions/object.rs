@@ -7,7 +7,10 @@ use crate::{
 	Context,
 	Span,
 	Spanned,
-	comptime::memory::{Pointer, Storable},
+	comptime::{
+		Dot,
+		memory::{Pointer, Storable},
+	},
 	traits::TryAs as _,
 };
 
@@ -124,5 +127,11 @@ impl Object {
 impl Spanned for Object {
 	fn span(&self) -> Span {
 		self.span
+	}
+}
+
+impl Dot for Object {
+	fn dot(&self, _context: &Context, name: &str) -> Option<Pointer> {
+		self.get_field_value(name)
 	}
 }

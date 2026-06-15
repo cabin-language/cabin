@@ -14,10 +14,9 @@ use crate::{
 ///
 /// # Parameters
 ///
-/// - `name` - The name of the built-in functions to call; This must be a key in the `BUILTINS` map.
-/// - `caller_scope_id` - The scope id of the site at which the function was called.
+/// - `name` - The name of the built-in functions to call
 /// - `arguments` - The arguments passed to the built-in function.
-/// - `span` - The span of the function call.
+/// - `span` - The span of the entire function call, including the callee and the arguments.
 ///
 /// # Returns
 ///
@@ -41,13 +40,8 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut argum
 				return context.none();
 			};
 
-			let string_value = call_builtin_at_compile_time("Any.to_text", context, vec![pointer].into(), span)
-				.value(context)
-				.as_object()
-				.unwrap()
-				.get_text()
-				.unwrap()
-				.to_owned();
+			// convert the object to a string with the builtin to_text()
+			let string_value = call_builtin_at_compile_time("Any.to_text", context, vec![pointer].into(), span).as_string(context).unwrap();
 
 			if context.side_effects {
 				if !context.has_printed && !context.interactive {
@@ -71,51 +65,34 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut argum
 		},
 
 		"Text.plus" => {
-			let Some(this) = arguments.pop_front() else {
-				context.add_diagnostic(Diagnostic {
-					span,
-					info: DiagnosticInfo::IncorrectArgumentCount { expected: 2, actual: 0 },
-					file: context.file.clone(),
-				});
+			// safe to unwrap here because these will be typechecked before the call ever happens
+			// if the arguments aren't present or aren't strings this won't get called
+			let left = arguments.pop_front().unwrap().as_string(context).unwrap();
+			let right = arguments.pop_front().unwrap().as_string(context).unwrap();
+			let concatenated = format!("{left}{right}");
 
-				return context.none();
-			};
-			let Some(other) = arguments.pop_front() else {
-				context.add_diagnostic(Diagnostic {
-					span,
-					info: DiagnosticInfo::IncorrectArgumentCount { expected: 2, actual: 1 },
-					file: context.file.clone(),
-				});
-
-				return context.none();
-			};
-
-			let left = this.value(context).as_object().unwrap().get_text().unwrap();
-			let right = other.value(context).as_object().unwrap().get_text().unwrap();
-
-			Object::text(format!("{left}{right}"), context, span).store(context)
+			Object::text(concatenated, context, span).store(context)
 		},
 
 		"terminal.input" => {
+			// read a line from stdin
 			let mut line = String::new();
 			let _ = std::io::stdin().read_line(&mut line).unwrap();
+
+			// trim newline
 			line = line.get(0..line.len() - 1).unwrap().to_owned();
+
+			// return
 			Object::text(line, context, span).store(context)
 		},
 
 		"Any.to_text" => {
-			let Some(this) = arguments.pop_front() else {
-				context.add_diagnostic(Diagnostic {
-					span,
-					info: DiagnosticInfo::IncorrectArgumentCount { expected: 2, actual: 0 },
-					file: context.file.clone(),
-				});
+			let this = arguments.pop_front().unwrap();
+			let text = this.value(context).as_object().unwrap().to_text(context);
 
-				return context.none();
-			};
-
-			Object::text(this.value(context).as_object().unwrap().to_text(context), context, this.span()).store(context)
+			Object::text(text, context, this.span()).store(context)
 		},
+
 		_ => unreachable!(),
 	}
 }

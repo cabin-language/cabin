@@ -14,7 +14,14 @@ use crate::{
 	lexer::{Token, TokenType, tokenize_string},
 	log,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
+	transpiler::ToCabin,
 };
+
+#[derive(Debug, Clone, Getters)]
+pub struct Text {
+	parts: Vec<StringPart>,
+	tokens: TextTokens,
+}
 
 #[derive(Debug, Clone, try_as::macros::TryAsRef)]
 pub enum StringPart {
@@ -25,25 +32,10 @@ pub enum StringPart {
 	Expression(Expression),
 }
 
-impl StringPart {
-	pub fn into_expression(self) -> Expression {
-		match self {
-			StringPart::Expression(expression) => expression,
-			StringPart::Literal(literal) => Expression::Text(Text::literal(literal)),
-		}
-	}
-}
-
 #[derive(Debug, Clone, Getters)]
 pub struct LiteralPart {
 	span: Span,
 	value: String,
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct Text {
-	parts: Vec<StringPart>,
-	tokens: TextTokens,
 }
 
 #[derive(Debug, Clone, Getters)]
@@ -63,12 +55,12 @@ impl TryParse for Text {
 		let mut parts = Vec::new();
 		let mut builder = String::new();
 
-		let mut span_start = span.start;
+		let mut span_start = span.start + 1;
 		while !without_quotes.is_empty() {
 			match without_quotes.pop_front().unwrap() {
 				'{' => {
 					if !builder.is_empty() {
-						let part_span = Span::new(span_start, builder.len());
+						let part_span = Span::from_start_and_length(span_start, builder.len());
 						parts.push(StringPart::Literal(LiteralPart {
 							span: part_span,
 							value: builder.replace(r"\n", "\n"),
@@ -77,7 +69,7 @@ impl TryParse for Text {
 						builder.clear();
 					}
 
-					let mut expr_tokens = tokenize_string(&without_quotes.iter().collect::<String>());
+					let mut expr_tokens = tokenize_string(&without_quotes.iter().collect::<String>(), span_start);
 					let expression = Expression::try_parse(&mut expr_tokens, context)?;
 					let length = expression.span().length();
 					parts.push(StringPart::Expression(expression));
@@ -94,6 +86,7 @@ impl TryParse for Text {
 							span,
 						});
 					}
+					span_start += 1;
 				},
 
 				c => builder.push(c),
@@ -101,7 +94,7 @@ impl TryParse for Text {
 		}
 
 		if !builder.is_empty() {
-			let part_span = Span::new(span_start, builder.len());
+			let part_span = Span::from_start_and_length(span_start, builder.len());
 			parts.push(StringPart::Literal(LiteralPart {
 				span: part_span,
 				value: builder.replace(r"\n", "\n"),
@@ -145,6 +138,12 @@ impl Spanned for Text {
 	}
 }
 
+impl ToCabin for Text {
+	fn to_cabin(&self) -> String {
+		format!(r#""{}""#, self.parts.to_cabin())
+	}
+}
+
 impl Text {
 	pub fn literal(literal: LiteralPart) -> Text {
 		Text {
@@ -152,6 +151,30 @@ impl Text {
 				string: Token::synthetic(TokenType::String, &literal.value, literal.span),
 			},
 			parts: vec![StringPart::Literal(literal)],
+		}
+	}
+}
+
+impl StringPart {
+	pub fn into_expression(self) -> Expression {
+		match self {
+			StringPart::Expression(expression) => expression,
+			StringPart::Literal(literal) => Expression::Text(Text::literal(literal)),
+		}
+	}
+}
+
+impl ToCabin for LiteralPart {
+	fn to_cabin(&self) -> String {
+		self.value.to_owned()
+	}
+}
+
+impl ToCabin for StringPart {
+	fn to_cabin(&self) -> String {
+		match self {
+			StringPart::Literal(literal_part) => literal_part.to_cabin(),
+			StringPart::Expression(expression) => format!("{{{}}}", expression.to_cabin()),
 		}
 	}
 }

@@ -24,3 +24,13 @@ impl<T, E> ExitScope for Result<T, E> {
 		})
 	}
 }
+
+pub trait Indent {
+	fn indented(&self) -> String;
+}
+
+impl<S: AsRef<str>> Indent for S {
+	fn indented(&self) -> String {
+		self.as_ref().lines().map(|line| format!("\t{line}")).collect::<Vec<_>>().join("\n")
+	}
+}
