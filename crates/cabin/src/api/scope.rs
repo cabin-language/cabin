@@ -4,9 +4,15 @@ use std::{
 	ops::{Deref, DerefMut},
 };
 
-use crate::{api::context::Context, ast::expressions::identifier::Identifier, comptime::memory::Pointer, diagnostics::DiagnosticInfo};
+use crate::{
+	api::context::Context,
+	ast::expressions::identifier::Identifier,
+	definition::{UnevaluatedVariableDeclaration, VariableDeclaration},
+	diagnostics::DiagnosticInfo,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ScopeRef(usize);
+pub struct ScopeRef(pub(crate) usize);
 
 impl ScopeRef {
 	pub const fn global() -> Self {
@@ -38,7 +44,6 @@ pub enum ScopeType {
 	Group,
 	Block,
 }
-
 /// A scope in the language. This is a node in the overall scope tree that's stored in `ScopeData`. Scopes represent a section of code in curly braces
 /// that has variables declared in it which are not accessible outside of it. They are, however, accessible to any child scopes declared within it,
 /// meaning that this scope also inherits variables from its parent. One important thing to note is that Cabin doesn't support any kind of shadowing -
@@ -66,9 +71,9 @@ pub struct Scope {
 	/// The variables declared in this scope. Note that this only holds the variables declared in this exact specific scope, and does not count the
 	/// variables declared in any parent scope, even though those are accessible in the language from this one. To get a variable from anywhere up
 	/// the parent tree, use `scope.get_variable`, which will traverse up the scope tree and check all parents.
-	variables: HashMap<Identifier, Pointer>,
+	pub(crate) variables: HashMap<Identifier, VariableDeclaration>,
 
-	underscores: Vec<Pointer>,
+	pub(crate) underscores: Vec<VariableDeclaration>,
 
 	/// in Rust with regular semantics can get *really* tricky - You need to either resort to lots of unsafe code with raw pointers (and probably pinning),
 	/// or use some fancy reference counting wrappers like `Rc<RefCell<Scope>>` and `Weak<RefCell<Scope>>`. Even in doing so, the implementation is not
@@ -83,46 +88,6 @@ pub struct Scope {
 }
 
 impl Scope {
-	/// Returns the information about a variable that exists in this scope with the given name. Note that this will also traverse up the scope tree and check
-	/// parent scopes for a variable with the given name if this scope doesn't have a variable with the given name. To get information about a variable that
-	/// was declared specifically in this scope, use `get_variable_direct()`. If the function traverses all the way to the global scope and the variable is
-	/// not found, `None` is returned.
-	///
-	/// # Parameters
-	/// - `<'scopes>` - The lifetime of the scopes slice passed. The returned declaration reference will have this lifetime.
-	/// - `name` - The name of the variable that exists in this scope to get information about
-	/// - `scopes` - The scope tree as an area vector slice; This is passed from a `ScopeData` object.
-	///
-	/// # Returns
-	/// A reference to the declaration data of the variable that exists in this scope with the given name. If none exists, `None` is returned. If it does exist
-	/// and `Some` is returned, the returned reference will have the same lifetime as this `Scope` object, as well as the given scopes slice.
-	fn get_variable<'scopes>(&'scopes self, name: &str, scopes: &'scopes [Self]) -> Option<Pointer> {
-		self.variables
-			.iter()
-			.find_map(|(other, value)| (other.source_identifier() == name).then_some(value))
-			.copied()
-			.or_else(|| self.parent.and_then(|parent| scopes.get(parent).unwrap().get_variable(name, scopes)))
-	}
-
-	/// Reassigns a variable in this scope. This will NOT traverse up the scope tree through the current scope's parents to find the declaration for the given
-	/// variable name; it will only reassign a variable declared in this scope. This is only to be used to reassign an existing variable. To add a new variable,
-	/// use `declare_new_variable_direct()`. If no variable with the given name is found, an error is returned.
-	///
-	/// # Parameters
-	/// - `name` - The name of the variable to reassign. A variable with this name must be declared in this scope, otherwise, an `Err` wil be returned.
-	/// - `value` - The new value to set the variable to
-	///
-	/// # Returns
-	/// An `Err` if no variable with the given name exists in the current scope.
-	fn reassign_variable_direct(&mut self, name: &Identifier, value: Pointer) -> Result<(), Pointer> {
-		if let Some(variable) = self.variables.get_mut(name) {
-			*variable = value;
-			Ok(())
-		} else {
-			Err(value)
-		}
-	}
-
 	/// Converts this scope to a debug string representation. This requires the `Scope` slice because it needs to print information about it's children,
 	/// which are only stored in the variable as an id (usize) (see the `Scope` struct for reasoning behind this).
 	///
@@ -154,16 +119,16 @@ impl Scope {
 		self.label = Some(name);
 	}
 
-	fn available_variables_with_underscores<'scopes>(&'scopes self, scopes: &'scopes [Self]) -> Vec<Pointer> {
-		let mut vec = self.variables.values().copied().collect::<Vec<_>>();
-		vec.extend(self.underscores.iter());
+	fn available_variables_with_underscores<'scopes>(&'scopes self, scopes: &'scopes [Self]) -> Vec<UnevaluatedVariableDeclaration> {
+		let mut vec = self.variables.values().cloned().collect::<Vec<_>>();
+		vec.extend(self.underscores.iter().cloned());
 		if let Some(parent) = self.parent {
 			vec.extend(scopes.get(parent).unwrap().available_variables_with_underscores(scopes));
 		}
 		vec
 	}
 
-	fn available_variables<'scopes>(&'scopes self, scopes: &'scopes [Self]) -> HashMap<Identifier, Pointer> {
+	fn available_variables<'scopes>(&'scopes self, scopes: &'scopes [Self]) -> HashMap<Identifier, UnevaluatedVariableDeclaration> {
 		let mut map = self.variables.clone();
 		if let Some(parent) = self.parent {
 			map.extend(scopes.get(parent).unwrap().available_variables(scopes));
@@ -208,15 +173,11 @@ impl ScopeTree {
 		}
 	}
 
-	pub fn get_variable(&self, name: &str) -> Option<Pointer> {
-		self.current().get_variable(name, &self.scopes)
-	}
-
 	/// Returns an immutable reference to the current scope.
 	///
 	/// # Returns
 	/// An immutable reference to the current scope (did you really have to ask?)
-	fn current(&self) -> &Scope {
+	pub fn current(&self) -> &Scope {
 		self.scopes.get(self.current_scope).unwrap()
 	}
 
@@ -224,7 +185,7 @@ impl ScopeTree {
 	///
 	/// # Returns
 	/// A mutable reference to the current scope
-	fn current_mut(&mut self) -> &mut Scope {
+	pub fn current_mut(&mut self) -> &mut Scope {
 		self.scopes.get_mut(self.current_scope).unwrap()
 	}
 
@@ -235,28 +196,12 @@ impl ScopeTree {
 	///
 	/// # Returns
 	/// An immutable reference to the scope with this id, or `None` if no scope exists with the given id.
-	pub fn get_scope_from_id(&self, id: ScopeRef) -> &Scope {
+	pub fn get_scope(&self, id: ScopeRef) -> &Scope {
 		self.scopes.get(id.0).unwrap()
 	}
 
-	pub fn get_scope_mut_from_id(&mut self, id: ScopeRef) -> &mut Scope {
+	pub fn get_scope_mut(&mut self, id: ScopeRef) -> &mut Scope {
 		self.scopes.get_mut(id.0).unwrap()
-	}
-
-	/// of its parents; As long as it exists in the current scope, the information will be retrieved. If no variable exists in the scope with the given id
-	/// with the given name, `None` is returned.
-	///
-	/// # Parameters
-	/// - `name` - The name of the variable to get the information of
-	///
-	/// # Returns
-	/// A reference to the variable declaration, or `None` if the variable does not exist in the current scope.
-	pub fn get_variable_from_id(&self, name: &str, id: ScopeRef) -> Option<Pointer> {
-		self.get_scope_from_id(id).get_variable(name, &self.scopes)
-	}
-
-	pub fn get_builtin(&self, name: &str) -> Option<Pointer> {
-		self.get_variable_from_id(name, ScopeRef::stdlib())
 	}
 
 	/// Enters a new scope. This creates a new scope with the given scope type, and sets the current scope to be that one. The newly created scope is added
@@ -307,7 +252,7 @@ impl ScopeTree {
 	///
 	/// # Returns
 	/// The unique ID of the current scope
-	pub const fn unique_id(&self) -> ScopeRef {
+	pub const fn get_ref(&self) -> ScopeRef {
 		ScopeRef(self.current_scope)
 	}
 
@@ -338,7 +283,7 @@ impl ScopeTree {
 	///
 	/// # Errors
 	/// Returns an error if a variable already exists with the given name in the scope with the given id.
-	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Identifier>, value: Pointer, id: ScopeRef) -> Result<(), DiagnosticInfo> {
+	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Identifier>, value: UnevaluatedVariableDeclaration, id: ScopeRef) -> Result<(), DiagnosticInfo> {
 		let name = name.into();
 
 		if name.source_identifier() == "_" {
@@ -369,7 +314,7 @@ impl ScopeTree {
 	///
 	/// # Errors
 	/// Returns an error if a variable already exists with the given name in the current scope.
-	pub fn declare_new_variable(&mut self, name: impl Into<Identifier>, value: Pointer) -> Result<(), DiagnosticInfo> {
+	pub fn declare_new_variable(&mut self, name: impl Into<Identifier>, value: UnevaluatedVariableDeclaration) -> Result<(), DiagnosticInfo> {
 		self.declare_new_variable_from_id(name, value, ScopeRef(self.current_scope))
 	}
 
@@ -389,52 +334,6 @@ impl ScopeTree {
 		current
 	}
 
-	/// Reassigns a variable in the scope with the given id. This will traverse up the scope tree through the scope's parents to find the declaration for the given
-	/// variable name, and reassign the value. This is only to be used to reassign an existing variable. To add a new variable, use `add_variable()`. To
-	/// reassign a variable declared in the current scope, use `reassign_variable()`. If the function traverses all the way into the global scope
-	/// and no variable with the given name is found, an error is returned.
-	///
-	/// # Parameters
-	/// - `name` - The name of the variable to reassign. A variable with this name must exist in the current scope, (meaning it's declared here or in a parent
-	/// scope), otherwise, an `Err` wil be returned.
-	/// - `value` - The new value to set the variable to
-	///
-	/// # Errors
-	/// Errors if no variable with the given name exists in the current scope.
-	pub fn reassign_variable_from_id(&mut self, name: &Identifier, mut value: Pointer, id: ScopeRef) {
-		// Traverse up the parent tree looking for the declaration and reassign it
-		let mut current = Some(id.0);
-		while let Some(current_index) = current {
-			// If we find it, we're done (return Ok), if not, we continue
-			match self.scopes.get_mut(current_index).unwrap().reassign_variable_direct(name, value) {
-				Ok(()) => return,
-				Err(returned_value) => value = returned_value,
-			}
-			current = self.scopes.get(current_index).unwrap().parent;
-		}
-
-		// No variable found
-		// bail_err! {
-		// 	base = format!("attempting to reassign the variable \"{name}\", but no variable with the name \"{name}\" exists in this scope", name = name.unmangled_name().cyan()),
-		// };
-	}
-
-	/// Reassigns a variable in the current scope. This will traverse up the scope tree through the current scope's parents to find the declaration for the given
-	/// variable name, and reassign the value. This is only to be used to reassign an existing variable. To add a new variable, use `add_variable()`. To
-	/// reassign a variable declared in this specific scope, use `reassign_variable_from_id()`. If the function traverses all the way into the global scope
-	/// and no variable with the given name is found, an error is returned.
-	///
-	/// # Parameters
-	/// - `name` - The name of the variable to reassign. A variable with this name must exist in the current scope, (meaning it's declared here or in a parent
-	/// scope), otherwise, an `Err` wil be returned.
-	/// - `value` - The new value to set the variable to
-	///
-	/// # Errors
-	/// Returns an error if no variable with the given name exists in the current scope.
-	pub fn reassign_variable(&mut self, name: &Identifier, value: Pointer) {
-		self.reassign_variable_from_id(name, value, ScopeRef(self.current_scope));
-	}
-
 	pub const fn get_stdlib_id() -> ScopeRef {
 		ScopeRef(1)
 	}
@@ -446,15 +345,11 @@ impl ScopeTree {
 		id
 	}
 
-	pub fn has_variable(&self, name: &str) -> bool {
-		self.get_variable(name).is_some()
-	}
-
-	pub fn available_variables(&self) -> HashMap<Identifier, Pointer> {
+	pub fn available_variables(&self) -> HashMap<Identifier, UnevaluatedVariableDeclaration> {
 		self.current().available_variables(&self.scopes)
 	}
 
-	pub fn available_variables_with_underscores(&self) -> Vec<Pointer> {
+	pub fn available_variables_with_underscores(&self) -> Vec<UnevaluatedVariableDeclaration> {
 		self.current().available_variables_with_underscores(&self.scopes)
 	}
 }

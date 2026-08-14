@@ -1,6 +1,6 @@
 use derive_getters::Getters;
 
-use crate::{Span, Spanned, lexer::Token};
+use crate::{SpanLike, Spanned, lexer::Token};
 
 #[derive(Debug, Clone, Getters)]
 pub struct ErrorExpression {
@@ -21,7 +21,7 @@ impl ErrorExpression {
 }
 
 impl Spanned for ErrorExpression {
-	fn span(&self) -> Span {
-		self.tokens.tokens.first().unwrap().span.to(self.tokens.tokens.last().unwrap().span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens().tokens().first().unwrap().span().to(self.tokens().tokens().last().unwrap().span())
 	}
 }

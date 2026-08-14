@@ -3,11 +3,11 @@ use std::collections::VecDeque;
 use derive_getters::Getters;
 
 use crate::{
-	Span,
+	SpanLike,
 	Spanned,
 	api::context::Context,
 	ast::expressions::{
-		Expression,
+		UnevaluatedExpression,
 		action::Action,
 		block::Block,
 		either::Either,
@@ -23,7 +23,10 @@ use crate::{
 		parenthesized::ParenthesizedExpression,
 		string::Text,
 	},
-	comptime::{Evaluate, memory::Pointer},
+	comptime::{
+		Evaluate,
+		storage::{EvaluatedRef, ExpressionRef},
+	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 	log,
@@ -34,9 +37,9 @@ use crate::{
 
 #[derive(Clone, Debug, Getters)]
 pub struct BinaryExpression {
-	left: Expression,
+	left: ExpressionRef,
 	operation: BinaryOperation,
-	right: Expression,
+	right: ExpressionRef,
 	tokens: BinaryExpressionTokens,
 }
 
@@ -46,7 +49,7 @@ pub struct BinaryExpressionTokens {
 }
 
 impl TryParse for BinaryExpression {
-	type Output = Expression;
+	type Output = ExpressionRef;
 
 	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		BinaryOperation::Or.parse(tokens, context)
@@ -54,7 +57,7 @@ impl TryParse for BinaryExpression {
 }
 
 impl Evaluate for BinaryExpression {
-	type Output = Pointer;
+	type Output = EvaluatedRef;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating binary expression");
@@ -64,7 +67,7 @@ impl Evaluate for BinaryExpression {
 }
 
 impl Spanned for BinaryExpression {
-	fn span(&self) -> Span {
+	fn span(&self) -> impl SpanLike<'_> {
 		self.left.span().to(self.right.span())
 	}
 }
@@ -76,7 +79,7 @@ impl ToCabin for BinaryExpression {
 }
 
 impl BinaryExpression {
-	pub const fn synthetic(left: Expression, operator: Token, right: Expression) -> BinaryExpression {
+	pub const fn synthetic(left: ExpressionRef, operator: Token, right: ExpressionRef) -> BinaryExpression {
 		BinaryExpression {
 			left,
 			right,
@@ -89,7 +92,7 @@ impl BinaryExpression {
 pub struct PrimaryExpression;
 
 impl TryParse for PrimaryExpression {
-	type Output = Expression;
+	type Output = ExpressionRef;
 
 	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		Ok(match tokens.peek_type(context)? {
@@ -109,14 +112,10 @@ impl TryParse for PrimaryExpression {
 
 			// bad :<
 			token_type => {
-				return Err(Diagnostic {
-					file: context.file.clone(),
-					span: tokens.current_position().unwrap(),
-					info: DiagnosticInfo::UnexpectedTokenExpected {
-						expected: "primary expression",
-						actual: token_type,
-					},
-				});
+				return Err(Diagnostic::at(tokens.peek(context).unwrap(), DiagnosticInfo::UnexpectedTokenExpected {
+					expected: "primary expression",
+					actual: token_type,
+				}));
 			},
 		})
 	}
@@ -172,7 +171,7 @@ impl BinaryOperation {
 		}
 	}
 
-	fn parse_precedent(self, tokens: &mut TokenQueue, context: &mut Context) -> Result<Expression, Diagnostic> {
+	fn parse_precedent(self, tokens: &mut TokenQueue, context: &mut Context) -> Result<ExpressionRef, Diagnostic> {
 		if let Some(precedent) = self.precedent() {
 			precedent.parse(tokens, context)
 		} else {
@@ -180,13 +179,13 @@ impl BinaryOperation {
 		}
 	}
 
-	fn parse(self, tokens: &mut TokenQueue, context: &mut Context) -> Result<Expression, Diagnostic> {
+	fn parse(self, tokens: &mut TokenQueue, context: &mut Context) -> Result<ExpressionRef, Diagnostic> {
 		let mut expression = self.parse_precedent(tokens, context)?;
 
 		while tokens.next_is_one_of(self.token_types()) {
 			let operator = tokens.pop(tokens.peek_type(context)?, context)?;
 			let right = self.parse_precedent(tokens, context)?;
-			expression = Expression::Binary(Box::new(BinaryExpression {
+			expression = UnevaluatedExpression::Binary(Box::new(BinaryExpression {
 				left: expression,
 				operation: BinaryOperation::from_token_type(operator.token_type).unwrap(),
 				right,

@@ -2,21 +2,23 @@ use convert_case::{Case, Casing as _};
 use derive_getters::Getters;
 
 use crate::{
-	Span,
+	SpanLike,
 	Spanned,
 	api::context::Context,
 	ast::{
-		expressions::{Expression, evaluated::EvaluatedExpression, identifier::Identifier},
+		expressions::{Expression, UnevaluatedExpression, evaluated::EvaluatedExpression, identifier::Identifier},
 		misc::tag::TagList,
 		statements::Statement,
 	},
 	comptime::{
 		Evaluate,
-		memory::{Pointer, Storable},
+		storage::{Evaluated, Pointer},
 	},
+	definition::UnevaluatedVariableDeclaration,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_some,
 	lexer::{Token, TokenType},
+	log,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 	scope::ScopeRef,
 };
@@ -24,8 +26,8 @@ use crate::{
 #[derive(Debug, Clone, Getters)]
 pub struct Declaration {
 	name: Identifier,
-	explicit_type: Option<DeclarationType>,
-	value: Expression,
+	explicit_type: Option<Pointer<Expression>>,
+	value: Pointer<Expression>,
 	tokens: DeclarationTokens,
 	scope: ScopeRef,
 }
@@ -37,17 +39,7 @@ pub struct DeclarationTokens {
 	keyword_let: Token,
 	equal: Token,
 	semicolon: Token,
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct DeclarationType {
-	value: Expression,
-	tokens: DeclarationTypeTokens,
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct DeclarationTypeTokens {
-	colon: Token,
+	colon: Option<Token>,
 }
 
 impl TryParse for Declaration {
@@ -58,7 +50,7 @@ impl TryParse for Declaration {
 		let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
 
 		if tags.is_some() && !tokens.next_is(TokenType::KeywordLet) {
-			let expression = Expression::try_parse(tokens, context)?;
+			let expression = UnevaluatedExpression::try_parse(tokens, context)?;
 			let _ = tokens.pop(TokenType::Semicolon, context)?;
 			return Ok(Statement::Expression(expression));
 		}
@@ -72,37 +64,30 @@ impl TryParse for Declaration {
 		// name
 		let name = Identifier::try_parse(tokens, context)?;
 
-		let explicit_type = if_then_some!(tokens.next_is(TokenType::Colon), {
-			let colon = tokens.pop(TokenType::Colon, context).unwrap();
-			DeclarationType {
-				value: Expression::try_parse(tokens, context)?,
-				tokens: DeclarationTypeTokens { colon },
-			}
-		});
+		// type
+		let (colon, explicit_type) = if_then_some!(tokens.next_is(TokenType::Colon), {
+			(tokens.pop(TokenType::Colon, context).unwrap(), Expression::try_parse(tokens, context)?)
+		})
+		.unzip();
 
 		// Value
 		let equal = tokens.pop(TokenType::Equal, context)?;
 
 		let value = Expression::try_parse(tokens, context)?;
 
-		// Add the name declaration to the scope
-		if let Err(error) = context.scope.declare_new_variable(name.clone(), context.memory.calloc()) {
-			context.add_diagnostic(Diagnostic {
-				file: context.file.clone(),
-				span: name.span(),
-				info: error,
-			});
-		}
+		// add the name declaration to the scope
+		context.declare_new_variable(UnevaluatedVariableDeclaration::with_value(name.clone(), value.clone()));
 
 		let semicolon = tokens.pop(TokenType::Semicolon, context)?;
 
-		// Return the declaration
+		// return the declaration
 		Ok(Statement::Declaration(Declaration {
 			name,
 			value,
 			explicit_type,
-			scope: context.scope.unique_id(),
+			scope: context.scope.get_ref(),
 			tokens: DeclarationTokens {
+				colon,
 				keyword_visible,
 				keyword_editable,
 				keyword_let,
@@ -117,45 +102,35 @@ impl Evaluate for Declaration {
 	type Output = EvaluatedDeclaration;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
+		log!(context, "Evaluating declaration for \"{}\"", self.name.source_identifier());
 		let evaluated = self.value.evaluate(context);
 
-		if let Storable::Expression(value) = evaluated.value(context) {
+		if let Evaluated::Expression(value) = evaluated.value(context) {
 			match value {
 				EvaluatedExpression::Group(_) | EvaluatedExpression::Either(_) => {
 					if !self.name.source_identifier().is_case(Case::Pascal) {
-						context.add_diagnostic(Diagnostic {
-							file: context.file.clone(),
-							span: self.name.span(),
-							info: DiagnosticInfo::NonPascalCaseGroup {
-								original_name: self.name.source_identifier().to_owned(),
-								type_name: value.kind_name().to_owned(),
-							},
+						context.add_diagnostic_at(&self.name, DiagnosticInfo::NonPascalCaseGroup {
+							original_name: self.name.source_identifier().to_owned(),
+							type_name: value.kind_name().to_owned(),
 						});
 					}
 				},
 
 				_ => {
 					if !self.name.source_identifier().is_case(Case::Snake) {
-						context.add_diagnostic(Diagnostic {
-							file: context.file.clone(),
-							span: self.name.span(),
-							info: DiagnosticInfo::NonSnakeCaseName {
-								original_name: self.name.source_identifier().to_owned(),
-							},
+						context.add_diagnostic_at(&self.name, DiagnosticInfo::NonSnakeCaseName {
+							original_name: self.name.source_identifier().to_owned(),
 						});
 					}
 				},
 			}
 		}
 
-		context.scope.reassign_variable_from_id(&self.name, evaluated, self.scope);
+		context.reassign_variable(&self.name, evaluated.to_owned());
 
 		EvaluatedDeclaration {
 			name: self.name,
-			explicit_type: self.explicit_type.map(|t| EvaluatedDeclarationType {
-				value: t.value.evaluate(context),
-				tokens: t.tokens,
-			}),
+			explicit_type: self.explicit_type.evaluate(context),
 			value: evaluated,
 			tokens: self.tokens,
 		}
@@ -163,7 +138,7 @@ impl Evaluate for Declaration {
 }
 
 impl Spanned for Declaration {
-	fn span(&self) -> Span {
+	fn span(&self) -> impl SpanLike {
 		self.tokens.keyword_let.span.to(self.value.span())
 	}
 }
@@ -171,19 +146,13 @@ impl Spanned for Declaration {
 #[derive(Debug, Clone, Getters)]
 pub struct EvaluatedDeclaration {
 	name: Identifier,
-	explicit_type: Option<EvaluatedDeclarationType>,
-	value: Pointer,
+	explicit_type: Option<Pointer<Evaluated>>,
+	value: Pointer<Evaluated>,
 	tokens: DeclarationTokens,
 }
 
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedDeclarationType {
-	value: Pointer,
-	tokens: DeclarationTypeTokens,
-}
-
 impl Spanned for EvaluatedDeclaration {
-	fn span(&self) -> Span {
+	fn span(&self) -> impl SpanLike {
 		self.tokens.keyword_let.span.to(self.value.span())
 	}
 }

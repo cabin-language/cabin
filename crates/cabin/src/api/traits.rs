@@ -1,4 +1,4 @@
-use try_as::traits::TryAsRef;
+use try_as::traits::{TryAsMut, TryAsRef};
 
 pub trait TryAs {
 	/// Attempts to convert this enum variant into the given type. This is a generic wrapper
@@ -12,6 +12,13 @@ pub trait TryAs {
 		Self: TryAsRef<T>,
 	{
 		self.try_as_ref().ok_or_else(|| anyhow::anyhow!("Incorrect variant"))
+	}
+
+	fn try_mut<T>(&mut self) -> anyhow::Result<&mut T>
+	where
+		Self: TryAsMut<T>,
+	{
+		self.try_as_mut().ok_or_else(|| anyhow::anyhow!("Incorrect variant"))
 	}
 
 	fn is<T>(&self) -> bool

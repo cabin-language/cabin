@@ -1,6 +1,10 @@
 use std::{collections::VecDeque, io::Write as _};
 
 use cabin::{
+	STDLIB,
+	Span,
+	SpanLike as _,
+	Spanned as _,
 	diagnostics::{Diagnostic, Severity},
 	theme::Theme,
 };
@@ -19,32 +23,33 @@ use tree_sitter::StreamingIterator as _;
 ///
 /// - `TTheme` - The theme to color the output with
 pub fn show_snippet<CurrentTheme: Theme>(diagnostic: &Diagnostic, max_columns: usize) {
-	let code = if diagnostic.file == *"stdlib" {
-		cabin::STDLIB.to_owned()
+	let code = if diagnostic.span().file() == "stdlib" {
+		STDLIB.to_owned()
 	} else {
 		#[allow(clippy::panic, reason = "dev error")]
-		std::fs::read_to_string(&diagnostic.file).unwrap_or_else(|_| panic!("No file {}", diagnostic.file.display()))
+		std::fs::read_to_string(diagnostic.span().file()).unwrap_or_else(|_| panic!("No file {}", diagnostic.span().file().display()))
 	};
 
+	// get colors
 	let mut highlights = VecDeque::from(highlights::<CurrentTheme>(&code));
 
-	// Severity-specifics
-	let ((error_r, error_g, error_b), (error_bg_r, error_bg_g, error_bg_b), icon) = match &diagnostic.info.severity() {
+	// colors
+	let ((error_r, error_g, error_b), (error_bg_r, error_bg_g, error_bg_b), icon) = match diagnostic.info().severity() {
 		Severity::AlwaysError | Severity::ProdError => (CurrentTheme::error(), CurrentTheme::error_background(), ""),
 		Severity::ProdWarning | Severity::AlwaysWarn => (CurrentTheme::warning(), CurrentTheme::warning_background(), ""),
 		_ => unreachable!(),
 	};
-
 	let (bg_r, bg_g, bg_b) = CurrentTheme::background();
 	let (fg_r, fg_g, fg_b) = CurrentTheme::normal();
 	let (comment_r, comment_g, comment_b) = CurrentTheme::comment();
 
+	// print file name
 	eprintln!(
 		"{}",
 		format!(
 			"    {} {}    ",
 			"".truecolor(138, 84, 45),
-			diagnostic.file.components().next_back().unwrap().as_os_str().to_str().unwrap()
+			diagnostic.span().file().components().next_back().unwrap().as_os_str().to_str().unwrap()
 		)
 		.on_truecolor(bg_r, bg_g, bg_b)
 	);
@@ -55,8 +60,16 @@ pub fn show_snippet<CurrentTheme: Theme>(diagnostic: &Diagnostic, max_columns: u
 
 	let characters = code.chars().collect::<Vec<_>>();
 
-	let (start_line, _start_column) = diagnostic.span.start_line_column(&code).unwrap();
-	let (end_line, _end_column) = diagnostic.span.end_line_column(&code).unwrap();
+	let (start_line, _start_column) = if diagnostic.span().file() == "stdlib" {
+		stdlib_start_line_column(diagnostic.span().as_ref()).unwrap()
+	} else {
+		diagnostic.span().start_line_column().unwrap()
+	};
+	let (end_line, _end_column) = if diagnostic.span().file() == "stdlib" {
+		stdlib_end_line_column(diagnostic.span().as_ref()).unwrap()
+	} else {
+		diagnostic.span.end_line_column().unwrap()
+	};
 	let mut leftmost_column = usize::MAX;
 	let mut rightmost_column = 0;
 
@@ -271,4 +284,40 @@ impl Highlight {
 	const fn length(&self) -> usize {
 		self.end - self.start
 	}
+}
+
+fn stdlib_start_line_column(span: &Span) -> Option<(usize, usize)> {
+	let mut line = 0;
+	let mut column = 0;
+	for (position, character) in STDLIB.chars().enumerate() {
+		if position == span.start() {
+			return Some((line, column));
+		}
+
+		column += 1;
+		if character == '\n' {
+			line += 1;
+			column = 0;
+		}
+	}
+
+	None
+}
+
+fn stdlib_end_line_column(span: &Span) -> Option<(usize, usize)> {
+	let mut line = 0;
+	let mut column = 0;
+	for (position, character) in STDLIB.chars().enumerate() {
+		if position == span.end() {
+			return Some((line, column));
+		}
+
+		column += 1;
+		if character == '\n' {
+			line += 1;
+			column = 0;
+		}
+	}
+
+	None
 }

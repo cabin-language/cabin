@@ -26,11 +26,11 @@ impl CabinCommand for InteractiveCommand {
 			// cabin::interpret(&line, &mut context);
 
 			for diagnostic in context.diagnostics() {
-				match &diagnostic.info.severity() {
-					Severity::AlwaysError | Severity::ProdError => eprintln!("{} {}", "Error:".bold().red(), diagnostic.info),
-					Severity::AlwaysWarn | Severity::ProdWarning => eprintln!("{} {}", "Warning:".bold().yellow(), diagnostic.info),
-					Severity::AlwaysInfo | Severity::ProdInfo => eprintln!("{} {}", "Info:".bold().cyan(), diagnostic.info),
-					Severity::AlwaysHint | Severity::ProdHint => eprintln!("{} {}", "Hint:".bold().cyan(), diagnostic.info),
+				match diagnostic.info().severity() {
+					Severity::AlwaysError | Severity::ProdError => eprintln!("{} {}", "Error:".bold().red(), diagnostic.info()),
+					Severity::AlwaysWarn | Severity::ProdWarning => eprintln!("{} {}", "Warning:".bold().yellow(), diagnostic.info()),
+					Severity::AlwaysInfo | Severity::ProdInfo => eprintln!("{} {}", "Info:".bold().cyan(), diagnostic.info()),
+					Severity::AlwaysHint | Severity::ProdHint => eprintln!("{} {}", "Hint:".bold().cyan(), diagnostic.info()),
 				}
 			}
 

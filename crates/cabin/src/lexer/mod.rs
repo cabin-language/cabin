@@ -1,14 +1,10 @@
-use std::{borrow::Cow, collections::VecDeque};
+use std::{collections::VecDeque, path::Path};
 
 use convert_case::Casing as _;
 use regex_macro::{Regex, regex};
 use strum::IntoEnumIterator as _;
 
-use crate::{
-	Span,
-	api::context::Context,
-	diagnostics::{Diagnostic, DiagnosticInfo},
-};
+use crate::{Span, SpanLike, Spanned, api::context::Context, diagnostics::DiagnosticInfo};
 
 /// A type of token in Cabin source code. The first step in Cabin compilation is tokenization, which is the process of splitting a raw String of source code into
 /// "tokens" which each have a "type" representing the kind of token it is, and a "value" representing the string of source code that is associated with it. This
@@ -415,20 +411,22 @@ pub struct Token {
 }
 
 impl Token {
-	pub fn create_virtual<'str, S: Into<Cow<'str, str>>>(token_type: TokenType, value: S) -> Token {
+	pub const fn create_virtual(token_type: TokenType, value: String) -> Token {
 		Token {
 			token_type,
-			value: value.into().into_owned(),
+			value,
 			span: Span::none(),
 		}
 	}
 
-	pub fn synthetic<'str, S: Into<Cow<'str, str>>>(token_type: TokenType, value: S, span: Span) -> Token {
-		Token {
-			token_type,
-			value: value.into().into_owned(),
-			span,
-		}
+	pub const fn synthetic(token_type: TokenType, value: String, span: Span) -> Token {
+		Token { token_type, value, span }
+	}
+}
+
+impl Spanned for Token {
+	fn span(&self) -> impl SpanLike {
+		&self.span
 	}
 }
 
@@ -459,11 +457,7 @@ pub fn tokenize(code: &str, context: &mut Context) -> VecDeque<Token> {
 		let Some((token_type, value)) = TokenType::find_match(&code) else { unreachable!() };
 
 		if token_type == TokenType::Unrecognized {
-			context.add_diagnostic(Diagnostic {
-				file: context.file.clone(),
-				span: Span { start: position, length: 1 },
-				info: DiagnosticInfo::UnrecognizedToken(value.clone()),
-			});
+			context.add_diagnostic_at(&Span::from_start_and_length(&context.file, position, 1), DiagnosticInfo::UnrecognizedToken(value.clone()));
 		}
 
 		let length = value.len();
@@ -479,7 +473,7 @@ pub fn tokenize(code: &str, context: &mut Context) -> VecDeque<Token> {
 			let token = Token {
 				token_type,
 				value,
-				span: Span { start: position, length },
+				span: Span::from_start_and_length(&context.file, position, length),
 			};
 			tokens.push(token);
 		}
@@ -509,7 +503,7 @@ pub fn tokenize(code: &str, context: &mut Context) -> VecDeque<Token> {
 /// # Returns
 ///
 /// A token stream of tokenized tokens, possibly including `Unknown` tokens.
-pub fn tokenize_string(string: &str, mut position: usize) -> VecDeque<Token> {
+pub fn tokenize_string<P: AsRef<Path>>(file: P, string: &str, mut position: usize) -> VecDeque<Token> {
 	let mut code = string.to_owned();
 
 	let mut tokens = Vec::new();
@@ -530,7 +524,7 @@ pub fn tokenize_string(string: &str, mut position: usize) -> VecDeque<Token> {
 		let token = Token {
 			token_type,
 			value,
-			span: Span { start: position, length },
+			span: Span::from_start_and_length(file.as_ref(), position, length),
 		};
 		tokens.push(token);
 		position += length;

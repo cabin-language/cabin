@@ -1,11 +1,15 @@
 use derive_getters::Getters;
 
 use crate::{
-	Span,
+	SpanLike,
 	Spanned,
 	api::context::Context,
-	ast::expressions::Expression,
-	comptime::{Evaluate, memory::Pointer},
+	ast::expressions::{Expression, object::Object},
+	comptime::{
+		Dot,
+		Evaluate,
+		storage::{Evaluated, Pointer},
+	},
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -26,7 +30,7 @@ pub struct ListTokens {
 
 #[derive(Debug, Clone, Getters)]
 pub struct ListElement {
-	value: Expression,
+	value: Pointer<Expression>,
 	tokens: ListElementTokens,
 }
 
@@ -67,23 +71,27 @@ impl Evaluate for List {
 	type Output = EvaluatedList;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
+		let span = self.span().into_owned();
+		let elements = self
+			.elements
+			.into_iter()
+			.map(|element| EvaluatedListElement {
+				value: element.value.evaluate(context),
+				tokens: element.tokens,
+			})
+			.collect::<Vec<_>>();
+
 		EvaluatedList {
 			tokens: self.tokens,
-			elements: self
-				.elements
-				.into_iter()
-				.map(|element| EvaluatedListElement {
-					value: element.value.evaluate(context),
-					tokens: element.tokens,
-				})
-				.collect(),
+			object: Object::list(elements.iter().map(|element| element.value().to_owned()).collect(), context, span).store(context),
+			elements,
 		}
 	}
 }
 
 impl Spanned for List {
-	fn span(&self) -> Span {
-		self.tokens.left_bracket.span.to(self.tokens.right_bracket.span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens().left_bracket().span().to(self.tokens().right_bracket().span())
 	}
 }
 
@@ -103,16 +111,23 @@ impl ToCabin for ListElement {
 pub struct EvaluatedList {
 	elements: Vec<EvaluatedListElement>,
 	tokens: ListTokens,
+	object: Pointer<Object>,
 }
 
 #[derive(Debug, Clone, Getters)]
 pub struct EvaluatedListElement {
-	value: Pointer,
+	value: Pointer<Evaluated>,
 	tokens: ListElementTokens,
 }
 
 impl Spanned for EvaluatedList {
-	fn span(&self) -> Span {
-		self.tokens.left_bracket.span.to(self.tokens.right_bracket.span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens().left_bracket().span().to(self.tokens().right_bracket().span())
+	}
+}
+
+impl Dot for EvaluatedList {
+	fn dot(&self, context: &Context, name: &str) -> Option<Pointer<Evaluated>> {
+		self.object.dot(context, name)
 	}
 }

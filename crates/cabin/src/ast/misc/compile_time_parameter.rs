@@ -2,7 +2,7 @@ use derive_getters::Getters;
 
 use crate::{
 	Context,
-	Span,
+	SpanLike,
 	Spanned,
 	ast::misc::parameter::{EvaluatedParameter, Parameter},
 	comptime::Evaluate,
@@ -34,13 +34,9 @@ impl TryParse for CompileTimeParameters {
 		while !tokens.next_is(TokenType::RightAngleBracket) {
 			let mut parameter = Parameter::try_parse(tokens, context)?;
 
-			if context.scope.get_variable(parameter.name().source_identifier()).is_some() {
-				context.add_diagnostic(Diagnostic {
-					span: parameter.name().span(),
-					file: context.file.clone(),
-					info: DiagnosticInfo::DuplicateVariableDeclaration {
-						name: parameter.name().source_identifier().to_owned(),
-					},
+			if context.get_variable(parameter.name()).is_some() {
+				context.add_diagnostic_at(parameter.name(), DiagnosticInfo::DuplicateVariableDeclaration {
+					name: parameter.name().source_identifier().to_owned(),
 				});
 			}
 
@@ -78,8 +74,8 @@ impl Evaluate for CompileTimeParameters {
 }
 
 impl Spanned for CompileTimeParameters {
-	fn span(&self) -> Span {
-		self.tokens.left_angle_bracket.span.to(self.tokens.right_angle_bracket.span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens().left_angle_bracket().span().to(self.tokens().right_angle_bracket().span())
 	}
 }
 
@@ -96,8 +92,8 @@ pub struct EvaluatedCompileTimeParameters {
 }
 
 impl Spanned for EvaluatedCompileTimeParameters {
-	fn span(&self) -> Span {
-		self.tokens.left_angle_bracket.span.to(self.tokens.right_angle_bracket.span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens().left_angle_bracket().span().to(self.tokens().right_angle_bracket().span())
 	}
 }
 

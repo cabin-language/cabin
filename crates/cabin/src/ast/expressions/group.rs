@@ -4,7 +4,7 @@ use convert_case::{Case, Casing as _};
 use derive_getters::Getters;
 
 use crate::{
-	Span,
+	SpanLike,
 	Spanned,
 	api::{context::Context, scope::ScopeType},
 	ast::{
@@ -14,7 +14,11 @@ use crate::{
 			tag::{EvaluatedTagList, TagList},
 		},
 	},
-	comptime::{Evaluate, memory::Pointer},
+	comptime::{
+		Evaluate,
+		storage::{Evaluated, Pointer},
+	},
+	definition::UnevaluatedVariableDeclaration,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_some,
 	lexer::{Token, TokenType},
@@ -40,8 +44,8 @@ pub struct GroupTokens {
 pub struct GroupField {
 	tags: Option<TagList>,
 	name: Identifier,
-	field_type: Option<Expression>,
-	default_value: Option<Expression>,
+	field_type: Option<Pointer<Expression>>,
+	default_value: Option<Pointer<Expression>>,
 	tokens: GroupFieldTokens,
 }
 
@@ -63,13 +67,7 @@ impl TryParse for Group {
 		let compile_time_parameters = CompileTimeParameters::try_parse(tokens, context).ok();
 		if let Some(compile_time_parameters) = &compile_time_parameters {
 			for parameter in compile_time_parameters.parameters() {
-				if let Err(error) = context.scope.declare_new_variable_from_id(parameter.name(), context.memory.calloc(), group_scope) {
-					context.add_diagnostic(Diagnostic {
-						span: parameter.name().span(),
-						info: error,
-						file: context.file.clone(),
-					});
-				};
+				context.declare_new_variable(UnevaluatedVariableDeclaration::with_type(parameter.name().to_owned(), parameter.parameter_type().clone()));
 			}
 		}
 
@@ -95,22 +93,14 @@ impl TryParse for Group {
 			})?;
 
 			if !name.source_identifier().is_case(Case::Snake) {
-				context.add_diagnostic(Diagnostic {
-					file: context.file.clone(),
-					span: name.span(),
-					info: DiagnosticInfo::NonSnakeCaseName {
-						original_name: name.source_identifier().to_owned(),
-					},
+				context.add_diagnostic_at(&name, DiagnosticInfo::NonSnakeCaseName {
+					original_name: name.source_identifier().to_owned(),
 				});
 			}
 
 			// check for duplicate fields
 			if fields.iter().any(|field: &GroupField| field.name == name) {
-				context.add_diagnostic(Diagnostic {
-					file: context.file.clone(),
-					span: name.span(),
-					info: DiagnosticInfo::DuplicateGroupField(name.source_identifier().to_owned()),
-				});
+				context.add_diagnostic_at(&name, DiagnosticInfo::DuplicateGroupField(name.source_identifier().to_owned()));
 			}
 
 			// field type
@@ -125,7 +115,7 @@ impl TryParse for Group {
 			.unzip();
 
 			// field value
-			let (equals, value) = if_then_some!(tokens.next_is(TokenType::Equal), {
+			let (equals, mut value) = if_then_some!(tokens.next_is(TokenType::Equal), {
 				(
 					tokens.pop(TokenType::Equal, context).inspect_err(|_err| {
 						context.scope.exit_scope(group_scope).unwrap();
@@ -134,6 +124,12 @@ impl TryParse for Group {
 				)
 			})
 			.unzip();
+
+			if let Some(tags) = &tags
+				&& let Some(value) = &mut value
+			{
+				value.as_unevaluated_mut(context).unwrap().set_tags(tags.clone());
+			}
 
 			// comma
 			let comma = tokens.pop(TokenType::Comma, context).ok();
@@ -175,11 +171,14 @@ impl Evaluate for Group {
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating group");
 		let mut fields = Vec::new();
-		let span = self.span();
+		let span = self.span().into_owned();
 
 		for field in self.fields {
+			log!(context, "Evaluating group field \"{}\"", field.name.source_identifier());
 			let tags = field.tags.evaluate(context);
+			log!(context, "Evaluating group field \"{}\" value", field.name.source_identifier());
 			let default_value = field.default_value.evaluate(context);
+			log!(context, "Evaluating group field \"{}\" type", field.name.source_identifier());
 			let field_type = field.field_type.evaluate(context);
 
 			fields.push(EvaluatedGroupField {
@@ -191,8 +190,9 @@ impl Evaluate for Group {
 			});
 		}
 
+		log!(context, "Creating group object");
 		let obj = Object::new(
-			context.ident("Group"),
+			context.builtin("Group"),
 			HashMap::from([(
 				"fields".to_owned(),
 				Object::list(
@@ -200,15 +200,15 @@ impl Evaluate for Group {
 						.iter()
 						.map(|field| {
 							Object::new(
-								context.ident("Property"),
+								context.builtin("Property"),
 								HashMap::from([("name".to_owned(), field.name.stringify(context).store(context))]),
-								field.name.span(),
+								field.name.span().into_owned(),
 							)
 							.store(context)
 						})
 						.collect(),
 					context,
-					span,
+					span.clone(),
 				)
 				.store(context),
 			)]),
@@ -226,14 +226,14 @@ impl Evaluate for Group {
 }
 
 impl Spanned for Group {
-	fn span(&self) -> Span {
-		self.tokens.keyword_group.span.to(self.tokens.right_brace.span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens().keyword_group().span().to(self.tokens().right_brace().span())
 	}
 }
 
 impl Spanned for EvaluatedGroup {
-	fn span(&self) -> Span {
-		self.tokens.keyword_group.span.to(self.tokens.right_brace.span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens().keyword_group().span().to(self.tokens().right_brace().span())
 	}
 }
 
@@ -243,14 +243,14 @@ pub struct EvaluatedGroup {
 	fields: Vec<EvaluatedGroupField>,
 	tokens: GroupTokens,
 
-	object: Pointer,
+	object: Pointer<Object>,
 }
 
 #[derive(Debug, Clone, Getters)]
 pub struct EvaluatedGroupField {
 	tags: Option<EvaluatedTagList>,
 	name: Identifier,
-	field_type: Option<Pointer>,
-	default_value: Option<Pointer>,
+	field_type: Option<Pointer<Evaluated>>,
+	default_value: Option<Pointer<Evaluated>>,
 	tokens: GroupFieldTokens,
 }

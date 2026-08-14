@@ -20,7 +20,7 @@ impl TryParse for Program {
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let program_scope = context.scope.enter_new_scope(ScopeType::File);
-		let inner_scope_id = context.scope.unique_id();
+		let inner_scope_id = context.scope.get_ref();
 		let mut statements = Vec::new();
 
 		while !tokens.is_empty() {

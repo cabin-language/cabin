@@ -1,8 +1,9 @@
-use std::{fmt::Display, ops::Not as _, path::PathBuf};
+use std::{fmt::Display, ops::Not as _};
 
 use convert_case::{Case, Casing as _};
+use derive_getters::Getters;
 
-use crate::{STDLIB, Span, Spanned, lexer::TokenType};
+use crate::{Span, SpanLike, Spanned, lexer::TokenType};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Copy)]
 pub enum Severity {
@@ -131,6 +132,9 @@ pub enum DiagnosticInfo {
 
 	#[error("{0}")]
 	Info(String),
+
+	#[error("Missing action body: This action has no body block")]
+	ActionWithoutBody,
 }
 
 impl DiagnosticInfo {
@@ -154,6 +158,7 @@ impl DiagnosticInfo {
 			| Self::IterateOverNonList
 			| Self::GroupValueNotKnownAtCompileTime
 			| Self::RunLiteral
+			| Self::ActionWithoutBody
 			| Self::UnexpectedTokenExpected { .. }
 			| Self::DuplicateGroupField(_)
 			| Self::InvalidTopLevelStatement { .. }
@@ -171,34 +176,26 @@ impl DiagnosticInfo {
 
 /// A compiler diagnostic. Diagnostics are information about source code, such as errors, warnings,
 /// information, hints, etc. For the primary diagnostic information, see `diagnostic.info`.
-#[derive(Clone, Debug, thiserror::Error, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, thiserror::Error, PartialEq, Eq, Hash, Getters)]
 pub struct Diagnostic {
 	/// The span of the diagnostic.
+	#[getter(skip)]
 	pub span: Span,
 
 	/// The information of the diagnostic. This includes the severity, the type, and any data
 	/// associated with that specific diagnostic type.
-	pub info: DiagnosticInfo,
-
-	/// The file that the diagnostic occurred in.
-	pub file: PathBuf,
+	info: DiagnosticInfo,
 }
 
 impl Diagnostic {
-	pub const fn info(&self) -> &DiagnosticInfo {
-		&self.info
-	}
-
-	pub fn start_line_column(&self) -> (usize, usize) {
-		self.span
-			.start_line_column(&std::fs::read_to_string(&self.file).unwrap_or_else(|_| STDLIB.to_owned()))
-			.unwrap()
+	pub fn at(span: &impl Spanned, info: DiagnosticInfo) -> Diagnostic {
+		Diagnostic { span: span.span().owned(), info }
 	}
 }
 
 impl Spanned for Diagnostic {
-	fn span(&self) -> Span {
-		self.span
+	fn span(&self) -> impl SpanLike {
+		&self.span
 	}
 }
 
@@ -222,21 +219,21 @@ impl Diagnostics {
 	}
 
 	/// Returns the diagnostics that are warnings, as well as their spans.
-	pub fn warnings(&self) -> Vec<(&DiagnosticInfo, Span)> {
+	pub fn warnings(&self) -> Vec<(&DiagnosticInfo, &Span)> {
 		self.0
 			.iter()
 			.filter_map(|diagnostic| {
-				(diagnostic.info.severity() == Severity::AlwaysWarn || diagnostic.info.severity() == Severity::ProdWarning).then_some((&diagnostic.info, diagnostic.span))
+				(diagnostic.info.severity() == Severity::AlwaysWarn || diagnostic.info.severity() == Severity::ProdWarning).then_some((&diagnostic.info, &diagnostic.span))
 			})
 			.collect()
 	}
 
 	/// Returns the diagnostics that are errors, as well as their spans.
-	pub fn errors(&self) -> Vec<(&DiagnosticInfo, Span)> {
+	pub fn errors(&self) -> Vec<(&DiagnosticInfo, &Span)> {
 		self.0
 			.iter()
 			.filter_map(|diagnostic| {
-				(diagnostic.info.severity() == Severity::AlwaysError || diagnostic.info.severity() == Severity::ProdError).then_some((&diagnostic.info, diagnostic.span))
+				(diagnostic.info.severity() == Severity::AlwaysError || diagnostic.info.severity() == Severity::ProdError).then_some((&diagnostic.info, &diagnostic.span))
 			})
 			.collect()
 	}
@@ -254,17 +251,17 @@ impl Diagnostics {
 		self.0.iter().collect()
 	}
 
-	pub fn dev_errors(&self) -> Vec<(&DiagnosticInfo, Span)> {
+	pub fn dev_errors(&self) -> Vec<(&DiagnosticInfo, &Span)> {
 		self.0
 			.iter()
-			.filter_map(|diagnostic| (diagnostic.info.severity() == Severity::AlwaysError).then_some((&diagnostic.info, diagnostic.span)))
+			.filter_map(|diagnostic| (diagnostic.info.severity() == Severity::AlwaysError).then_some((&diagnostic.info, &diagnostic.span)))
 			.collect()
 	}
 
-	pub fn dev_warnings(&self) -> Vec<(&DiagnosticInfo, Span)> {
+	pub fn dev_warnings(&self) -> Vec<(&DiagnosticInfo, &Span)> {
 		self.0
 			.iter()
-			.filter_map(|diagnostic| (diagnostic.info.severity() == Severity::AlwaysWarn).then_some((&diagnostic.info, diagnostic.span)))
+			.filter_map(|diagnostic| (diagnostic.info.severity() == Severity::AlwaysWarn).then_some((&diagnostic.info, &diagnostic.span)))
 			.collect()
 	}
 

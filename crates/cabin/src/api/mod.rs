@@ -1,6 +1,7 @@
 pub mod builtin;
 pub mod config;
 pub mod context;
+pub mod definition;
 pub mod diagnostics;
 pub mod io;
 pub mod macros;

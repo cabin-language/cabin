@@ -1,11 +1,16 @@
-use std::{borrow::Cow, fmt::Debug, hash::Hash};
+use std::{fmt::Debug, hash::Hash};
+
+use derive_getters::Getters;
 
 use crate::{
-	Span,
+	SpanLike,
 	Spanned,
 	api::context::Context,
 	ast::expressions::{evaluated::EvaluatedExpression, object::Object},
-	comptime::{Evaluate, memory::Pointer},
+	comptime::{
+		Evaluate,
+		storage::{Evaluated, Pointer},
+	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 	log,
@@ -14,7 +19,7 @@ use crate::{
 	transpiler::ToCabin,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Getters)]
 pub struct Identifier {
 	/// The internal string value of this name. This is the value as it appears in the Cabin source code; In other words,
 	/// it's unmangled.
@@ -22,7 +27,8 @@ pub struct Identifier {
 
 	/// The unique ID of the scope that this name is used in. This is used to get the value
 	/// that the name points to, because it needs to get the value from the scope it's used.
-	scope_id: ScopeRef,
+	#[getter(copy)]
+	scope: ScopeRef,
 }
 
 impl TryParse for Identifier {
@@ -33,7 +39,7 @@ impl TryParse for Identifier {
 
 		let identifier = Identifier {
 			token,
-			scope_id: context.scope.unique_id(),
+			scope: context.scope.get_ref(),
 		};
 
 		Ok(identifier)
@@ -41,11 +47,11 @@ impl TryParse for Identifier {
 }
 
 impl Evaluate for Identifier {
-	type Output = Pointer;
+	type Output = Pointer<Evaluated>;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
-		log!(context, "Evaluating identifier");
-		self.value(context).unwrap_or_else(|| EvaluatedExpression::Identifier(self).store(context))
+		log!(context, "Evaluating identifier \"{}\"", self.source_identifier());
+		self.value(context).unwrap_or_else(|| EvaluatedExpression::Identifier(self).store(context).into())
 	}
 }
 
@@ -62,8 +68,8 @@ impl AsRef<Identifier> for Identifier {
 }
 
 impl Spanned for Identifier {
-	fn span(&self) -> Span {
-		self.token.span
+	fn span(&self) -> impl SpanLike {
+		self.token().span()
 	}
 }
 
@@ -94,36 +100,38 @@ impl Debug for Identifier {
 }
 
 impl Identifier {
-	pub fn value(&self, context: &mut Context) -> Option<Pointer> {
+	pub fn value(&self, context: &mut Context) -> Option<Pointer<Evaluated>> {
 		context
-			.scope
-			.get_variable_from_id(self.source_identifier(), self.scope_id)
+			.get_variable(self)
 			.ok_or_else(|| {
-				context.add_diagnostic(Diagnostic {
-					file: context.file.clone(),
-					info: DiagnosticInfo::UnknownVariable(self.source_identifier().to_owned()),
-					span: self.span(),
-				});
+				context.add_diagnostic_at(self, DiagnosticInfo::UnknownVariable(self.source_identifier().to_owned()));
 			})
 			.ok()
-			.map(|ptr| ptr.with_span(self.span()))
+			.map(|ptr| ptr.with_span(self.span().into_owned()))
 	}
 
-	pub fn stringify(&self, context: &Context) -> Object {
-		Object::text(self.source_identifier(), context, self.span())
+	pub fn stringify(&self, context: &mut Context) -> Object {
+		Object::text(self.source_identifier(), context, self.span().into_owned())
 	}
 
-	pub fn create_virtual<'str, S: Into<Cow<'str, str>>>(name: S, context: &Context) -> Identifier {
+	pub const fn create_virtual(name: String, context: &Context) -> Identifier {
 		Identifier {
 			token: Token::create_virtual(TokenType::Identifier, name),
-			scope_id: context.scope.unique_id(),
+			scope: context.scope.get_ref(),
+		}
+	}
+
+	pub const fn create_virtual_in_scope(name: String, scope: ScopeRef) -> Identifier {
+		Identifier {
+			token: Token::create_virtual(TokenType::Identifier, name),
+			scope,
 		}
 	}
 
 	pub const fn synthetic(token: Token, context: &Context) -> Identifier {
 		Identifier {
 			token,
-			scope_id: context.scope.unique_id(),
+			scope: context.scope.get_ref(),
 		}
 	}
 

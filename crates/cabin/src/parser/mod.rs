@@ -41,19 +41,20 @@ pub trait TokenQueueFunctionality {
 		token_types.iter().any(|token_type| self.next_is(token_type.to_owned()))
 	}
 
-	fn current_position(&self) -> Option<Span>;
+	fn next_token_span(&self) -> Option<&Span>;
+	fn peek(&self, context: &Context) -> Result<&Token, Diagnostic>;
 }
 
 impl TokenQueueFunctionality for TokenQueue {
 	fn peek_type(&self, context: &Context) -> Result<TokenType, Diagnostic> {
 		Ok(self
 			.front()
-			.ok_or_else(|| Diagnostic {
-				file: context.file.clone(),
-				span: Span::none(),
-				info: DiagnosticInfo::UnexpectedGenericEOF,
-			})?
+			.ok_or_else(|| Diagnostic::at(&Span::eof(&context.file), DiagnosticInfo::UnexpectedGenericEOF))?
 			.token_type)
+	}
+
+	fn peek(&self, context: &Context) -> Result<&Token, Diagnostic> {
+		self.front().ok_or_else(|| Diagnostic::at(&Span::eof(&context.file), DiagnosticInfo::UnexpectedGenericEOF))
 	}
 
 	fn next_is(&self, token_type: TokenType) -> bool {
@@ -63,11 +64,7 @@ impl TokenQueueFunctionality for TokenQueue {
 	fn peek_type2(&self, context: &Context) -> Result<TokenType, Diagnostic> {
 		Ok(self
 			.get(1)
-			.ok_or_else(|| Diagnostic {
-				file: context.file.clone(),
-				span: Span::none(),
-				info: DiagnosticInfo::UnexpectedGenericEOF,
-			})?
+			.ok_or_else(|| Diagnostic::at(&Span::eof(&context.file), DiagnosticInfo::UnexpectedGenericEOF))?
 			.token_type)
 	}
 
@@ -77,25 +74,17 @@ impl TokenQueueFunctionality for TokenQueue {
 				return Ok(self.pop_front().unwrap());
 			}
 
-			return Err(Diagnostic {
-				span: front.span,
-				info: DiagnosticInfo::UnexpectedToken {
-					expected: token_type,
-					actual: front.token_type,
-				},
-				file: context.file.clone(),
-			});
+			return Err(Diagnostic::at(front, DiagnosticInfo::UnexpectedToken {
+				expected: token_type,
+				actual: front.token_type,
+			}));
 		}
 
-		Err(Diagnostic {
-			file: context.file.clone(),
-			span: Span::none(),
-			info: DiagnosticInfo::UnexpectedEOF { expected: token_type },
-		})
+		Err(Diagnostic::at(&Span::eof(&context.file), DiagnosticInfo::UnexpectedEOF { expected: token_type }))
 	}
 
-	fn current_position(&self) -> Option<Span> {
-		self.front().map(|front| front.span)
+	fn next_token_span(&self) -> Option<&Span> {
+		self.front().map(|front| &front.span)
 	}
 }
 

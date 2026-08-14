@@ -1,16 +1,7 @@
 use derive_getters::Getters;
 
 use crate::{
-	Span,
-	Spanned,
-	api::context::Context,
-	ast::expressions::{EvaluatedExpression, Expression, block::Block, identifier::Identifier},
-	comptime::{Check as _, Evaluate, memory::Pointer},
-	diagnostics::{Diagnostic, DiagnosticInfo},
-	lexer::{Token, TokenType},
-	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
-	scope::ScopeType,
-	transpiler::ToCabin,
+	SpanLike, Spanned, api::context::Context, ast::expressions::{EvaluatedExpression, UnevaluatedExpression, block::Block, identifier::Identifier}, comptime::{Check as _, Evaluate, storage::ExpressionRef, types::Type}, definition::UnevaluatedVariableDeclaration, diagnostics::{Diagnostic, DiagnosticInfo}, lexer::{Token, TokenType}, parser::{TokenQueue, TokenQueueFunctionality as _, TryParse}, scope::ScopeType, transpiler::ToCabin
 };
 
 #[derive(Debug, Clone, Getters)]
@@ -21,7 +12,7 @@ pub struct ForLoop {
 
 	/// The expression being iterated over. For example, in a loop such as `for fruit in fruits { ... }`, this refers to the
 	/// expression `fruits`.
-	iterable: Expression,
+	iterable: UnevaluatedExpression,
 
 	/// The body of the loop. This is the code that gets run when each iteration of the loop.
 	body: Block,
@@ -45,19 +36,12 @@ impl TryParse for ForLoop {
 
 		let keyword_in = tokens.pop(TokenType::KeywordIn, context)?;
 
-		let iterable = Expression::try_parse(tokens, context)?;
+		let iterable = UnevaluatedExpression::try_parse(tokens, context)?;
 
 		let body = Block::try_parse(tokens, context, ScopeType::ForLoop)?;
 
-		if context.scope.get_variable_from_id(binding_name.source_identifier(), body.inner_scope_id()).is_some() {
-			context.add_diagnostic(Diagnostic {
-				file: context.file.clone(),
-				span: binding_name.span(),
-				info: DiagnosticInfo::DuplicateVariableDeclaration {
-					name: binding_name.source_identifier().to_owned(),
-				},
-			});
-		}
+		let declaration = UnevaluatedVariableDeclaration::new(binding_name.clone(), Type::new(), context.none_expr())
+		context.scope.declare_new_variable_from_id(binding_name.clone(), declaration.into(), body.inner_scope_id());
 
 		Ok(ForLoop {
 			binding_name,
@@ -69,17 +53,13 @@ impl TryParse for ForLoop {
 }
 
 impl Evaluate for ForLoop {
-	type Output = Pointer;
+	type Output = ExpressionRef;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		let iterable = self.iterable.evaluate(context);
 		if let Some(object) = iterable.value(context).clone().as_object() {
 			let Some(elements) = object.list_elements() else {
-				context.add_diagnostic(Diagnostic {
-					span: iterable.span(),
-					info: DiagnosticInfo::IterateOverNonList,
-					file: context.file.clone(),
-				});
+				context.add_diagnostic(Diagnostic::at(&iterable, DiagnosticInfo::IterateOverNonList));
 
 				return EvaluatedExpression::ForLoop(EvaluatedForLoop {
 					binding_name: self.binding_name,
@@ -93,7 +73,7 @@ impl Evaluate for ForLoop {
 			let list_is_fully_known = elements.iter().all(|element| element.is_fully_known(context));
 
 			for element in elements {
-				context.scope.reassign_variable_from_id(&self.binding_name, *element, self.body.inner_scope_id());
+				context.scope.reassign_variable_from_id(&self.binding_name, element.to_owned(), self.body.inner_scope_id());
 
 				if list_is_fully_known {
 					let _body_value = self.body.clone().evaluate(context);
@@ -114,8 +94,8 @@ impl Evaluate for ForLoop {
 }
 
 impl Spanned for ForLoop {
-	fn span(&self) -> Span {
-		self.tokens.keyword_for.span.to(self.body.span())
+	fn span(&self) -> impl SpanLike {
+		self.tokens().keyword_for().span().to(self.body.span())
 	}
 }
 
@@ -132,8 +112,8 @@ impl ToCabin for ForLoop {
 }
 
 impl Spanned for EvaluatedForLoop {
-	fn span(&self) -> Span {
-		self.tokens.keyword_for.span.to(self.body.span())
+	fn span(&self) -> impl SpanLike {
+		self.tokens().keyword_for().span().to(self.body.span())
 	}
 }
 
@@ -145,7 +125,7 @@ pub struct EvaluatedForLoop {
 
 	/// The expression being iterated over. For example, in a loop such as `for fruit in fruits { ... }`, this refers to the
 	/// expression `fruits`.
-	iterable: Pointer,
+	iterable: ExpressionRef,
 
 	/// The body of the loop. This is the code that gets run when each iteration of the loop.
 	body: Block,

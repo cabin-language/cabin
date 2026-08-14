@@ -2,8 +2,8 @@ use derive_getters::Getters;
 
 use crate::{
 	Context,
-	Span,
-	ast::expressions::{Expression, Spanned, evaluated::EvaluatedExpression},
+	SpanLike,
+	ast::expressions::{UnevaluatedExpression, Spanned, evaluated::EvaluatedExpression},
 	comptime::Evaluate,
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
@@ -13,7 +13,7 @@ use crate::{
 
 #[derive(Debug, Clone, Getters)]
 pub struct RunExpression {
-	expression: Expression,
+	expression: UnevaluatedExpression,
 	tokens: RunExpressionTokens,
 }
 
@@ -30,7 +30,7 @@ impl TryParse for RunExpression {
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let keyword_run = tokens.pop(TokenType::KeywordRun, context)?;
 		let left_parenthesis = tokens.pop(TokenType::LeftParenthesis, context)?;
-		let expression = Expression::try_parse(tokens, context)?;
+		let expression = UnevaluatedExpression::try_parse(tokens, context)?;
 		let right_parenthesis = tokens.pop(TokenType::RightParenthesis, context)?;
 
 		Ok(RunExpression {
@@ -62,8 +62,8 @@ impl ToCabin for RunExpression {
 }
 
 impl Spanned for RunExpression {
-	fn span(&self) -> Span {
-		self.tokens.keyword_run.span.to(self.tokens.right_parenthesis.span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens().keyword_run().span().to(self.tokens().right_parenthesis().span())
 	}
 }
 
@@ -79,7 +79,7 @@ pub trait Runtimeable {
 }
 
 impl Spanned for EvaluatedRunExpression {
-	fn span(&self) -> Span {
-		self.tokens.keyword_run.span.to(self.tokens.right_parenthesis.span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens().keyword_run().span().to(self.tokens().right_parenthesis().span())
 	}
 }

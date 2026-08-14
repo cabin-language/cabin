@@ -6,10 +6,14 @@ use try_as::traits as try_as_traits;
 
 use crate::{
 	Span,
+	SpanLike,
 	Spanned,
 	api::context::Context,
-	ast::expressions::{Expression, binary::BinaryExpression, object::Object},
-	comptime::{Evaluate, memory::Pointer},
+	ast::expressions::{UnevaluatedExpression, binary::BinaryExpression, object::Object},
+	comptime::{
+		Evaluate,
+		storage::{Evaluated, Pointer},
+	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType, tokenize_string},
 	log,
@@ -29,7 +33,7 @@ pub enum StringPart {
 	Literal(LiteralPart),
 
 	/// An interpolated expression string part.
-	Expression(Expression),
+	Expression(UnevaluatedExpression),
 }
 
 #[derive(Debug, Clone, Getters)]
@@ -48,29 +52,31 @@ impl TryParse for Text {
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let token = tokens.pop(TokenType::String, context)?;
-		let span = token.span;
+		let span = &token.span;
 		let original = token.value.strip_prefix('"').and_then(|s| s.strip_suffix('"')).unwrap().to_owned();
 		let mut without_quotes = original.chars().collect::<VecDeque<char>>();
 
 		let mut parts = Vec::new();
 		let mut builder = String::new();
 
-		let mut span_start = span.start + 1;
+		let span_file = span.file();
+		let mut span_start = span.start() + 1;
 		while !without_quotes.is_empty() {
 			match without_quotes.pop_front().unwrap() {
 				'{' => {
 					if !builder.is_empty() {
-						let part_span = Span::from_start_and_length(span_start, builder.len());
+						let part_span = Span::from_start_and_length(span_file, span_start, builder.len());
+						let part_end = part_span.end();
 						parts.push(StringPart::Literal(LiteralPart {
 							span: part_span,
 							value: builder.replace(r"\n", "\n"),
 						}));
-						span_start = part_span.end() + 1;
+						span_start = part_end + 1;
 						builder.clear();
 					}
 
-					let mut expr_tokens = tokenize_string(&without_quotes.iter().collect::<String>(), span_start);
-					let expression = Expression::try_parse(&mut expr_tokens, context)?;
+					let mut expr_tokens = tokenize_string(&context.file, &without_quotes.iter().collect::<String>(), span_start);
+					let expression = UnevaluatedExpression::try_parse(&mut expr_tokens, context)?;
 					let length = expression.span().length();
 					parts.push(StringPart::Expression(expression));
 					span_start += length;
@@ -80,11 +86,7 @@ impl TryParse for Text {
 					}
 
 					if without_quotes.pop_front() != Some('}') {
-						return Err(Diagnostic {
-							info: DiagnosticInfo::InvalidFormatString(original),
-							file: context.file.clone(),
-							span,
-						});
+						return Err(Diagnostic::at(&span, DiagnosticInfo::InvalidFormatString(original)));
 					}
 					span_start += 1;
 				},
@@ -94,7 +96,7 @@ impl TryParse for Text {
 		}
 
 		if !builder.is_empty() {
-			let part_span = Span::from_start_and_length(span_start, builder.len());
+			let part_span = Span::from_start_and_length(span_file, span_start, builder.len());
 			parts.push(StringPart::Literal(LiteralPart {
 				span: part_span,
 				value: builder.replace(r"\n", "\n"),
@@ -109,14 +111,14 @@ impl TryParse for Text {
 }
 
 impl Evaluate for Text {
-	type Output = Pointer;
+	type Output = Pointer<Evaluated>;
 
 	fn evaluate(mut self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating text");
 
 		if self.parts.len() == 1 {
 			return match self.parts.remove(0) {
-				StringPart::Literal(literal) => Object::text(literal.value, context, literal.span).store(context),
+				StringPart::Literal(literal) => Object::text(literal.value, context, literal.span).store(context).into(),
 				StringPart::Expression(expr) => expr.evaluate(context),
 			};
 		}
@@ -125,7 +127,8 @@ impl Evaluate for Text {
 		let mut expression = parts.next().unwrap();
 
 		for part in parts {
-			expression = Expression::Binary(Box::new(BinaryExpression::synthetic(expression, Token::synthetic(TokenType::Plus, "+", part.span()), part)));
+			let token = Token::synthetic(TokenType::Plus, "+".to_owned(), part.span().owned());
+			expression = UnevaluatedExpression::Binary(Box::new(BinaryExpression::synthetic(expression, token, part)));
 		}
 
 		expression.evaluate(context)
@@ -133,8 +136,8 @@ impl Evaluate for Text {
 }
 
 impl Spanned for Text {
-	fn span(&self) -> Span {
-		self.tokens.string.span
+	fn span(&self) -> impl SpanLike {
+		self.tokens().string().span()
 	}
 }
 
@@ -148,7 +151,7 @@ impl Text {
 	pub fn literal(literal: LiteralPart) -> Text {
 		Text {
 			tokens: TextTokens {
-				string: Token::synthetic(TokenType::String, &literal.value, literal.span),
+				string: Token::synthetic(TokenType::String, literal.value().to_owned(), literal.span().owned()),
 			},
 			parts: vec![StringPart::Literal(literal)],
 		}
@@ -156,10 +159,10 @@ impl Text {
 }
 
 impl StringPart {
-	pub fn into_expression(self) -> Expression {
+	pub fn into_expression(self) -> UnevaluatedExpression {
 		match self {
 			StringPart::Expression(expression) => expression,
-			StringPart::Literal(literal) => Expression::Text(Text::literal(literal)),
+			StringPart::Literal(literal) => UnevaluatedExpression::Text(Text::literal(literal)),
 		}
 	}
 }

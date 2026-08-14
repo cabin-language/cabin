@@ -3,10 +3,12 @@ use std::{collections::VecDeque, io::Write as _};
 use crate::{
 	Context,
 	Span,
+	SpanLike as _,
 	Spanned as _,
 	ast::expressions::object::Object,
-	comptime::memory::Pointer,
-	diagnostics::{Diagnostic, DiagnosticInfo},
+	comptime::storage::{Evaluated, Pointer},
+	diagnostics::DiagnosticInfo,
+	log,
 };
 
 /// Calls a built-in function at compile-time. Built-in functions are called at compiled time with Rust code. This is used in
@@ -27,15 +29,11 @@ use crate::{
 /// If there is no built-in function with the given name, an error is returned.
 ///
 /// Also, if the built-in function throws an error while being called, that error is returned as well.
-pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut arguments: VecDeque<Pointer>, span: Span) -> Pointer {
+pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut arguments: VecDeque<Pointer<Evaluated>>, span: &Span) -> Pointer<Evaluated> {
 	match name {
 		"system.terminal.write" => {
 			let Some(pointer) = arguments.pop_front() else {
-				context.add_diagnostic(Diagnostic {
-					span,
-					info: DiagnosticInfo::IncorrectArgumentCount { expected: 1, actual: 0 },
-					file: context.file.clone(),
-				});
+				context.add_diagnostic_at(span, DiagnosticInfo::IncorrectArgumentCount { expected: 1, actual: 0 });
 
 				return context.none();
 			};
@@ -54,11 +52,7 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut argum
 
 			// Add hint diagnostic
 			if !context.interactive {
-				context.add_diagnostic(Diagnostic {
-					span,
-					info: DiagnosticInfo::Info(string_value.trim().to_owned()),
-					file: context.file.clone(),
-				});
+				context.add_diagnostic_at(span, DiagnosticInfo::Info(string_value.trim().to_owned()));
 			}
 
 			context.none()
@@ -71,7 +65,7 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut argum
 			let right = arguments.pop_front().unwrap().as_string(context).unwrap();
 			let concatenated = format!("{left}{right}");
 
-			Object::text(concatenated, context, span).store(context)
+			Object::text(concatenated, context, span.to_owned()).store(context).into()
 		},
 
 		"terminal.input" => {
@@ -83,14 +77,30 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut argum
 			line = line.get(0..line.len() - 1).unwrap().to_owned();
 
 			// return
-			Object::text(line, context, span).store(context)
+			Object::text(line, context, span.to_owned()).store(context).into()
 		},
 
 		"Any.to_text" => {
 			let this = arguments.pop_front().unwrap();
-			let text = this.value(context).as_object().unwrap().to_text(context);
+			let text = this.value(context).as_object(context).unwrap().to_text(context);
 
-			Object::text(text, context, this.span()).store(context)
+			Object::text(text, context, this.span().owned()).store(context).into()
+		},
+
+		"List.insert" => {
+			log!(context, "Calling builtin \"List.insert\"");
+			let index = arguments.get(1).unwrap().as_number(context).unwrap() as usize;
+			let element = arguments.get(2).unwrap().to_owned();
+			let this = arguments.pop_front().unwrap().as_mut_list(context).unwrap();
+			this.insert(index, element);
+
+			context.none()
+		},
+
+		"List.length" => {
+			log!(context, "Calling builtin \"List.length\"");
+			let this = arguments.pop_front().unwrap().as_list(context).unwrap();
+			Object::number(this.len() as f64, context, span.to_owned()).store(context)
 		},
 
 		_ => unreachable!(),

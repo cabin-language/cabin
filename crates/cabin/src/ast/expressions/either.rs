@@ -4,14 +4,18 @@ use convert_case::{Case, Casing as _};
 use derive_getters::Getters;
 
 use crate::{
-	Span,
+	SpanLike,
 	Spanned,
 	api::context::Context,
 	ast::{
-		expressions::{Expression, identifier::Identifier, object::Object},
+		expressions::{Expression, UnevaluatedExpression, identifier::Identifier, object::Object},
 		misc::compile_time_parameter::{CompileTimeParameters, EvaluatedCompileTimeParameters},
 	},
-	comptime::{Dot, Evaluate, memory::Pointer},
+	comptime::{
+		Dot,
+		Evaluate,
+		storage::{Evaluated, Pointer},
+	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_some,
 	lexer::{Token, TokenType},
@@ -39,7 +43,7 @@ pub struct EitherTokens {
 #[derive(Debug, Clone, Getters)]
 pub struct EitherVariant {
 	name: Identifier,
-	subtype: Option<Expression>,
+	subtype: Option<Pointer<Expression>>,
 	tokens: EitherVariantTokens,
 }
 
@@ -61,12 +65,11 @@ impl TryParse for Either {
 		let compile_time_parameters = CompileTimeParameters::try_parse(tokens, context).ok();
 		if let Some(compile_time_parameters) = &compile_time_parameters {
 			for parameter in compile_time_parameters.parameters() {
-				if let Err(error) = context.scope.declare_new_variable_from_id(parameter.name(), context.memory.calloc(), either_scope) {
-					context.add_diagnostic(Diagnostic {
-						span: parameter.name().span(),
-						info: error,
-						file: context.file.clone(),
-					});
+				if let Err(error) = context
+					.scope
+					.declare_new_variable_from_id(parameter.name(), parameter.as_declaration(context), either_scope)
+				{
+					context.add_diagnostic(Diagnostic::at(parameter.name(), error));
 				};
 			}
 		}
@@ -76,18 +79,14 @@ impl TryParse for Either {
 			let name = Identifier::try_parse(tokens, context)?;
 
 			let (colon, subtype) = if_then_some!(tokens.next_is(TokenType::Colon), {
-				(tokens.pop(TokenType::Colon, context)?, Expression::try_parse(tokens, context)?)
+				(tokens.pop(TokenType::Colon, context)?, UnevaluatedExpression::try_parse(tokens, context)?)
 			})
 			.unzip();
 
 			if name.source_identifier() != name.source_identifier().to_case(Case::Snake) {
-				context.add_diagnostic(Diagnostic {
-					span: name.span(),
-					file: context.file.clone(),
-					info: DiagnosticInfo::NonSnakeCaseName {
-						original_name: name.source_identifier().to_owned(),
-					},
-				});
+				context.add_diagnostic(Diagnostic::at(&name, DiagnosticInfo::NonSnakeCaseName {
+					original_name: name.source_identifier().to_owned(),
+				}));
 			}
 
 			let comma = tokens.pop(TokenType::Comma, context).ok();
@@ -128,17 +127,13 @@ impl Evaluate for Either {
 
 		// Warning for empty either
 		if self.variants.is_empty() {
-			context.add_diagnostic(Diagnostic {
-				span: self.span(),
-				file: context.file.clone(),
-				info: DiagnosticInfo::EmptyEither,
-			});
+			context.add_diagnostic_at(&self, DiagnosticInfo::EmptyEither);
 		}
 
 		let mut variants = Vec::new();
 		for variant in self.variants {
 			variants.push(EvaluatedEitherVariant {
-				object: Object::new(context.ident("EitherVariant"), HashMap::from([]), variant.span()).store(context),
+				object: Object::new(context.builtin("EitherVariant"), HashMap::from([]), variant.span().into_owned()).store(context),
 				name: variant.name,
 				subtype: variant.subtype.evaluate(context),
 				tokens: variant.tokens,
@@ -154,8 +149,8 @@ impl Evaluate for Either {
 }
 
 impl Spanned for Either {
-	fn span(&self) -> Span {
-		self.tokens.keyword_either.span.to(self.tokens.right_brace.span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens().keyword_either().span().to(self.tokens().right_brace().span())
 	}
 }
 
@@ -193,8 +188,8 @@ impl ToCabin for EitherVariant {
 }
 
 impl Spanned for EvaluatedEither {
-	fn span(&self) -> Span {
-		self.tokens.keyword_either.span.to(self.tokens.right_brace.span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens().keyword_either().span().to(self.tokens().right_brace().span())
 	}
 }
 
@@ -208,24 +203,24 @@ pub struct EvaluatedEither {
 #[derive(Debug, Clone, Getters)]
 pub struct EvaluatedEitherVariant {
 	name: Identifier,
-	subtype: Option<Pointer>,
+	subtype: Option<Pointer<Evaluated>>,
 	tokens: EitherVariantTokens,
-	object: Pointer,
+	object: Pointer<Object>,
 }
 
 impl Spanned for EitherVariant {
-	fn span(&self) -> Span {
+	fn span(&self) -> impl SpanLike {
 		let start = self.name.span();
 
 		if let Some(subtype) = &self.subtype {
 			if let Some(comma) = &self.tokens.comma {
-				return start.to(comma.span);
+				return start.to(comma.span());
 			}
 			return start.to(subtype.span());
 		}
 
 		if let Some(comma) = &self.tokens.comma {
-			return start.to(comma.span);
+			return start.to(comma.span());
 		}
 
 		start.to(self.name.span())
@@ -233,7 +228,9 @@ impl Spanned for EitherVariant {
 }
 
 impl Dot for EvaluatedEither {
-	fn dot(&self, _context: &Context, name: &str) -> Option<Pointer> {
-		self.variants.iter().find_map(|variant| (variant.name.source_identifier() == name).then(|| variant.object))
+	fn dot(&self, _context: &Context, name: &str) -> Option<Pointer<Evaluated>> {
+		self.variants
+			.iter()
+			.find_map(|variant| (variant.name.source_identifier() == name).then(|| variant.object.clone().into()))
 	}
 }

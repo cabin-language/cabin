@@ -2,12 +2,13 @@ use derive_getters::Getters;
 
 use crate::{
 	Context,
-	Span,
+	SpanLike,
 	Spanned,
-	ast::expressions::{Expression, binary::PrimaryExpression, evaluated::EvaluatedExpression, identifier::Identifier},
+	ast::expressions::{Expression, UnevaluatedExpression, binary::PrimaryExpression, evaluated::EvaluatedExpression, identifier::Identifier},
 	comptime::{
+		Dot as _,
 		Evaluate,
-		memory::{Pointer, Storable},
+		storage::{Evaluated, Pointer},
 	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
@@ -15,9 +16,9 @@ use crate::{
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 pub struct FieldAccess {
-	pub(crate) left: Expression,
+	pub(crate) left: Pointer<Expression>,
 	pub(crate) right: Identifier,
 	pub(crate) tokens: FieldAccessTokens,
 }
@@ -28,7 +29,7 @@ pub struct FieldAccessTokens {
 }
 
 impl TryParse for FieldAccess {
-	type Output = Expression;
+	type Output = Pointer<Expression>;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let mut expression = PrimaryExpression::try_parse(tokens, context)?;
@@ -36,11 +37,12 @@ impl TryParse for FieldAccess {
 		while tokens.next_is(TokenType::Dot) {
 			let operator = tokens.pop(TokenType::Dot, context)?;
 			let right = Identifier::try_parse(tokens, context)?;
-			expression = Expression::FieldAccess(Box::new(FieldAccess {
+			expression = UnevaluatedExpression::FieldAccess(Box::new(FieldAccess {
 				left: expression,
 				right,
 				tokens: FieldAccessTokens { operator },
-			}));
+			}))
+			.store(context);
 		}
 
 		Ok(expression)
@@ -48,73 +50,57 @@ impl TryParse for FieldAccess {
 }
 
 impl Evaluate for FieldAccess {
-	type Output = Pointer;
+	type Output = Pointer<Evaluated>;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating field access");
-		let span = self.span();
+
+		let span = self.span().into_owned();
 		let left = self.left.evaluate(context);
+		let result = left.dot(context, self.right.source_identifier());
 
-		if let Some(object) = left.value(context).as_object() {
-			let field_value = object.get_field_value(self.right.source_identifier());
-
-			if let Some(pointer) = field_value {
-				if let Storable::Expression(EvaluatedExpression::Action(action)) = pointer.value(context)
+		match result {
+			Some(field) => {
+				if let Evaluated::Expression(EvaluatedExpression::Action(action)) = field.value(context).clone()
 					&& action.takes_this(context)
 				{
 					let mut bound = action.clone();
 					bound.this = Some(left);
-					return EvaluatedExpression::Action(bound).store(context);
+					return EvaluatedExpression::Action(bound).store(context).into();
 				}
 
-				return pointer.with_span(span);
-			}
+				field.with_span(span)
+			},
+			None => {
+				context.add_diagnostic(Diagnostic::at(&self.right, DiagnosticInfo::NoSuchField(self.right.source_identifier().to_owned())));
 
-			for extension in context.extensions_for(*object.group()) {
-				if let Some(field) = extension.fields().iter().find(|field| field.name() == &self.right) {
-					if let Storable::Expression(EvaluatedExpression::Action(action)) = field.value().value(context)
-						&& action.takes_this(context)
-					{
-						let mut bound = action.clone();
-						bound.this = Some(left);
-						return EvaluatedExpression::Action(bound).store(context);
-					}
-
-					return field.value().with_span(span);
-				}
-			}
-
-			context.add_diagnostic(Diagnostic {
-				span: self.right.span(),
-				info: DiagnosticInfo::NoSuchField(self.right.source_identifier().to_owned()),
-				file: context.file.clone(),
-			});
+				EvaluatedExpression::FieldAccess(EvaluatedFieldAccess {
+					left,
+					right: self.right,
+					tokens: self.tokens,
+				})
+				.store(context)
+				.into()
+			},
 		}
-
-		EvaluatedExpression::FieldAccess(EvaluatedFieldAccess {
-			left,
-			right: self.right,
-			tokens: self.tokens,
-		})
-		.store(context)
 	}
 }
 
 impl Spanned for FieldAccess {
-	fn span(&self) -> Span {
-		self.left.span().to(self.right.span())
+	fn span(&self) -> impl SpanLike {
+		self.left().span().to(self.right.span())
 	}
 }
 
 #[derive(Debug, Clone, Getters)]
 pub struct EvaluatedFieldAccess {
-	pub(crate) left: Pointer,
+	pub(crate) left: Pointer<Evaluated>,
 	pub(crate) right: Identifier,
 	pub(crate) tokens: FieldAccessTokens,
 }
 
 impl Spanned for EvaluatedFieldAccess {
-	fn span(&self) -> Span {
-		self.left.span().to(self.right.span())
+	fn span(&self) -> impl SpanLike {
+		self.left().span().to(self.right.span())
 	}
 }

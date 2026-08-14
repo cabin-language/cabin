@@ -3,11 +3,12 @@ use std::collections::VecDeque;
 use derive_getters::Getters;
 
 use crate::{
-	Span,
+	SpanLike,
 	Spanned,
 	api::{builtin::call_builtin_at_compile_time, context::Context, scope::ScopeRef, traits::TryAs as _},
 	ast::expressions::{
 		Expression,
+		UnevaluatedExpression,
 		action::EvaluatedAction,
 		binary::BinaryOperation,
 		evaluated::EvaluatedExpression,
@@ -15,7 +16,10 @@ use crate::{
 		identifier::Identifier,
 		run::Runtimeable,
 	},
-	comptime::{Evaluate, memory::Pointer},
+	comptime::{
+		Evaluate,
+		storage::{Evaluated, Pointer},
+	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_some,
 	lexer::{Token, TokenType},
@@ -25,9 +29,9 @@ use crate::{
 
 #[derive(Debug, Clone, Getters)]
 pub struct FunctionCall {
-	callee: Expression,
-	compile_time_arguments: Vec<Expression>,
-	arguments: Vec<Expression>,
+	callee: Pointer<Expression>,
+	compile_time_arguments: Vec<Pointer<Expression>>,
+	arguments: Vec<Pointer<Expression>>,
 	scope: ScopeRef,
 	tokens: FunctionCallTokens,
 }
@@ -53,7 +57,7 @@ pub struct CompileTimeArgumentTokens {
 pub struct PostfixExpression;
 
 impl TryParse for PostfixExpression {
-	type Output = Expression;
+	type Output = Pointer<Expression>;
 
 	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		// Primary expression
@@ -65,7 +69,7 @@ impl TryParse for PostfixExpression {
 					let mut compile_time_arguments = Vec::new();
 					let left_angle_bracket = tokens.pop(TokenType::LeftAngleBracket, context).unwrap();
 					while !tokens.next_is(TokenType::RightAngleBracket) {
-						compile_time_arguments.push(Expression::try_parse(tokens, context)?);
+						compile_time_arguments.push(UnevaluatedExpression::try_parse(tokens, context)?);
 						if tokens.pop(TokenType::Comma, context).is_err() {
 							break;
 						}
@@ -76,7 +80,7 @@ impl TryParse for PostfixExpression {
 						let mut arguments = Vec::new();
 						let left_parenthesis = tokens.pop(TokenType::LeftParenthesis, context).unwrap();
 						while !tokens.next_is(TokenType::RightParenthesis) {
-							arguments.push(Expression::try_parse(tokens, context)?);
+							arguments.push(UnevaluatedExpression::try_parse(tokens, context)?);
 							if tokens.pop(TokenType::Comma, context).is_err() {
 								break;
 							}
@@ -86,11 +90,11 @@ impl TryParse for PostfixExpression {
 					})
 					.unzip();
 
-					expression = Expression::FunctionCall(Box::new(FunctionCall {
+					expression = Expression::Unevaluated(UnevaluatedExpression::FunctionCall(Box::new(FunctionCall {
 						callee: expression,
 						compile_time_arguments,
 						arguments: arguments.unwrap_or_default(),
-						scope: context.scope.unique_id(),
+						scope: context.scope.get_ref(),
 						tokens: FunctionCallTokens {
 							arguments: parenthesis.map(|(left_parenthesis, right_parenthesis)| ArgumentTokens {
 								left_parenthesis,
@@ -101,25 +105,26 @@ impl TryParse for PostfixExpression {
 								right_angle_bracket,
 							}),
 						},
-					}));
+					})))
+					.store(context);
 				},
 
 				TokenType::LeftParenthesis => {
 					let mut arguments = Vec::new();
 					let left_parenthesis = tokens.pop(TokenType::LeftParenthesis, context).unwrap();
 					while !tokens.next_is(TokenType::RightParenthesis) {
-						arguments.push(Expression::try_parse(tokens, context)?);
+						arguments.push(UnevaluatedExpression::try_parse(tokens, context)?);
 						if tokens.pop(TokenType::Comma, context).is_err() {
 							break;
 						}
 					}
 					let right_parenthesis = tokens.pop(TokenType::RightParenthesis, context)?;
 
-					expression = Expression::FunctionCall(Box::new(FunctionCall {
+					expression = Expression::Unevaluated(UnevaluatedExpression::FunctionCall(Box::new(FunctionCall {
 						callee: expression,
 						compile_time_arguments: Vec::new(),
 						arguments,
-						scope: context.scope.unique_id(),
+						scope: context.scope.get_ref(),
 						tokens: FunctionCallTokens {
 							arguments: Some(ArgumentTokens {
 								left_parenthesis,
@@ -127,7 +132,8 @@ impl TryParse for PostfixExpression {
 							}),
 							compile_time_arguments: None,
 						},
-					}));
+					})))
+					.store(context);
 				},
 
 				_ => break,
@@ -139,12 +145,12 @@ impl TryParse for PostfixExpression {
 }
 
 impl Evaluate for FunctionCall {
-	type Output = Pointer;
+	type Output = Pointer<Evaluated>;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating action call");
 
-		let span = self.span();
+		let span = self.span().into_owned();
 
 		let function = self.callee.evaluate(context);
 
@@ -177,11 +183,12 @@ impl Evaluate for FunctionCall {
 				scope: self.scope,
 				tokens: self.tokens,
 			})
-			.store(context);
+			.store(context)
+			.into();
 		}
 
 		context.call_stack.push(EvaluatedFunctionCall {
-			callee: function,
+			callee: function.to_owned(),
 			compile_time_arguments: compile_time_arguments.clone(),
 			arguments: arguments.clone(),
 			scope: self.scope,
@@ -189,33 +196,26 @@ impl Evaluate for FunctionCall {
 		});
 
 		// callee is an action
-		if let Some(action) = function.value(context).as_expression().and_then(|expr| expr.try_as::<EvaluatedAction>().ok()) {
+		if let Some(action) = function.value(context).as_expression(context).and_then(|expr| expr.try_as::<EvaluatedAction>().ok()) {
 			let action = action.clone();
+
 			if let Some(this) = action.this() {
-				arguments.insert(0, *this);
+				arguments.insert(0, this.to_owned());
 			}
 
 			// validate compile-time arguments
 			for (argument, _parameter) in compile_time_arguments.iter().zip(action.compile_time_parameters().iter()) {
 				if !argument.is_fully_known(context) {
-					context.add_diagnostic(Diagnostic {
-						file: context.file.clone(),
-						span: argument.span(),
-						info: DiagnosticInfo::ExpressionUsedAsType,
-					});
+					context.add_diagnostic(Diagnostic::at(argument, DiagnosticInfo::ExpressionUsedAsType));
 				}
 			}
 
 			let parameter_count = action.parameters().as_ref().map(|p| p.len()).unwrap_or_default();
 			if parameter_count != arguments.len() {
-				context.add_diagnostic(Diagnostic {
-					span,
-					info: DiagnosticInfo::IncorrectArgumentCount {
-						expected: parameter_count,
-						actual: arguments.len(),
-					},
-					file: context.file.clone(),
-				});
+				context.add_diagnostic(Diagnostic::at(&span, DiagnosticInfo::IncorrectArgumentCount {
+					expected: parameter_count,
+					actual: arguments.len(),
+				}));
 			}
 
 			let mut builtin_name = None;
@@ -225,7 +225,7 @@ impl Evaluate for FunctionCall {
 			if let Some(tags) = action.tags() {
 				for tag in tags.values() {
 					if let Some(object) = tag.value().value(context).as_object() {
-						if *object.group() == context.ident("Builtin") {
+						if *object.group() == context.builtin("Builtin") {
 							builtin_name = Some(
 								object
 									.get_field_value("internal_name")
@@ -241,7 +241,7 @@ impl Evaluate for FunctionCall {
 							continue;
 						}
 
-						if *object.group() == context.ident("Runtime") {
+						if *object.group() == context.builtin("Runtime") {
 							runtime = Some(object.get_field_value("reason").unwrap().value(context).as_object().unwrap().get_text().unwrap().to_owned());
 						}
 					}
@@ -249,11 +249,7 @@ impl Evaluate for FunctionCall {
 			}
 
 			if let Some(reason) = runtime {
-				context.add_diagnostic(Diagnostic {
-					span,
-					info: DiagnosticInfo::CallRuntimeAtCompileTime { reason },
-					file: context.file.clone(),
-				});
+				context.add_diagnostic(Diagnostic::at(&span, DiagnosticInfo::CallRuntimeAtCompileTime { reason }));
 			}
 
 			// non-builtin
@@ -261,14 +257,14 @@ impl Evaluate for FunctionCall {
 				// add compile-time arguments
 				if let Some(compile_time_parameters) = action.compile_time_parameters() {
 					for (argument, parameter) in compile_time_arguments.iter().zip(compile_time_parameters.iter()) {
-						context.scope.reassign_variable_from_id(parameter.name(), *argument, block.inner_scope_id());
+						context.reassign_variable(parameter.name(), argument.to_owned());
 					}
 				}
 
 				// arguments
 				if let Some(parameters) = action.parameters() {
 					for (argument, parameter) in arguments.iter().zip(parameters.iter()) {
-						context.scope.reassign_variable_from_id(parameter.name(), *argument, block.inner_scope_id());
+						context.reassign_variable(parameter.name(), argument.to_owned());
 					}
 				}
 
@@ -282,28 +278,38 @@ impl Evaluate for FunctionCall {
 
 			// call builtin function
 			if let Some(internal_name) = builtin_name {
-				let return_value = call_builtin_at_compile_time(&internal_name, context, arguments.into(), span);
+				let return_value = call_builtin_at_compile_time(&internal_name, context, arguments.into(), &span);
 				let _ = context.call_stack.pop().unwrap();
 
 				if let Some(outer) = context.call_stack.last()
-					&& outer.callee == context.scope.get_variable("log").unwrap()
+					&& outer.callee == context.get_builtin("log").unwrap()
 					&& internal_name == "system.terminal.write"
 				{
-					context.diagnostics_mut().last_mut().unwrap().span = outer.span();
+					context.diagnostics_mut().last_mut().unwrap().span = outer.span().into_owned();
 				}
 
 				return return_value;
 			}
 
-			unreachable!()
+			context.add_diagnostic(Diagnostic::at(&action, DiagnosticInfo::ActionWithoutBody));
+
+			let _ = context.call_stack.pop().unwrap();
+			return EvaluatedExpression::FunctionCall(EvaluatedFunctionCall {
+				callee: function,
+				compile_time_arguments,
+				arguments,
+				scope: self.scope,
+				tokens: self.tokens,
+			})
+			.store(context)
+			.into();
 		}
 
 		// callee is not an action
-		context.add_diagnostic(Diagnostic {
-			file: context.file.clone(),
-			span,
-			info: DiagnosticInfo::CallNonFunction(function.kind_name(context).to_owned()),
-		});
+		context.add_diagnostic(Diagnostic::at(
+			&span,
+			DiagnosticInfo::CallNonFunction(function.value(context).as_expression(context).unwrap().kind_name().to_owned()),
+		));
 
 		let _ = context.call_stack.pop().unwrap();
 		EvaluatedExpression::FunctionCall(EvaluatedFunctionCall {
@@ -314,19 +320,20 @@ impl Evaluate for FunctionCall {
 			tokens: self.tokens,
 		})
 		.store(context)
+		.into()
 	}
 }
 
 impl Spanned for FunctionCall {
-	fn span(&self) -> Span {
+	fn span(&self) -> impl SpanLike {
 		let start = self.callee.span();
 
-		if let Some(argument) = self.arguments.last() {
-			return start.to(argument.span());
+		if let Some(arguments) = self.tokens().arguments() {
+			return start.to(arguments.right_parenthesis().span());
 		}
 
-		if let Some(argument) = self.compile_time_arguments.last() {
-			return start.to(argument.span());
+		if let Some(arguments) = self.tokens().compile_time_arguments() {
+			return start.to(arguments.right_angle_bracket().span());
 		}
 
 		unreachable!()
@@ -334,16 +341,18 @@ impl Spanned for FunctionCall {
 }
 
 impl FunctionCall {
-	pub fn from_binary_expression(left: Expression, operation: BinaryOperation, right: Expression, operator: Token, context: &mut Context) -> FunctionCall {
+	pub fn from_binary_expression(left: Pointer<Expression>, operation: BinaryOperation, right: Pointer<Expression>, operator: Token, context: &mut Context) -> FunctionCall {
+		let token = Token::synthetic(TokenType::Identifier, operation.action_name().to_owned(), operator.span().owned());
 		FunctionCall {
-			callee: Expression::FieldAccess(Box::new(FieldAccess {
+			callee: Expression::Unevaluated(UnevaluatedExpression::FieldAccess(Box::new(FieldAccess {
 				left,
-				right: Identifier::synthetic(Token::synthetic(TokenType::Identifier, operation.action_name(), operator.span), context),
+				right: Identifier::synthetic(token, context),
 				tokens: FieldAccessTokens { operator },
-			})),
+			})))
+			.store(context),
 			compile_time_arguments: Vec::new(),
 			arguments: vec![right],
-			scope: context.scope.unique_id(),
+			scope: context.scope.get_ref(),
 			tokens: FunctionCallTokens {
 				arguments: None,
 				compile_time_arguments: None,
@@ -368,15 +377,15 @@ impl Runtimeable for FunctionCall {
 
 #[derive(Debug, Clone, Getters)]
 pub struct EvaluatedFunctionCall {
-	callee: Pointer,
-	compile_time_arguments: Vec<Pointer>,
-	arguments: Vec<Pointer>,
+	callee: Pointer<Evaluated>,
+	compile_time_arguments: Vec<Pointer<Evaluated>>,
+	arguments: Vec<Pointer<Evaluated>>,
 	scope: ScopeRef,
 	tokens: FunctionCallTokens,
 }
 
 impl Spanned for EvaluatedFunctionCall {
-	fn span(&self) -> Span {
+	fn span(&self) -> impl SpanLike {
 		let start = self.callee.span();
 
 		if let Some(argument) = self.arguments.last() {

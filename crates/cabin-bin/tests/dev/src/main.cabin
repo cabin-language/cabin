@@ -1,18 +1,3 @@
-let Person = group {
-	first_name: Text,
-	last_name: Text,
-	age: Number
-};
+let items = [1, 2, 3];
 
-let ryan = new Person {
-	first_name = "ryan",
-	last_name = "feldman",
-	age = 21
-};
-
-log("{ryan.first_name} {ryan.last_name}");
-
-let Animal = group {
-	type: Text,
-	age: Number
-};
+items.add(4);

@@ -3,7 +3,10 @@ use derive_getters::Getters;
 use crate::{
 	api::context::Context,
 	ast::expressions::Expression,
-	comptime::{Evaluate, memory::Pointer},
+	comptime::{
+		Evaluate,
+		storage::{Evaluated, Pointer},
+	},
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -18,7 +21,7 @@ pub struct TagList {
 
 #[derive(Debug, Clone, Getters)]
 pub struct TagListItem {
-	value: Expression,
+	value: Pointer<Expression>,
 	tokens: TagListItemTokens,
 }
 
@@ -99,6 +102,6 @@ pub struct EvaluatedTagList {
 
 #[derive(Debug, Clone, Getters)]
 pub struct EvaluatedTagListItem {
-	value: Pointer,
+	value: Pointer<Evaluated>,
 	tokens: TagListItemTokens,
 }

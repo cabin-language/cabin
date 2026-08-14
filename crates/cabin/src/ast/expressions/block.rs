@@ -4,6 +4,7 @@ use derive_getters::Getters;
 
 use crate::{
 	Span,
+	SpanLike,
 	Spanned,
 	api::{
 		context::Context,
@@ -13,7 +14,10 @@ use crate::{
 		expressions::EvaluatedExpression,
 		statements::{EvaluatedStatement, Statement},
 	},
-	comptime::{Evaluate, memory::Pointer},
+	comptime::{
+		Evaluate,
+		storage::{Evaluated, Pointer},
+	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 	log,
@@ -44,7 +48,7 @@ impl Block {
 		let left_brace = tokens.pop(TokenType::LeftBrace, context)?;
 
 		let block_scope = context.scope.enter_new_scope(scope_type);
-		let inner_scope_id = context.scope.unique_id();
+		let inner_scope_id = context.scope.get_ref();
 
 		let mut statements = Vec::new();
 		while !tokens.next_is(TokenType::RightBrace) {
@@ -68,7 +72,7 @@ impl Block {
 }
 
 impl Evaluate for Block {
-	type Output = Pointer;
+	type Output = Pointer<Evaluated>;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating block");
@@ -76,24 +80,23 @@ impl Evaluate for Block {
 		let scope_reverter = context.scope.set_current_scope(self.inner_scope);
 
 		let count = self.statements.len();
-		let last_span = self.statements.last().map(|last| last.span());
+		let last_span = self.statements.last().map(|last| last.span().into_owned());
 
 		for (index, statement) in self.statements.into_iter().enumerate() {
 			let evaluated_statement = statement.evaluate(context);
 			if let EvaluatedStatement::Tail(tail) = evaluated_statement {
 				let tail_end = tail.span().end();
 				if index != count - 1 {
-					context.add_diagnostic(Diagnostic {
-						span: Span::range(tail_end, last_span.unwrap().end()),
-						info: DiagnosticInfo::UnreachableCode,
-						file: context.file.clone(),
-					});
+					context.add_diagnostic(Diagnostic::at(
+						&Span::range(&context.file, tail_end, last_span.clone().unwrap().end()),
+						DiagnosticInfo::UnreachableCode,
+					));
 				}
 
 				let value = tail.value();
 				if value.value(context).as_object().is_some() {
 					scope_reverter.revert(context);
-					return *value;
+					return value.to_owned();
 				}
 
 				statements.push(EvaluatedStatement::Tail(tail));
@@ -110,12 +113,13 @@ impl Evaluate for Block {
 			tokens: self.tokens,
 		})
 		.store(context)
+		.into()
 	}
 }
 
 impl Spanned for Block {
-	fn span(&self) -> Span {
-		self.tokens.left_brace.span.to(self.tokens.right_brace.span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens().left_brace().span().to(self.tokens().right_brace().span())
 	}
 }
 
@@ -152,7 +156,7 @@ pub struct EvaluatedBlock {
 }
 
 impl Spanned for EvaluatedBlock {
-	fn span(&self) -> Span {
-		self.tokens.left_brace.span.to(self.tokens.right_brace.span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens.left_brace().span().to(self.tokens.right_brace().span())
 	}
 }

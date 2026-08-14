@@ -1,6 +1,8 @@
 use build::BuildCommand;
 use cabin::{
 	Project,
+	SpanLike as _,
+	Spanned as _,
 	diagnostics::Diagnostics,
 	theme::{CatppuccinMocha, Theme as _},
 };
@@ -44,20 +46,20 @@ pub fn check_errors(diagnostics: Diagnostics, project: &Project, show_warnings: 
 	}
 
 	for diagnostic in &diagnostics {
-		if diagnostic.info.severity().is_error() {
+		if diagnostic.info().severity().is_error() {
 			let ((error_r, error_g, error_b), (error_bg_r, error_bg_g, error_bg_b), icon) = (CatppuccinMocha::error(), CatppuccinMocha::error_background(), "");
 
 			eprintln!(
 				"{} {}\n",
 				" ERROR: ".bold().truecolor(error_r, error_g, error_b).on_truecolor(error_bg_r, error_bg_g, error_bg_b),
-				wrap(&format!(" ERROR:  {}", diagnostic.info), max_columns).trim_start_matches(" ERROR:  ")
+				wrap(&format!(" ERROR:  {}", diagnostic.info()), max_columns).trim_start_matches(" ERROR:  ")
 			);
 			show_snippet::<CatppuccinMocha>(diagnostic, max_columns);
-			let (line, _) = diagnostic.start_line_column();
-			let path = if diagnostic.file == *"stdlib" {
+			let (line, _) = diagnostic.span().start_line_column().unwrap();
+			let path = if diagnostic.span().file() == "stdlib" {
 				"stdlib".to_owned()
 			} else {
-				format!("{}", pathdiff::diff_paths(&diagnostic.file, project.root_directory()).unwrap().display())
+				format!("{}", pathdiff::diff_paths(&diagnostic.span().file(), project.root_directory()).unwrap().display())
 			};
 			eprintln!("In {} on line {}\n", path.bold().cyan(), (line + 1).to_string().bold().cyan());
 			eprintln!("{}\n", "―".repeat(max_columns).bold());
@@ -71,19 +73,19 @@ pub fn check_errors(diagnostics: Diagnostics, project: &Project, show_warnings: 
 	// Warnings
 	else if show_warnings {
 		for diagnostic in &diagnostics {
-			if diagnostic.info.severity().is_warning() {
+			if diagnostic.info().severity().is_warning() {
 				let ((error_r, error_g, error_b), (error_bg_r, error_bg_g, error_bg_b), icon) = (CatppuccinMocha::warning(), CatppuccinMocha::warning_background(), "");
 				eprintln!(
 					"{} {}\n",
 					" WARNING: ".bold().truecolor(error_r, error_g, error_b).on_truecolor(error_bg_r, error_bg_g, error_bg_b),
-					wrap(&format!(" WARNING:  {}", diagnostic.info), max_columns).trim_start_matches(" WARNING: ")
+					wrap(&format!(" WARNING:  {}", diagnostic.info()), max_columns).trim_start_matches(" WARNING: ")
 				);
 				show_snippet::<CatppuccinMocha>(diagnostic, max_columns);
-				let (line, _) = diagnostic.start_line_column();
-				let path = if diagnostic.file == *"stdlib" {
+				let (line, _) = diagnostic.span().start_line_column().unwrap();
+				let path = if diagnostic.span().file() == "stdlib" {
 					"stdlib".to_owned()
 				} else {
-					format!("{}", pathdiff::diff_paths(&diagnostic.file, project.root_directory()).unwrap().display())
+					format!("{}", pathdiff::diff_paths(&diagnostic.span().file(), project.root_directory()).unwrap().display())
 				};
 				eprintln!("In {} on line {}\n", path.bold().cyan(), (line + 1).to_string().bold().cyan());
 				eprintln!("{}\n", "―".repeat(max_columns).bold());

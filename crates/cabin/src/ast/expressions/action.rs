@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use derive_getters::Getters;
 
 use crate::{
-	Span,
+	SpanLike,
 	Spanned,
 	api::{context::Context, scope::ScopeType},
 	ast::{
@@ -14,7 +14,10 @@ use crate::{
 			tag::{EvaluatedTagList, TagList},
 		},
 	},
-	comptime::{Evaluate, memory::Pointer},
+	comptime::{
+		Evaluate,
+		storage::{EvaluatedRef, ExpressionRef},
+	},
 	diagnostics::Diagnostic,
 	if_then_some,
 	lexer::{Token, TokenType},
@@ -42,7 +45,7 @@ pub struct ActionTokens {
 
 #[derive(Debug, Clone, Getters)]
 pub struct ReturnType {
-	return_type: Expression,
+	return_type: ExpressionRef,
 	tokens: ReturnTypeTokens,
 }
 
@@ -64,24 +67,22 @@ impl TryParse for Action {
 
 		if let Some(compile_time_parameters) = &compile_time_parameters {
 			for parameter in compile_time_parameters.parameters() {
-				if let Err(error) = context.scope.declare_new_variable_from_id(parameter.name(), context.memory.calloc(), parameter_scope) {
-					context.add_diagnostic(Diagnostic {
-						span: parameter.name().span(),
-						info: error,
-						file: context.file.clone(),
-					});
+				if let Err(error) = context
+					.scope
+					.declare_new_variable_from_id(parameter.name(), parameter.as_declaration(context), parameter_scope)
+				{
+					context.add_diagnostic(Diagnostic::at(parameter.name(), error));
 				};
 			}
 		}
 
 		if let Some(parameters) = &parameters {
 			for parameter in parameters.parameters() {
-				if let Err(error) = context.scope.declare_new_variable_from_id(parameter.name(), context.memory.calloc(), parameter_scope) {
-					context.add_diagnostic(Diagnostic {
-						span: parameter.name().span(),
-						info: error,
-						file: context.file.clone(),
-					});
+				if let Err(error) = context
+					.scope
+					.declare_new_variable_from_id(parameter.name(), parameter.as_declaration(context), parameter_scope)
+				{
+					context.add_diagnostic(Diagnostic::at(parameter.name(), error));
 				};
 			}
 		}
@@ -155,11 +156,11 @@ impl Evaluate for Action {
 }
 
 impl Spanned for Action {
-	fn span(&self) -> Span {
-		let start = self.tokens.keyword_action.span;
+	fn span(&self) -> impl SpanLike {
+		let start = &self.tokens.keyword_action.span;
 
 		if let Some(body) = &self.body {
-			return start.to(body.tokens().right_brace().span);
+			return start.to(body.tokens().right_brace().span());
 		}
 
 		if let Some(return_type) = &self.return_type {
@@ -187,21 +188,21 @@ pub struct EvaluatedAction {
 	parameter_scope: ScopeRef,
 	tokens: ActionTokens,
 	tags: Option<EvaluatedTagList>,
-	pub(crate) this: Option<Pointer>,
+	pub(crate) this: Option<ExpressionRef>,
 }
 
 #[derive(Debug, Clone, Getters)]
 pub struct EvaluatedReturnType {
-	return_type: Pointer,
+	return_type: EvaluatedRef,
 	tokens: ReturnTypeTokens,
 }
 
 impl Spanned for EvaluatedAction {
-	fn span(&self) -> Span {
-		let start = self.tokens.keyword_action.span;
+	fn span(&self) -> impl SpanLike<'_> {
+		let start = &self.tokens.keyword_action.span;
 
 		if let Some(body) = &self.body {
-			return start.to(body.tokens().right_brace().span);
+			return start.to(body.tokens().right_brace().span());
 		}
 
 		if let Some(return_type) = &self.return_type {
@@ -232,10 +233,11 @@ impl ToCabin for Action {
 }
 
 impl EvaluatedAction {
-	pub fn takes_this(&self, context: &Context) -> bool {
+	pub fn takes_this(&self, context: &mut Context) -> bool {
+		let this = context.builtin("This").to_owned();
 		self.parameters()
 			.as_ref()
-			.is_some_and(|parameters| parameters.first().is_some_and(|first| *first.parameter_type() == context.ident("This")))
+			.is_some_and(|parameters| parameters.first().is_some_and(|first| *first.parameter_type() == this))
 	}
 }
 

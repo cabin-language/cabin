@@ -1,11 +1,14 @@
 use derive_getters::Getters;
 
 use crate::{
-	Span,
+	SpanLike,
 	Spanned,
 	api::context::Context,
 	ast::expressions::{Expression, identifier::Identifier},
-	comptime::{Evaluate, memory::Pointer},
+	comptime::{
+		Evaluate,
+		storage::{Evaluated, Pointer},
+	},
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -14,7 +17,7 @@ use crate::{
 #[derive(Debug, Clone, Getters)]
 pub struct TailStatement {
 	label: Identifier,
-	value: Expression,
+	value: Pointer<Expression>,
 	tokens: TailStatementTokens,
 }
 
@@ -52,7 +55,7 @@ impl Evaluate for TailStatement {
 }
 
 impl Spanned for TailStatement {
-	fn span(&self) -> Span {
+	fn span(&self) -> impl SpanLike {
 		self.label.span().to(self.value.span())
 	}
 }
@@ -60,12 +63,12 @@ impl Spanned for TailStatement {
 #[derive(Debug, Clone, Getters)]
 pub struct EvaluatedTailStatement {
 	label: Identifier,
-	value: Pointer,
+	value: Pointer<Evaluated>,
 	tokens: TailStatementTokens,
 }
 
 impl Spanned for EvaluatedTailStatement {
-	fn span(&self) -> Span {
+	fn span(&self) -> impl SpanLike {
 		self.label.span().to(self.value.span())
 	}
 }

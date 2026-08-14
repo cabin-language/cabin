@@ -5,6 +5,7 @@ use derive_getters::Getters;
 use crate::{
 	Context,
 	Span,
+	SpanLike as _,
 	Spanned as _,
 	ast::{
 		expressions::{action::EvaluatedAction, either::EvaluatedEither, evaluated::EvaluatedExpression, extend::EvaluatedExtend, group::EvaluatedGroup, object::Object},
@@ -16,7 +17,7 @@ use crate::{
 	comptime::{
 		Dot,
 		Evaluate,
-		memory::{Pointer, Storable},
+		storage::{ExpressionRef, Storable},
 	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	parser::{TokenQueue, TryParse},
@@ -43,7 +44,7 @@ impl TryParse for Module {
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let module_scope = context.scope.enter_new_scope(ScopeType::File);
-		let inner_scope_id = context.scope.unique_id();
+		let inner_scope_id = context.scope.get_ref();
 		let mut declarations = Vec::new();
 
 		while !tokens.is_empty() {
@@ -54,11 +55,7 @@ impl TryParse for Module {
 					declarations.push(declaration);
 				},
 				Statement::Error(_span) => {},
-				other_statement => context.add_diagnostic(Diagnostic {
-					file: context.file.clone(),
-					span: other_statement.span(),
-					info: DiagnosticInfo::InvalidTopLevelStatement,
-				}),
+				other_statement => context.add_diagnostic_at(&other_statement, DiagnosticInfo::InvalidTopLevelStatement),
 			};
 		}
 
@@ -80,14 +77,10 @@ impl Evaluate for Module {
 				.into_iter()
 				.filter_map(|statement| {
 					let evaluated = statement.evaluate(context);
-					let span = evaluated.value().span();
+					let span = evaluated.value().span().owned();
 					let top_level = TopLevelDeclaration::new(evaluated, context);
 					if top_level.is_none() {
-						context.add_diagnostic(Diagnostic {
-							span,
-							info: DiagnosticInfo::BadTopLevelDeclaration,
-							file: context.file.clone(),
-						});
+						context.add_diagnostic_at(&span, DiagnosticInfo::BadTopLevelDeclaration);
 					}
 
 					top_level
@@ -105,49 +98,22 @@ pub struct EvaluatedModule {
 }
 
 impl EvaluatedModule {
-	pub(crate) fn get_object<'ctx>(&self, name: &'static str, context: &'ctx Context) -> &'ctx Object {
-		#[allow(clippy::panic, reason = "dev error")]
-		let decl = self
-			.declarations
-			.iter()
-			.find_map(|declaration| (declaration.inner.name().source_identifier() == name).then(|| declaration.value(context)))
-			.unwrap_or_else(|| panic!("Cannot find {name} in module"));
-
-		match decl {
-			TopLevelDeclarationValue::Object(object) => object,
-			_ => unreachable!(),
-		}
-	}
-
-	pub(crate) fn get_either<'ctx>(&self, name: &'static str, context: &'ctx Context) -> &'ctx EvaluatedEither {
-		let decl = self
-			.declarations
-			.iter()
-			.find_map(|declaration| (declaration.inner.name().source_identifier() == name).then(|| declaration.value(context)))
-			.unwrap();
-
-		match decl {
-			TopLevelDeclarationValue::Either(either) => either,
-			_ => unreachable!(),
-		}
-	}
-
 	pub(crate) fn into_object(self, context: &Context) -> Object {
 		let mut fields = HashMap::new();
 		for declaration in self.declarations {
 			let name = declaration.inner.name().source_identifier().to_owned();
-			let value = *declaration.inner.value();
+			let value = declaration.inner.value().to_owned();
 			let _ = fields.insert(name, value);
 		}
-		Object::new(context.ident("Module"), fields, Span::none())
+		Object::new(context.builtin("Module"), fields, Span::none())
 	}
 }
 
 impl Dot for EvaluatedModule {
-	fn dot(&self, _context: &Context, name: &str) -> Option<Pointer> {
+	fn dot(&self, _context: &Context, name: &str) -> Option<ExpressionRef> {
 		self.declarations
 			.iter()
-			.find_map(|declaration| (declaration.inner.name().source_identifier() == name).then(|| *declaration.inner.value()))
+			.find_map(|declaration| (declaration.inner.name().source_identifier() == name).then(|| declaration.inner.value().to_owned()))
 	}
 }
 
@@ -165,7 +131,7 @@ impl TopLevelDeclaration {
 				EvaluatedExpression::Group(_) | EvaluatedExpression::Action(_) | EvaluatedExpression::Extend(_) | EvaluatedExpression::Either(_)
 			)
 			.then_some(Self { inner }),
-			Storable::None => None,
+			Storable::Uninitialized => None,
 		}
 	}
 
@@ -179,7 +145,7 @@ impl TopLevelDeclaration {
 				EvaluatedExpression::Either(either) => TopLevelDeclarationValue::Either(either),
 				_ => unreachable!(),
 			},
-			Storable::None => unreachable!(),
+			Storable::Uninitialized => unreachable!(),
 		}
 	}
 }

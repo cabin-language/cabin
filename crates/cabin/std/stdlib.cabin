@@ -1,8 +1,12 @@
-let visible Any = group {
-	to_text: action(this: This): Text,
+let visible Group = group {
+	fields: List,
 };
 
 let visible Text = group {};
+
+let visible Any = group {
+	to_text: action(this: This): Text,
+};
 
 let visible Module = group {};
 
@@ -19,10 +23,6 @@ let visible Number = group {};
 let visible Optional = either<Data: Any> {
 	some: Data,
 	none
-};
-
-let visible Group = group {
-	fields: Any,
 };
 
 let visible Property = group {
@@ -61,7 +61,7 @@ let visible Boolean = either {
 
 let visible Addable = group<Operand: Any, Result: Any> {
 	#[no_side_effects]
-	visible plus: action(this: This, other: Operand): Attempt,
+	visible plus: action(this: This, other: Operand): Try,
 }; 
 
 #[default]
@@ -70,7 +70,7 @@ let visible add_numbers = extend Number as Addable {
 	plus = action(this: Number, other: Number): Number,
 };
 
-let visible Attempt = either<Data: Any, Error: Any> {
+let visible Try = either<Data: Any, Error: Any> {
 	data: Data,
 	error: Error
 };
@@ -110,7 +110,7 @@ let visible List = group<T: Any> {
 	visible remove_at = action(this: This, index: Number),
 
 	visible add = action(this: This, value: T) {
-		this.insert(this.length, value);
+		this.insert(this.length(), value);
 	},
 	
 	visible prepend = action(this: This, value: T) {
@@ -157,6 +157,10 @@ let visible system = new Any {
 			system.terminal.write("{object}\n");
 			return is object;
 		},
+
+		clear = action {
+			system.terminal.write("\x1B[2J\x1B[1;1H");
+		}
 	},
 };
 

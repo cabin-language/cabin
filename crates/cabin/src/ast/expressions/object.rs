@@ -1,30 +1,41 @@
 use std::{borrow::Cow, collections::HashMap, fmt::Write as _};
 
 use derive_getters::Getters;
-use try_as::{macros::TryAsRef, traits as try_as_traits};
+use try_as::{macros::TryAsRef, traits as try_as_traits, traits::TryAsMut};
 
 use crate::{
 	Context,
 	Span,
+	SpanLike,
 	Spanned,
+	ast::expressions::evaluated::EvaluatedExpression,
 	comptime::{
 		Dot,
-		memory::{Pointer, Storable},
+		storage::{Evaluated, Pointer},
 	},
 	traits::TryAs as _,
 };
 
-#[derive(Debug, Clone, TryAsRef)]
+#[derive(Debug, Clone, TryAsRef, try_as::macros::TryAsMut)]
 pub enum InternalFieldValue {
-	ExpressionList(Vec<Pointer>),
+	ExpressionList(Vec<Pointer<Evaluated>>),
 	Number(f64),
 	String(String),
 }
 
+impl InternalFieldValue {
+	pub fn is_fully_known(&self, context: &Context) -> bool {
+		match self {
+			Self::ExpressionList(values) => values.iter().all(|value| value.is_fully_known(context)),
+			_ => true,
+		}
+	}
+}
+
 #[derive(Debug, Clone, Getters)]
 pub struct Object {
-	group: Pointer,
-	fields: HashMap<String, Pointer>,
+	group: Pointer<Evaluated>,
+	fields: HashMap<String, Pointer<Evaluated>>,
 	internal_fields: HashMap<&'static str, InternalFieldValue>,
 
 	#[getter(skip)]
@@ -32,26 +43,36 @@ pub struct Object {
 }
 
 impl Object {
-	pub fn store(self, context: &mut Context) -> Pointer {
-		context.memory.store(Storable::Object(self))
+	pub fn store(self, context: &mut Context) -> Pointer<Object> {
+		context.storage.store(self)
 	}
 
-	pub fn text<'str, S: Into<Cow<'str, str>>>(text: S, context: &Context, span: Span) -> Object {
+	pub fn text<'str, S: Into<Cow<'str, str>>>(text: S, context: &mut Context, span: Span) -> Object {
 		Object {
-			group: context.ident("Text"),
+			group: context.builtin("Text"),
 			fields: HashMap::new(),
 			internal_fields: HashMap::from([("text", InternalFieldValue::String(text.into().into_owned()))]),
 			span,
 		}
 	}
 
-	pub fn number(value: f64, context: &Context, span: Span) -> Object {
+	pub fn number(value: f64, context: &mut Context, span: Span) -> Object {
 		Object {
-			group: context.ident("Number"),
+			group: context.builtin("Number"),
 			fields: HashMap::new(),
 			internal_fields: HashMap::from([("value", InternalFieldValue::Number(value))]),
 			span,
 		}
+	}
+
+	pub fn list(elements: Vec<Pointer<Evaluated>>, context: &mut Context, span: Span) -> Object {
+		Object::with_defaults(
+			context.builtin("List"),
+			HashMap::new(),
+			HashMap::from([("elements", InternalFieldValue::ExpressionList(elements))]),
+			context,
+			span,
+		)
 	}
 
 	pub fn get_text(&self) -> Option<&str> {
@@ -62,20 +83,15 @@ impl Object {
 		self.internal_fields.get("value").map(|value| *value.try_as::<f64>().unwrap())
 	}
 
-	pub fn list(elements: Vec<Pointer>, context: &Context, span: Span) -> Object {
-		Object {
-			group: context.ident("List"),
-			fields: HashMap::new(),
-			internal_fields: HashMap::from([("elements", InternalFieldValue::ExpressionList(elements))]),
-			span,
-		}
+	pub fn list_elements(&self) -> Option<&Vec<Pointer<Evaluated>>> {
+		self.internal_fields.get("elements").map(|value| value.try_as::<Vec<Pointer<Evaluated>>>().unwrap())
 	}
 
-	pub fn list_elements(&self) -> Option<&Vec<Pointer>> {
-		self.internal_fields.get("elements").map(|value| value.try_as::<Vec<Pointer>>().unwrap())
+	pub fn list_elements_mut(&mut self) -> Option<&mut Vec<Pointer<Evaluated>>> {
+		self.internal_fields.get_mut("elements").map(|value| value.try_mut::<Vec<Pointer<Evaluated>>>().unwrap())
 	}
 
-	pub fn new(group: Pointer, fields: HashMap<String, Pointer>, span: Span) -> Object {
+	pub fn new(group: Pointer<Evaluated>, fields: HashMap<String, Pointer<Evaluated>>, span: Span) -> Object {
 		Object {
 			group,
 			fields,
@@ -84,11 +100,39 @@ impl Object {
 		}
 	}
 
-	pub fn is_fully_known(&self, context: &Context) -> bool {
-		self.fields.iter().all(|(_, value)| value.is_fully_known(context))
+	pub fn with_defaults(
+		group: Pointer<Evaluated>,
+		mut fields: HashMap<String, Pointer<Evaluated>>,
+		internal_fields: HashMap<&'static str, InternalFieldValue>,
+		context: &Context,
+		span: Span,
+	) -> Object {
+		dbg!(group.value(context));
+		let binding = group.value(context);
+		let Some(EvaluatedExpression::Group(inner_group)) = binding.as_expression(context) else {
+			unreachable!()
+		};
+
+		for field in inner_group.fields() {
+			if let Some(value) = field.default_value() {
+				let name = field.name().source_identifier().to_owned();
+				let _ = fields.entry(name).or_insert_with(|| value.to_owned());
+			}
+		}
+
+		Object {
+			group,
+			fields,
+			internal_fields,
+			span,
+		}
 	}
 
-	pub fn get_field_value(&self, name: &str) -> Option<Pointer> {
+	pub fn is_fully_known(&self, context: &Context) -> bool {
+		self.fields.iter().all(|(_, value)| value.is_fully_known(context)) && self.internal_fields.iter().all(|(_, value)| value.is_fully_known(context))
+	}
+
+	pub fn get_field_value(&self, name: &str) -> Option<Pointer<Evaluated>> {
 		self.fields.iter().find_map(|(other, value)| (name == other).then_some(value.to_owned()))
 	}
 
@@ -106,7 +150,7 @@ impl Object {
 				"[{}]",
 				elements
 					.iter()
-					.map(|element| element.value(context).as_object().unwrap().to_text(context))
+					.map(|element| element.value(context).as_object(context).unwrap().to_text(context))
 					.collect::<Vec<_>>()
 					.join(", ")
 			);
@@ -115,7 +159,7 @@ impl Object {
 		let mut builder = "{".to_owned();
 		for (name, value) in &self.fields {
 			write!(builder, "{name} = ").unwrap();
-			for line in value.value(context).as_object().unwrap().to_text(context).lines() {
+			for line in value.value(context).as_object(context).unwrap().to_text(context).lines() {
 				write!(builder, "\t{line}").unwrap();
 			}
 			builder += "}";
@@ -125,13 +169,13 @@ impl Object {
 }
 
 impl Spanned for Object {
-	fn span(&self) -> Span {
-		self.span
+	fn span(&self) -> impl SpanLike {
+		&self.span
 	}
 }
 
 impl Dot for Object {
-	fn dot(&self, _context: &Context, name: &str) -> Option<Pointer> {
+	fn dot(&self, _context: &Context, name: &str) -> Option<Pointer<Evaluated>> {
 		self.get_field_value(name)
 	}
 }

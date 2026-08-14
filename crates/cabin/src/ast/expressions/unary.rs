@@ -2,9 +2,9 @@ use derive_getters::Getters;
 
 use crate::{
 	Context,
-	Span,
-	ast::expressions::{Expression, Spanned},
-	comptime::{Evaluate, memory::Pointer},
+	SpanLike,
+	ast::expressions::{Spanned, UnevaluatedExpression},
+	comptime::{Evaluate, storage::ExpressionRef},
 	lexer::Token,
 };
 
@@ -33,7 +33,7 @@ pub enum UnaryOperatorPlacement {
 #[derive(Debug, Clone, Getters)]
 pub struct UnaryExpression {
 	operator: UnaryOperator,
-	expression: Expression,
+	expression: UnevaluatedExpression,
 	tokens: UnaryTokens,
 }
 
@@ -43,7 +43,7 @@ pub struct UnaryTokens {
 }
 
 impl Evaluate for UnaryExpression {
-	type Output = Pointer;
+	type Output = ExpressionRef;
 
 	fn evaluate(self, _context: &mut Context) -> Self::Output {
 		match self.operator {
@@ -54,10 +54,10 @@ impl Evaluate for UnaryExpression {
 }
 
 impl Spanned for UnaryExpression {
-	fn span(&self) -> Span {
+	fn span(&self) -> impl SpanLike {
 		match self.operator.placement() {
-			UnaryOperatorPlacement::Prefix => self.tokens.operator.span.to(self.expression.span()),
-			UnaryOperatorPlacement::Postfix => self.expression.span().to(self.tokens.operator.span),
+			UnaryOperatorPlacement::Prefix => self.tokens().operator().span().to(self.expression().span()),
+			UnaryOperatorPlacement::Postfix => self.expression().span().to(self.tokens().operator().span()),
 		}
 	}
 }

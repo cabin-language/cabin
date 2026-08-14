@@ -3,11 +3,15 @@ use std::fmt::Debug;
 use derive_getters::Getters;
 
 use crate::{
-	Span,
+	SpanLike,
 	Spanned,
 	api::context::Context,
-	ast::expressions::{Expression, identifier::Identifier},
-	comptime::{Evaluate, memory::Pointer},
+	ast::expressions::{UnevaluatedExpression, identifier::Identifier},
+	comptime::{
+		Evaluate,
+		storage::{EvaluatedRef, ExpressionRef},
+	},
+	definition::UnevaluatedVariableDeclaration,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -17,7 +21,7 @@ use crate::{
 #[derive(Debug, Clone, Getters)]
 pub struct Parameter {
 	name: Identifier,
-	parameter_type: Expression,
+	parameter_type: ExpressionRef,
 	pub(crate) tokens: ParameterTokens,
 }
 
@@ -33,7 +37,7 @@ impl TryParse for Parameter {
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let name = Identifier::try_parse(tokens, context)?;
 		let colon = tokens.pop(TokenType::Colon, context)?;
-		let parameter_type = Expression::try_parse(tokens, context)?;
+		let parameter_type = UnevaluatedExpression::try_parse(tokens, context)?;
 
 		Ok(Parameter {
 			name,
@@ -55,8 +59,8 @@ impl Evaluate for Parameter {
 }
 
 impl Spanned for Parameter {
-	fn span(&self) -> Span {
-		self.name.span().to(self.parameter_type.span())
+	fn span(&self) -> impl SpanLike {
+		self.name().span().to(self.parameter_type.span())
 	}
 }
 
@@ -66,10 +70,16 @@ impl ToCabin for Parameter {
 	}
 }
 
+impl Parameter {
+	pub fn as_declaration(&self, context: &Context) -> UnevaluatedVariableDeclaration {
+		UnevaluatedVariableDeclaration::new(self.name().to_owned(), self.parameter_type().to_owned(), context.none_expr()).into()
+	}
+}
+
 #[derive(Debug, Clone, Getters)]
 pub struct EvaluatedParameter {
 	name: Identifier,
-	parameter_type: Pointer,
+	parameter_type: EvaluatedRef,
 }
 
 #[derive(Debug, Clone, Getters)]
@@ -93,13 +103,9 @@ impl TryParse for Parameters {
 		while !tokens.next_is(TokenType::RightAngleBracket) {
 			let mut parameter = Parameter::try_parse(tokens, context)?;
 
-			if context.scope.get_variable(parameter.name().source_identifier()).is_some() {
-				context.add_diagnostic(Diagnostic {
-					span: parameter.name().span(),
-					file: context.file.clone(),
-					info: DiagnosticInfo::DuplicateVariableDeclaration {
-						name: parameter.name().source_identifier().to_owned(),
-					},
+			if context.variable_exists(parameter.name()) {
+				context.add_diagnostic_at(parameter.name(), DiagnosticInfo::DuplicateVariableDeclaration {
+					name: parameter.name().source_identifier().to_owned(),
 				});
 			}
 
@@ -127,14 +133,14 @@ impl TryParse for Parameters {
 }
 
 impl Parameters {
-	pub fn pop_first(&mut self) {
-		self.parameters.remove(0);
+	pub fn remove_first(&mut self) {
+		let _ = self.parameters.remove(0);
 	}
 }
 
 impl Spanned for Parameters {
-	fn span(&self) -> Span {
-		self.tokens.left_parenthesis.span.to(self.tokens.right_parenthesis.span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens().left_parenthesis().span().to(self.tokens().right_parenthesis().span())
 	}
 }
 
@@ -162,8 +168,8 @@ impl Evaluate for Parameters {
 }
 
 impl Spanned for EvaluatedParameters {
-	fn span(&self) -> Span {
-		self.tokens.left_parenthesis.span.to(self.tokens.right_parenthesis.span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens().left_parenthesis().span().to(self.tokens().right_parenthesis().span())
 	}
 }
 

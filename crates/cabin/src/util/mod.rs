@@ -20,7 +20,7 @@ pub trait ExitScope {
 impl<T, E> ExitScope for Result<T, E> {
 	fn or_exit_scope(self, context: &mut Context) -> Self {
 		self.inspect_err(|_| {
-			context.scope.exit_scope(context.scope.unique_id()).unwrap();
+			context.scope.exit_scope(context.scope.get_ref()).unwrap();
 		})
 	}
 }

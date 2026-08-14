@@ -45,6 +45,7 @@ unused_lifetimes = "warn"
 unused_macro_rules = "warn"
 unused_qualifications = "warn"
 unused_results = "warn"
+mismatched_lifetime_syntaxes = "allow"
 
 [workspace.lints.clippy]
 assigning_clones = "allow"

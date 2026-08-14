@@ -39,7 +39,7 @@ pub fn import(input: TokenStream) -> TokenStream {
 
 	quote::quote! {
 		context.scope.declare_new_variable(
-			crate::ast::expressions::identifier::Identifier::create_virtual(#last, &#context),
+			crate::ast::expressions::identifier::Identifier::create_virtual(#last.to_owned(), &#context),
 			#module #(#quotes)*
 		).unwrap()
 	}
@@ -76,7 +76,7 @@ pub fn try_import(input: TokenStream) -> TokenStream {
 
 	quote::quote! {
 		Some(#module)#(#quotes)*.and_then(|obj| context.scope.declare_new_variable(
-			crate::ast::expressions::identifier::Identifier::create_virtual(#last, &#context),
+			crate::ast::expressions::identifier::Identifier::create_virtual(#last.to_owned(), &#context),
 			obj
 		).ok())
 	}

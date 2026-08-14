@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use colored::{ColoredString, Colorize as _};
+
 pub trait Theme {
 	fn keyword() -> (u8, u8, u8);
 	fn string() -> (u8, u8, u8);
@@ -101,5 +103,23 @@ impl Theme for CatppuccinMocha {
 
 	fn warning_background() -> (u8, u8, u8) {
 		(51, 49, 48)
+	}
+}
+
+pub trait Themed {
+	fn error<T: Theme>(&self) -> ColoredString;
+	fn highlighted_error<T: Theme>(&self) -> ColoredString;
+}
+
+impl<S: AsRef<str>> Themed for S {
+	fn error<T: Theme>(&self) -> ColoredString {
+		let (r, g, b) = T::error();
+		self.as_ref().truecolor(r, g, b)
+	}
+
+	fn highlighted_error<T: Theme>(&self) -> ColoredString {
+		let (fg_r, fg_g, fg_b) = T::error();
+		let (bg_r, bg_g, bg_b) = T::error_background();
+		self.as_ref().truecolor(fg_r, fg_g, fg_b).on_truecolor(bg_r, bg_g, bg_b)
 	}
 }

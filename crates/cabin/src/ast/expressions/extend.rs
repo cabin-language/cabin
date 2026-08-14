@@ -2,17 +2,20 @@ use derive_getters::Getters;
 
 use crate::{
 	Context,
-	Span,
+	SpanLike,
 	Spanned,
 	api::scope::ScopeType,
 	ast::{
-		expressions::{Expression, identifier::Identifier},
+		expressions::{UnevaluatedExpression, identifier::Identifier},
 		misc::{
 			compile_time_parameter::{CompileTimeParameters, EvaluatedCompileTimeParameters},
 			tag::{EvaluatedTagList, TagList},
 		},
 	},
-	comptime::{Evaluate, memory::Pointer},
+	comptime::{
+		Evaluate,
+		storage::{Evaluated, Pointer},
+	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_some,
 	lexer::{Token, TokenType},
@@ -24,7 +27,7 @@ use crate::{
 #[derive(Debug, Clone, Getters)]
 pub struct Extend {
 	compile_time_parameters: Option<CompileTimeParameters>,
-	type_to_extend: Expression,
+	type_to_extend: UnevaluatedExpression,
 	as_clause: Option<ExtendAsClause>,
 	fields: Vec<ExtendField>,
 	tokens: ExtendTokens,
@@ -34,7 +37,7 @@ pub struct Extend {
 pub struct ExtendField {
 	tags: Option<TagList>,
 	name: Identifier,
-	value: Expression,
+	value: UnevaluatedExpression,
 	tokens: ExtendFieldTokens,
 }
 
@@ -46,7 +49,7 @@ pub struct ExtendFieldTokens {
 
 #[derive(Debug, Clone, Getters)]
 pub struct ExtendAsClause {
-	as_type: Expression,
+	as_type: UnevaluatedExpression,
 	tokens: ExtendAsClauseTokens,
 }
 
@@ -73,22 +76,21 @@ impl TryParse for Extend {
 		let compile_time_parameters = CompileTimeParameters::try_parse(tokens, context).ok();
 		if let Some(compile_time_parameters) = &compile_time_parameters {
 			for parameter in compile_time_parameters.parameters() {
-				if let Err(error) = context.scope.declare_new_variable_from_id(parameter.name(), context.memory.calloc(), extend_scope) {
-					context.add_diagnostic(Diagnostic {
-						span: parameter.name().span(),
-						info: error,
-						file: context.file.clone(),
-					});
+				if let Err(error) = context
+					.scope
+					.declare_new_variable_from_id(parameter.name(), parameter.as_declaration(context), extend_scope)
+				{
+					context.add_diagnostic(Diagnostic::at(parameter.name(), error));
 				};
 			}
 		}
 
-		let type_to_extend = Expression::try_parse(tokens, context).or_exit_scope(context)?;
+		let type_to_extend = UnevaluatedExpression::try_parse(tokens, context).or_exit_scope(context)?;
 
 		let as_clause = if_then_some!(tokens.next_is(TokenType::KeywordAs), {
 			(
 				tokens.pop(TokenType::KeywordAs, context).or_exit_scope(context)?,
-				Expression::try_parse(tokens, context).or_exit_scope(context)?,
+				UnevaluatedExpression::try_parse(tokens, context).or_exit_scope(context)?,
 			)
 		});
 
@@ -103,7 +105,7 @@ impl TryParse for Extend {
 
 			// value
 			let equal = tokens.pop(TokenType::Equal, context).or_exit_scope(context)?;
-			let mut value = Expression::try_parse(tokens, context).or_exit_scope(context)?;
+			let mut value = UnevaluatedExpression::try_parse(tokens, context).or_exit_scope(context)?;
 			if let Some(tags) = &tags {
 				value.set_tags(tags.clone());
 			}
@@ -142,11 +144,7 @@ impl TryParse for Extend {
 		};
 
 		if extend.fields.is_empty() && extend.as_clause.is_none() {
-			context.add_diagnostic(Diagnostic {
-				span: extend.span(),
-				file: context.file.clone(),
-				info: DiagnosticInfo::EmptyExtension,
-			});
+			context.add_diagnostic(Diagnostic::at(&extend, DiagnosticInfo::EmptyExtension));
 		}
 
 		context.scope.exit_scope(extend_scope).unwrap();
@@ -190,15 +188,15 @@ impl Evaluate for Extend {
 }
 
 impl Spanned for Extend {
-	fn span(&self) -> Span {
-		self.tokens.keyword_extend.span.to(self.tokens.right_brace.span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens().keyword_extend().span().to(self.tokens().right_brace().span())
 	}
 }
 
 #[derive(Debug, Clone, Getters)]
 pub struct EvaluatedExtend {
 	compile_time_parameters: Option<EvaluatedCompileTimeParameters>,
-	type_to_extend: Pointer,
+	type_to_extend: Pointer<Evaluated>,
 	as_clause: Option<EvaluatedExtendAsClause>,
 	fields: Vec<EvaluatedExtendField>,
 	tokens: ExtendTokens,
@@ -208,18 +206,18 @@ pub struct EvaluatedExtend {
 pub struct EvaluatedExtendField {
 	tags: Option<EvaluatedTagList>,
 	name: Identifier,
-	value: Pointer,
+	value: Pointer<Evaluated>,
 	tokens: ExtendFieldTokens,
 }
 
 #[derive(Debug, Clone, Getters)]
 pub struct EvaluatedExtendAsClause {
-	as_type: Pointer,
+	as_type: Pointer<Evaluated>,
 	tokens: ExtendAsClauseTokens,
 }
 
 impl Spanned for EvaluatedExtend {
-	fn span(&self) -> Span {
-		self.tokens.keyword_extend.span.to(self.tokens.right_brace.span)
+	fn span(&self) -> impl SpanLike {
+		self.tokens().keyword_extend().span().to(self.tokens().right_brace().span())
 	}
 }

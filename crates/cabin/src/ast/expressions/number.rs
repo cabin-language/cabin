@@ -2,7 +2,7 @@ use derive_getters::Getters;
 
 use crate::{
 	Context,
-	Span,
+	SpanLike,
 	Spanned,
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
@@ -35,8 +35,8 @@ impl TryParse for Number {
 }
 
 impl Spanned for Number {
-	fn span(&self) -> Span {
-		self.tokens.number.span
+	fn span(&self) -> impl SpanLike {
+		self.tokens().number().span()
 	}
 }
 

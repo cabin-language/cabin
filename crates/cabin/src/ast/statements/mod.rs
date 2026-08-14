@@ -1,15 +1,19 @@
 use crate::{
 	Span,
+	SpanLike,
 	Spanned,
 	api::context::Context,
 	ast::{
-		expressions::Expression,
+		expressions::UnevaluatedExpression,
 		statements::{
 			declaration::{Declaration, EvaluatedDeclaration},
 			tail::{EvaluatedTailStatement, TailStatement},
 		},
 	},
-	comptime::{Evaluate, memory::Pointer},
+	comptime::{
+		Evaluate,
+		storage::{Evaluated, Pointer},
+	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::TokenType,
 	log,
@@ -24,7 +28,7 @@ pub mod tail;
 pub enum Statement {
 	Declaration(Declaration),
 	Tail(TailStatement),
-	Expression(Expression),
+	Expression(UnevaluatedExpression),
 	Error(Span),
 }
 
@@ -41,7 +45,7 @@ impl TryParse for Statement {
 					tail
 				},
 				_ => {
-					let expression = Statement::Expression(Expression::try_parse(tokens, context)?);
+					let expression = Statement::Expression(UnevaluatedExpression::try_parse(tokens, context)?);
 					let _ = tokens.pop(TokenType::Semicolon, context)?;
 					expression
 				},
@@ -53,6 +57,7 @@ impl TryParse for Statement {
 			Ok(statement) => Ok(statement),
 			Err(error) => {
 				context.add_diagnostic(error);
+
 				while let Ok(token_type) = tokens.peek_type(context) {
 					if token_type == TokenType::Semicolon {
 						let _ = tokens.pop(TokenType::Semicolon, context).unwrap();
@@ -63,13 +68,9 @@ impl TryParse for Statement {
 				}
 
 				if tokens.is_empty() {
-					Err(Diagnostic {
-						span: Span::none(),
-						info: DiagnosticInfo::UnexpectedGenericEOF,
-						file: context.file.clone(),
-					})
+					Err(Diagnostic::at(&Span::eof(&context.file), DiagnosticInfo::UnexpectedGenericEOF))
 				} else {
-					Ok(Statement::Error(Span::none()))
+					Ok(Statement::Error(tokens.peek(context).unwrap().span().owned()))
 				}
 			},
 		}
@@ -91,12 +92,12 @@ impl Evaluate for Statement {
 }
 
 impl Spanned for Statement {
-	fn span(&self) -> Span {
+	fn span(&self) -> impl SpanLike {
 		match self {
-			Self::Declaration(declaration) => declaration.span(),
-			Self::Tail(tail) => tail.span(),
-			Self::Expression(expression) => expression.span(),
-			Self::Error(span) => *span,
+			Self::Declaration(declaration) => declaration.span().owned(),
+			Self::Tail(tail) => tail.span().owned(),
+			Self::Expression(expression) => expression.span().owned(),
+			Self::Error(span) => span.owned(),
 		}
 	}
 }
@@ -114,7 +115,7 @@ impl ToCabin for Statement {
 
 #[derive(Debug, Clone)]
 pub enum EvaluatedStatement {
-	Expression(Pointer),
+	Expression(Pointer<Evaluated>),
 	Declaration(EvaluatedDeclaration),
 	Tail(EvaluatedTailStatement),
 	Error(Span),
