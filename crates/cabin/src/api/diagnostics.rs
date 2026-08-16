@@ -64,6 +64,9 @@ pub enum DiagnosticInfo {
 	#[error("Unrecognized token: {0}")]
 	UnrecognizedToken(String),
 
+	#[error("Invalid type: Cannot use a {kind} as a type; To use this as a value-type, use an `is` clause")]
+	InvalidType { kind: String },
+
 	#[error("Unresolvable Type: This expression can't be fully evaluated at compile-time; Default values for group fields must be known at compile-time.")]
 	GroupValueNotKnownAtCompileTime,
 
@@ -167,6 +170,7 @@ impl DiagnosticInfo {
 			| Self::UnexpectedEOF { .. }
 			| Self::IncorrectArgumentCount { .. }
 			| Self::UnexpectedToken { .. }
+			| Self::InvalidType { .. }
 			| Self::UnexpectedGenericEOF => Severity::AlwaysError,
 
 			Self::Info(_) => Severity::AlwaysInfo,

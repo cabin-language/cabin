@@ -1,8 +1,6 @@
-use derive_getters::Getters;
-
 use crate::{
 	Context,
-	ast::statements::{EvaluatedStatement, Statement},
+	ast::statements::Statement,
 	comptime::Evaluate,
 	diagnostics::Diagnostic,
 	parser::{TokenQueue, TryParse},
@@ -37,17 +35,12 @@ impl TryParse for Program {
 }
 
 impl Evaluate for Program {
-	type Output = EvaluatedProgram;
+	type Output = Program;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
-		EvaluatedProgram {
+		Program {
 			statements: self.statements.into_iter().map(|statement| statement.evaluate(context)).collect(),
 			inner_scope: self.inner_scope,
 		}
 	}
-}
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedProgram {
-	statements: Vec<EvaluatedStatement>,
-	inner_scope: ScopeRef,
 }

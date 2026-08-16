@@ -4,37 +4,85 @@ use std::{
 	marker::PhantomData,
 };
 
-use try_as::macros::From;
-
 use crate::{
 	Context,
 	Span,
 	SpanLike,
 	Spanned,
-	ast::expressions::{Expression, evaluated::EvaluatedExpression, object::Object},
+	ast::expressions::{
+		Expression,
+		field_access::{FieldAccess, FieldAccessTokens},
+		identifier::Identifier,
+		list::List,
+		number::Number,
+		object::Object,
+		run::Runtime,
+		string::Text,
+	},
 	comptime::{Dot, Evaluate},
+	diagnostics::Diagnostic,
+	lexer::{Token, TokenType},
+	parser::{TokenQueue, TryParse},
+	traits::TryAs as _,
+	transpiler::ToCabin,
 };
 
 #[derive(Debug, Clone)]
 pub enum Storable {
 	Expression(Expression),
-	Evaluated(Evaluated),
+	Pointer(Pointer),
+	Object(Object),
 	Uninitialized,
+}
+
+impl Storable {
+	pub fn is_object(&self) -> bool {
+		matches!(self, Storable::Object(_))
+	}
+
+	pub fn as_expression(&self) -> Option<&Expression> {
+		match self {
+			Storable::Expression(expression) => Some(expression),
+			_ => None,
+		}
+	}
+
+	pub fn as_expression_mut(&mut self) -> Option<&mut Expression> {
+		match self {
+			Storable::Expression(expression) => Some(expression),
+			_ => None,
+		}
+	}
+
+	pub fn as_object(&self) -> Option<&Object> {
+		match self {
+			Storable::Object(object) => Some(object),
+			_ => None,
+		}
+	}
+
+	pub fn as_object_mut(&mut self) -> Option<&mut Object> {
+		match self {
+			Storable::Object(object) => Some(object),
+			_ => None,
+		}
+	}
 }
 
 impl Spanned for Storable {
 	fn span(&self) -> impl SpanLike {
 		match self {
 			Storable::Expression(expression) => expression.span().owned(),
+			Storable::Object(object) => object.span().owned(),
 			Storable::Uninitialized => Span::none(),
-			Storable::Evaluated(evaluated) => evaluated.span().owned(),
+			Storable::Pointer(pointer) => pointer.span().owned(),
 		}
 	}
 }
 
 impl From<Object> for Storable {
 	fn from(expression: Object) -> Self {
-		Storable::Evaluated(Evaluated::Object(expression))
+		Storable::Object(expression)
 	}
 }
 
@@ -43,7 +91,7 @@ impl<'ctx> TryFrom<&'ctx Storable> for &'ctx Object {
 
 	fn try_from(value: &'ctx Storable) -> Result<Self, Self::Error> {
 		match value {
-			Storable::Evaluated(Evaluated::Object(object)) => Ok(object),
+			Storable::Object(object) => Ok(object),
 			_ => Err(()),
 		}
 	}
@@ -54,7 +102,7 @@ impl<'ctx> TryFrom<&'ctx mut Storable> for &'ctx mut Object {
 
 	fn try_from(value: &'ctx mut Storable) -> Result<Self, Self::Error> {
 		match value {
-			Storable::Evaluated(Evaluated::Object(object)) => Ok(object),
+			Storable::Object(object) => Ok(object),
 			_ => Err(()),
 		}
 	}
@@ -88,305 +136,112 @@ impl<'ctx> TryFrom<&'ctx mut Storable> for &'ctx mut Expression {
 	}
 }
 
-#[derive(Debug, Clone, From)]
-pub enum Evaluated {
-	Expression(EvaluatedExpression),
-	Object(Object),
-	Pointer(Pointer<Evaluated>),
-}
-
-impl Spanned for Evaluated {
-	fn span(&self) -> impl SpanLike {
-		match self {
-			Evaluated::Expression(evaluated_expression) => evaluated_expression.span().owned(),
-			Evaluated::Object(object) => object.span().owned(),
-			Evaluated::Pointer(pointer) => pointer.span().owned(),
-		}
-	}
-}
-
-impl Pointer<Evaluated> {
-	pub fn is_fully_known(&self, context: &Context) -> bool {
-		match self.value(context) {
-			Evaluated::Expression(evaluated_expression) => evaluated_expression.is_fully_known(context),
-			Evaluated::Object(object) => object.is_fully_known(context),
-			Evaluated::Pointer(pointer) => pointer.is_fully_known(context),
-		}
-	}
-
-	pub fn as_string<'ctx>(&'ctx self, context: &'ctx Context) -> Option<&'ctx str> {
-		self.as_object(context).and_then(|object| object.get_text())
-	}
-
-	pub fn as_number<'ctx>(&'ctx self, context: &'ctx Context) -> Option<f64> {
-		self.as_object(context).and_then(|object| object.get_number())
-	}
-
-	pub fn as_list<'ctx>(&'ctx self, context: &'ctx Context) -> Option<&Vec<Pointer<Evaluated>>> {
-		self.as_object(context).and_then(|object| object.list_elements())
-	}
-
-	pub fn as_mut_list<'ctx>(&'ctx self, context: &'ctx mut Context) -> Option<&mut Vec<Pointer<Evaluated>>> {
-		self.as_object_mut(context).and_then(|object| object.list_elements_mut())
-	}
-
-	pub fn as_object_mut<'ctx>(&self, context: &'ctx mut Context) -> Option<&'ctx mut Object> {
-		self.value_mut(context).as_object_mut(context)
-	}
-
-	pub fn as_object<'ctx>(&'ctx self, context: &'ctx Context) -> Option<&'ctx Object> {
-		self.value(context).as_object(context)
-	}
-}
-
-impl Dot for Evaluated {
-	fn dot(&self, context: &Context, name: &str) -> Option<Pointer<Evaluated>> {
-		match self {
-			Evaluated::Expression(evaluated_expression) => evaluated_expression.dot(context, name),
-			Evaluated::Object(object) => object.dot(context, name),
-			Evaluated::Pointer(pointer) => pointer.value(context).dot(context, name),
-		}
-	}
-}
-
-impl Dot for Pointer<Evaluated> {
-	fn dot(&self, context: &Context, name: &str) -> Option<Pointer<Evaluated>> {
-		self.value(context).dot(context, name)
-	}
-}
-
-impl Dot for Pointer<Object> {
-	fn dot(&self, context: &Context, name: &str) -> Option<Pointer<Evaluated>> {
-		self.value(context).dot(context, name)
-	}
-}
-
-impl Dot for Pointer<EvaluatedExpression> {
-	fn dot(&self, context: &Context, name: &str) -> Option<Pointer<Evaluated>> {
-		self.value(context).dot(context, name)
-	}
-}
-
-impl Evaluated {
-	pub fn as_object<'ctx>(&'ctx self, context: &'ctx Context) -> Option<&'ctx Object> {
-		match self {
-			Evaluated::Object(object) => Some(object),
-			Evaluated::Expression(_) => None,
-			Evaluated::Pointer(inner) => inner.value(context).as_object(context),
-		}
-	}
-
-	pub fn as_object_mut<'ctx>(&'ctx mut self, context: &'ctx mut Context) -> Option<&'ctx mut Object> {
-		match self {
-			Evaluated::Object(object) => Some(object),
-			Evaluated::Expression(_) => None,
-			Evaluated::Pointer(inner) => inner.value_mut(context).as_object_mut(context),
-		}
-	}
-
-	pub fn as_expression<'ctx>(&'ctx self, context: &'ctx Context) -> Option<&'ctx EvaluatedExpression> {
-		match self {
-			Evaluated::Object(_) => None,
-			Evaluated::Expression(expression) => Some(expression),
-			Evaluated::Pointer(inner) => inner.value(context).as_expression(context),
-		}
-	}
-}
-
-impl<'ctx> TryFrom<&'ctx Storable> for &'ctx EvaluatedExpression {
-	type Error = ();
-
-	fn try_from(value: &'ctx Storable) -> Result<Self, Self::Error> {
-		match value {
-			Storable::Evaluated(Evaluated::Expression(expression)) => Ok(expression),
-			_ => Err(()),
-		}
-	}
-}
-
-impl<'ctx> TryFrom<&'ctx mut Storable> for &'ctx mut EvaluatedExpression {
-	type Error = ();
-
-	fn try_from(value: &'ctx mut Storable) -> Result<Self, Self::Error> {
-		match value {
-			Storable::Evaluated(Evaluated::Expression(expression)) => Ok(expression),
-			_ => Err(()),
-		}
-	}
-}
-
-impl From<EvaluatedExpression> for Storable {
-	fn from(value: EvaluatedExpression) -> Self {
-		Storable::Evaluated(value.into())
-	}
-}
-
-impl<'ctx> TryFrom<&'ctx mut Storable> for &'ctx mut Evaluated {
-	type Error = ();
-
-	fn try_from(value: &'ctx mut Storable) -> Result<Self, Self::Error> {
-		match value {
-			Storable::Evaluated(evaluated) => Ok(evaluated),
-			_ => Err(()),
-		}
-	}
-}
-
-impl<'ctx> TryFrom<&'ctx Storable> for &'ctx Evaluated {
-	type Error = ();
-
-	fn try_from(value: &'ctx Storable) -> Result<Self, Self::Error> {
-		match value {
-			Storable::Evaluated(evaluated) => Ok(evaluated),
-			_ => Err(()),
-		}
-	}
-}
-
-impl From<Evaluated> for Storable {
-	fn from(value: Evaluated) -> Self {
-		Storable::Evaluated(value)
-	}
-}
-
-impl From<Pointer<Object>> for Pointer<Evaluated> {
-	fn from(value: Pointer<Object>) -> Self {
-		Pointer(value.0, value.1, PhantomData)
-	}
-}
-
-impl From<Pointer<EvaluatedExpression>> for Pointer<Evaluated> {
-	fn from(value: Pointer<EvaluatedExpression>) -> Self {
-		Pointer(value.0, value.1, PhantomData)
+impl ToCabin for Pointer {
+	fn to_cabin(&self) -> String {
+		todo!()
 	}
 }
 
 #[derive(Debug, Clone)]
-pub struct Pointer<T: Into<Storable>>(usize, Span, PhantomData<T>);
+pub struct Pointer(usize, Span);
 
-impl<T: Into<Storable>> Pointer<T>
-where
-	for<'ctx> &'ctx T: TryFrom<&'ctx Storable>,
-	for<'ctx> <&'ctx T as TryFrom<&'ctx Storable>>::Error: Debug,
-	for<'ctx> &'ctx mut T: TryFrom<&'ctx mut Storable>,
-	for<'ctx> <&'ctx mut T as TryFrom<&'ctx mut Storable>>::Error: Debug,
-{
-	pub fn value<'ctx>(&self, context: &'ctx Context) -> &'ctx T {
-		context.storage.get(self)
+impl Pointer {
+	pub fn value<'ctx>(&self, context: &'ctx Context) -> &'ctx Storable {
+		let mut value = context.storage.get(self);
+		while let Storable::Pointer(pointer) = value {
+			value = pointer.value(context);
+		}
+
+		value
 	}
 
-	pub fn value_mut<'ctx>(&self, context: &'ctx mut Context) -> &'ctx mut T {
+	pub fn value_mut<'ctx>(&self, context: &'ctx mut Context) -> &'ctx mut Storable {
 		context.storage.get_mut(self)
 	}
 
 	pub fn with_span(&self, span: Span) -> Self {
-		Pointer(self.0, span, PhantomData)
+		Pointer(self.0, span)
+	}
+
+	pub fn is_object(&self, context: &Context) -> bool {
+		self.value(context).is_object()
+	}
+
+	pub fn as_object<'ctx>(&self, context: &'ctx Context) -> Option<&'ctx Object> {
+		self.value(context).as_object()
+	}
+
+	pub fn as_object_mut<'ctx>(&self, context: &'ctx mut Context) -> Option<&'ctx mut Object> {
+		self.value_mut(context).as_object_mut()
+	}
+
+	pub fn as_expression<'ctx>(&self, context: &'ctx Context) -> Option<&'ctx Expression> {
+		self.value(context).as_expression()
+	}
+
+	pub fn as_expression_mut<'ctx>(&self, context: &'ctx mut Context) -> Option<&'ctx mut Expression> {
+		self.value_mut(context).as_expression_mut()
+	}
+
+	pub fn as_text_literal<'ctx>(&self, context: &'ctx Context) -> Option<&'ctx String> {
+		self.as_expression(context)
+			.and_then(|expression| expression.try_as::<Text>().ok())
+			.and_then(|text| text.as_literal())
+	}
+
+	pub fn as_number_literal(&self, context: &Context) -> Option<f64> {
+		self.as_expression(context)
+			.and_then(|expression| expression.try_as::<Number>().ok())
+			.map(|number| number.value)
+	}
+
+	pub fn as_list_literal<'ctx>(&self, context: &'ctx Context) -> Option<&'ctx List> {
+		self.as_expression(context).and_then(|expression| expression.try_as::<List>().ok())
+	}
+
+	pub fn as_mut_list_literal<'ctx>(&self, context: &'ctx mut Context) -> Option<&'ctx mut List> {
+		self.as_expression_mut(context).and_then(|expression| expression.try_mut::<List>().ok())
+	}
+
+	pub fn is_fully_known(&self, context: &Context) -> bool {
+		match self.value(context) {
+			Storable::Expression(expression) => expression.is_fully_known(context),
+			Storable::Object(object) => true,
+			Storable::Uninitialized => false,
+			Storable::Pointer(pointer) => pointer.is_fully_known(context),
+		}
 	}
 }
 
-impl<T: Into<Storable> + Clone> Evaluate for Pointer<T>
-where
-	for<'ctx> &'ctx T: TryFrom<&'ctx Storable>,
-	for<'ctx> <&'ctx T as TryFrom<&'ctx Storable>>::Error: Debug,
-{
-	type Output = Pointer<Evaluated>;
+impl Evaluate for Pointer {
+	type Output = Pointer;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
-		let storable: Storable = context.storage.get(&self).clone().into();
+		let storable = context.storage.get(&self).clone();
 		let evaluated = match storable {
-			Storable::Expression(Expression::Unevaluated(expression)) => expression.evaluate(context),
-			Storable::Expression(Expression::Evaluated(_)) | Storable::Evaluated(_) | Storable::Uninitialized => Pointer(self.0, self.1, PhantomData),
+			Storable::Expression(expression) => expression.evaluate(context),
+			Storable::Uninitialized => return self,
+			Storable::Object(_) => todo!(),
+			Storable::Pointer(pointer) => pointer.evaluate(context),
 		};
-		context.storage.memory.insert(self.0, Storable::Evaluated(Evaluated::Pointer(evaluated)));
-		Pointer(self.0, self.1, PhantomData)
+		context.storage.memory.insert(self.0, Storable::Pointer(evaluated));
+		Pointer(self.0, self.1)
 	}
 }
 
-impl<T: Into<Storable>> Spanned for Pointer<T> {
+impl Spanned for Pointer {
 	fn span(&self) -> impl SpanLike {
 		&self.1
 	}
 }
 
-impl<T: Into<Storable>> PartialEq for Pointer<T> {
+impl PartialEq for Pointer {
 	fn eq(&self, other: &Self) -> bool {
 		self.0 == other.0
 	}
 }
 
-impl<T: Into<Storable>> Eq for Pointer<T> {}
-
-// impl ExpressionRef {
-// 	pub const fn with_span(&self, span: Span) -> ExpressionRef {
-// 		ExpressionRef(self.0, span)
-// 	}
-
-// 	pub fn value<'ctx>(&self, context: &'ctx Context) -> &'ctx Storable {
-// 		context.storage.get(self)
-// 	}
-
-// 	pub fn value_mut<'ctx>(&self, context: &'ctx mut Context) -> &'ctx mut Storable {
-// 		context.storage.memory.get_mut(&self.0).unwrap()
-// 	}
-
-// 	pub fn kind_name(&self, context: &Context) -> &'static str {
-// 		match self.value(context) {
-// 			Storable::Object(_) => "object",
-// 			Storable::Expression(expression) => expression.kind_name(),
-// 			Storable::Uninitialized => "uninitialized memory",
-// 		}
-// 	}
-
-// 	pub fn as_string(&self, context: &Context) -> Option<String> {
-// 		self.value(context).as_object().unwrap().get_text().map(|s| s.to_owned())
-// 	}
-
-// 	pub fn as_number(&self, context: &Context) -> Option<f64> {
-// 		self.value(context).as_object().unwrap().get_number()
-// 	}
-
-// 	pub fn as_list<'ctx>(&self, context: &'ctx Context) -> Option<&'ctx Vec<ExpressionRef>> {
-// 		self.value(context)
-// 			.as_expression()
-// 			.unwrap()
-// 			.try_as::<EvaluatedList>()
-// 			.unwrap()
-// 			.object()
-// 			.value(context)
-// 			.as_object()
-// 			.unwrap()
-// 			.list_elements()
-// 	}
-
-// 	pub fn as_mut_list<'ctx>(&self, context: &'ctx mut Context) -> Option<&'ctx mut Vec<ExpressionRef>> {
-// 		self.value(context)
-// 			.as_expression()
-// 			.unwrap()
-// 			.try_as::<EvaluatedList>()
-// 			.unwrap()
-// 			.object()
-// 			.to_owned()
-// 			.value_mut(context)
-// 			.as_object_mut()
-// 			.unwrap()
-// 			.list_elements_mut()
-// 	}
-
-// 	pub fn is_fully_known(&self, context: &Context) -> bool {
-// 		match self.value(context) {
-// 			Storable::Object(object) => object.is_fully_known(context),
-// 			Storable::Expression(expression) => expression.is_fully_known(),
-// 			Storable::Uninitialized => false,
-// 		}
-// 	}
-
-// 	/// Creates a new empty space in memory and returns a pointer to it.
-// 	pub fn calloc(context: &mut Context) -> ExpressionRef {
-// 		let id = context.storage.next_unused_virtual_address();
-// 		let _ = context.storage.memory.insert(id, Storable::Uninitialized);
-// 		ExpressionRef(id, Span::none())
-// 	}
-// }
+impl Eq for Pointer {}
 
 #[derive(Debug, Clone)]
 pub struct Storage {
@@ -407,32 +262,24 @@ impl Storage {
 		Storage { memory: HashMap::new() }
 	}
 
-	pub fn store<T: Into<Storable> + Spanned>(&mut self, value: T) -> Pointer<T> {
+	pub fn store(&mut self, value: impl Into<Storable> + Spanned) -> Pointer {
 		let address = self.next_unused_virtual_address();
-		let pointer = Pointer(address, value.span().owned(), PhantomData);
+		let pointer = Pointer(address, value.span().owned());
 		let _ = self.memory.insert(address, value.into());
 		pointer
 	}
 
-	pub fn calloc(&mut self) -> Pointer<Expression> {
+	pub fn calloc(&mut self) -> Pointer {
 		let id = self.next_unused_virtual_address();
 		let _ = self.memory.insert(id, Storable::Uninitialized);
-		Pointer(id, Span::none(), PhantomData)
+		Pointer(id, Span::none())
 	}
 
-	pub fn get<T: Into<Storable>>(&self, address: &Pointer<T>) -> &T
-	where
-		for<'ctx> &'ctx T: TryFrom<&'ctx Storable>,
-		for<'ctx> <&'ctx T as TryFrom<&'ctx Storable>>::Error: Debug,
-	{
+	pub fn get(&self, address: &Pointer) -> &Storable {
 		self.memory.get(&address.0).unwrap().try_into().unwrap()
 	}
 
-	pub fn get_mut<T: Into<Storable>>(&mut self, address: &Pointer<T>) -> &mut T
-	where
-		for<'ctx> &'ctx mut T: TryFrom<&'ctx mut Storable>,
-		for<'ctx> <&'ctx mut T as TryFrom<&'ctx mut Storable>>::Error: Debug,
-	{
+	pub fn get_mut(&mut self, address: &Pointer) -> &mut Storable {
 		self.memory.get_mut(&address.0).unwrap().try_into().unwrap()
 	}
 
@@ -442,5 +289,50 @@ impl Storage {
 			next_unused_virtual_address += 1;
 		}
 		next_unused_virtual_address
+	}
+}
+
+impl Runtime for Pointer {
+	fn evaluate_subexpressions(self, context: &mut Context) -> Self {
+		match self.value(context).clone() {
+			Storable::Expression(expression) => expression.evaluate_subexpressions(context).store(context),
+			Storable::Pointer(pointer) => pointer.evaluate_subexpressions(context),
+			Storable::Uninitialized => Pointer(0, Span::none()),
+			Storable::Object(_) => todo!(),
+		}
+	}
+}
+
+impl Dot for Pointer {
+	fn dot(&self, context: &mut Context, name: &str) -> Option<Pointer> {
+		match self.value(context).clone() {
+			Storable::Expression(expression) => match expression {
+				Expression::Text(text) => text.dot(context, name),
+				Expression::List(list) => list.dot(context, name),
+				Expression::Number(number) => number.dot(context, name),
+				Expression::Identifier(identifier) => identifier.dot(context, name),
+				Expression::Action(action) => action.dot(context, name),
+				Expression::Group(group) => group.dot(context, name),
+				Expression::Either(either) => either.dot(context, name),
+				Expression::New(new_expression) => new_expression.dot(context, name),
+				Expression::Extend(extend) => extend.dot(context, name),
+
+				// non literal
+				_ => Some(
+					Expression::FieldAccess(FieldAccess {
+						left: self.to_owned(),
+						right: Identifier::create_virtual(name.to_owned(), context),
+						tokens: FieldAccessTokens {
+							operator: Token::create_virtual(TokenType::Dot, ".".to_owned()),
+						},
+					})
+					.store(context),
+				),
+			},
+			Storable::Pointer(pointer) => pointer.dot(context, name),
+			Storable::Object(object) => object.dot(context, name),
+
+			Storable::Uninitialized => None,
+		}
 	}
 }

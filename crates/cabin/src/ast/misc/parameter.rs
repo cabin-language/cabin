@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, slice};
 
 use derive_getters::Getters;
 
@@ -6,12 +6,10 @@ use crate::{
 	SpanLike,
 	Spanned,
 	api::context::Context,
-	ast::expressions::{UnevaluatedExpression, identifier::Identifier},
-	comptime::{
-		Evaluate,
-		storage::{EvaluatedRef, ExpressionRef},
-	},
-	definition::UnevaluatedVariableDeclaration,
+	ast::expressions::identifier::Identifier,
+	comptime::{Evaluate, types::Type},
+	context,
+	definition::VariableDeclaration,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -21,7 +19,7 @@ use crate::{
 #[derive(Debug, Clone, Getters)]
 pub struct Parameter {
 	name: Identifier,
-	parameter_type: ExpressionRef,
+	parameter_type: Type,
 	pub(crate) tokens: ParameterTokens,
 }
 
@@ -37,7 +35,7 @@ impl TryParse for Parameter {
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let name = Identifier::try_parse(tokens, context)?;
 		let colon = tokens.pop(TokenType::Colon, context)?;
-		let parameter_type = UnevaluatedExpression::try_parse(tokens, context)?;
+		let parameter_type = Type::try_parse(tokens, context)?;
 
 		Ok(Parameter {
 			name,
@@ -48,12 +46,13 @@ impl TryParse for Parameter {
 }
 
 impl Evaluate for Parameter {
-	type Output = EvaluatedParameter;
+	type Output = Parameter;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
-		EvaluatedParameter {
+		Parameter {
 			name: self.name.clone(),
-			parameter_type: self.parameter_type.evaluate(context),
+			tokens: self.tokens.clone(),
+			parameter_type: Type::Evaluated(self.parameter_type.evaluate(context)),
 		}
 	}
 }
@@ -71,15 +70,16 @@ impl ToCabin for Parameter {
 }
 
 impl Parameter {
-	pub fn as_declaration(&self, context: &Context) -> UnevaluatedVariableDeclaration {
-		UnevaluatedVariableDeclaration::new(self.name().to_owned(), self.parameter_type().to_owned(), context.none_expr()).into()
+	pub fn as_declaration(&self, context: &mut Context) -> VariableDeclaration {
+		VariableDeclaration::with_type(self.name().to_owned(), self.parameter_type().to_owned(), context)
 	}
-}
 
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedParameter {
-	name: Identifier,
-	parameter_type: EvaluatedRef,
+	pub fn is_fully_known(&self, context: &Context) -> bool {
+		match &self.parameter_type {
+			Type::Unevaluated(unevaluated_type) => false,
+			Type::Evaluated(evaluated_type) => evaluated_type.is_fully_known(context),
+		}
+	}
 }
 
 #[derive(Debug, Clone, Getters)]
@@ -150,47 +150,27 @@ impl ToCabin for Parameters {
 	}
 }
 
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedParameters {
-	parameters: Vec<EvaluatedParameter>,
-	tokens: ParametersTokens,
-}
-
 impl Evaluate for Parameters {
-	type Output = EvaluatedParameters;
+	type Output = Parameters;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
-		EvaluatedParameters {
+		Parameters {
 			tokens: self.tokens,
 			parameters: self.parameters.evaluate(context),
 		}
 	}
 }
 
-impl Spanned for EvaluatedParameters {
-	fn span(&self) -> impl SpanLike {
-		self.tokens().left_parenthesis().span().to(self.tokens().right_parenthesis().span())
-	}
-}
-
-impl EvaluatedParameters {
-	pub fn iter(&self) -> impl Iterator<Item = &EvaluatedParameter> {
-		self.parameters.iter()
-	}
-
-	pub fn first(&self) -> Option<&EvaluatedParameter> {
+impl Parameters {
+	pub fn first(&self) -> Option<&Parameter> {
 		self.parameters.first()
 	}
 
-	pub fn pop_first(&mut self) {
-		let _ = self.parameters.remove(0);
-	}
-
-	pub const fn len(&self) -> usize {
+	pub fn len(&self) -> usize {
 		self.parameters.len()
 	}
 
-	pub const fn is_empty(&self) -> bool {
-		self.len() == 0
+	pub fn iter(&self) -> slice::Iter<Parameter> {
+		self.parameters.iter()
 	}
 }

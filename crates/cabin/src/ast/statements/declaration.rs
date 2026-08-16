@@ -6,15 +6,15 @@ use crate::{
 	Spanned,
 	api::context::Context,
 	ast::{
-		expressions::{Expression, UnevaluatedExpression, evaluated::EvaluatedExpression, identifier::Identifier},
+		expressions::{Expression, identifier::Identifier},
 		misc::tag::TagList,
 		statements::Statement,
 	},
 	comptime::{
 		Evaluate,
-		storage::{Evaluated, Pointer},
+		storage::{Pointer, Storable},
 	},
-	definition::UnevaluatedVariableDeclaration,
+	definition::VariableDeclaration,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_some,
 	lexer::{Token, TokenType},
@@ -26,8 +26,8 @@ use crate::{
 #[derive(Debug, Clone, Getters)]
 pub struct Declaration {
 	name: Identifier,
-	explicit_type: Option<Pointer<Expression>>,
-	value: Pointer<Expression>,
+	explicit_type: Option<Pointer>,
+	value: Pointer,
 	tokens: DeclarationTokens,
 	scope: ScopeRef,
 }
@@ -50,7 +50,7 @@ impl TryParse for Declaration {
 		let tags = if_then_some!(tokens.next_is(TokenType::TagOpening), TagList::try_parse(tokens, context)?);
 
 		if tags.is_some() && !tokens.next_is(TokenType::KeywordLet) {
-			let expression = UnevaluatedExpression::try_parse(tokens, context)?;
+			let expression = Expression::try_parse(tokens, context)?;
 			let _ = tokens.pop(TokenType::Semicolon, context)?;
 			return Ok(Statement::Expression(expression));
 		}
@@ -64,6 +64,9 @@ impl TryParse for Declaration {
 		// name
 		let name = Identifier::try_parse(tokens, context)?;
 
+		let location = context.storage.calloc();
+		context.declare_new_variable(VariableDeclaration::with_value(name.clone(), location));
+
 		// type
 		let (colon, explicit_type) = if_then_some!(tokens.next_is(TokenType::Colon), {
 			(tokens.pop(TokenType::Colon, context).unwrap(), Expression::try_parse(tokens, context)?)
@@ -76,7 +79,7 @@ impl TryParse for Declaration {
 		let value = Expression::try_parse(tokens, context)?;
 
 		// add the name declaration to the scope
-		context.declare_new_variable(UnevaluatedVariableDeclaration::with_value(name.clone(), value.clone()));
+		context.reassign_variable(&name, value.clone());
 
 		let semicolon = tokens.pop(TokenType::Semicolon, context)?;
 
@@ -99,15 +102,15 @@ impl TryParse for Declaration {
 }
 
 impl Evaluate for Declaration {
-	type Output = EvaluatedDeclaration;
+	type Output = Declaration;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating declaration for \"{}\"", self.name.source_identifier());
 		let evaluated = self.value.evaluate(context);
 
-		if let Evaluated::Expression(value) = evaluated.value(context) {
+		if let Storable::Expression(value) = evaluated.value(context) {
 			match value {
-				EvaluatedExpression::Group(_) | EvaluatedExpression::Either(_) => {
+				Expression::Group(_) | Expression::Either(_) => {
 					if !self.name.source_identifier().is_case(Case::Pascal) {
 						context.add_diagnostic_at(&self.name, DiagnosticInfo::NonPascalCaseGroup {
 							original_name: self.name.source_identifier().to_owned(),
@@ -128,30 +131,17 @@ impl Evaluate for Declaration {
 
 		context.reassign_variable(&self.name, evaluated.to_owned());
 
-		EvaluatedDeclaration {
+		Declaration {
 			name: self.name,
 			explicit_type: self.explicit_type.evaluate(context),
 			value: evaluated,
 			tokens: self.tokens,
+			scope: self.scope,
 		}
 	}
 }
 
 impl Spanned for Declaration {
-	fn span(&self) -> impl SpanLike {
-		self.tokens.keyword_let.span.to(self.value.span())
-	}
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedDeclaration {
-	name: Identifier,
-	explicit_type: Option<Pointer<Evaluated>>,
-	value: Pointer<Evaluated>,
-	tokens: DeclarationTokens,
-}
-
-impl Spanned for EvaluatedDeclaration {
 	fn span(&self) -> impl SpanLike {
 		self.tokens.keyword_let.span.to(self.value.span())
 	}

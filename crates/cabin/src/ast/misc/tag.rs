@@ -3,10 +3,7 @@ use derive_getters::Getters;
 use crate::{
 	api::context::Context,
 	ast::expressions::Expression,
-	comptime::{
-		Evaluate,
-		storage::{Evaluated, Pointer},
-	},
+	comptime::{Evaluate, storage::Pointer},
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -21,7 +18,7 @@ pub struct TagList {
 
 #[derive(Debug, Clone, Getters)]
 pub struct TagListItem {
-	value: Pointer<Expression>,
+	value: Pointer,
 	tokens: TagListItemTokens,
 }
 
@@ -68,17 +65,17 @@ impl TryParse for TagList {
 }
 
 impl Evaluate for TagList {
-	type Output = EvaluatedTagList;
+	type Output = TagList;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		let mut values = Vec::new();
 		for value in self.values {
-			values.push(EvaluatedTagListItem {
+			values.push(TagListItem {
 				value: value.value.evaluate(context),
 				tokens: value.tokens,
 			});
 		}
-		EvaluatedTagList { values, tokens: self.tokens }
+		TagList { values, tokens: self.tokens }
 	}
 }
 
@@ -92,16 +89,4 @@ impl ToCabin for TagListItem {
 	fn to_cabin(&self) -> String {
 		self.value.to_cabin()
 	}
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedTagList {
-	values: Vec<EvaluatedTagListItem>,
-	tokens: TagListTokens,
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedTagListItem {
-	value: Pointer<Evaluated>,
-	tokens: TagListItemTokens,
 }

@@ -2,6 +2,23 @@ let visible Group = group {
 	fields: List,
 };
 
+let visible Action = group {
+	visible parameters: Any,
+	visible return_type: Any,
+	visible compile_time_parameters: Any,
+	visible tags: Any,
+	visible this_object: Any,
+};
+
+let visible Either = group {
+	variants: List
+};
+
+let visible Extend = group {
+};
+
+let visible EitherVariant = group {};
+
 let visible Text = group {};
 
 let visible Any = group {
@@ -16,8 +33,6 @@ let visible Builtin = group {
 
 let visible This = group {};
 
-let visible EitherVariant = group {};
-
 let visible Number = group {}; 
 
 let visible Optional = either<Data: Any> {
@@ -27,14 +42,6 @@ let visible Optional = either<Data: Any> {
 
 let visible Property = group {
 	name: Text
-};
-
-let visible Action = group {
-	visible parameters: Any,
-	visible return_type: Any,
-	visible compile_time_parameters: Any,
-	visible tags: Any,
-	visible this_object: Any,
 };
 
 let visible no_side_effects = new Any {};
@@ -48,10 +55,6 @@ let visible Runtime = group {
 
 let visible CompileTime = group {
 	reason: Text
-};
-
-let visible Either = group {
-	variants: List
 };
 
 let visible Boolean = either {
@@ -117,7 +120,7 @@ let visible List = group<T: Any> {
 		this.insert(0, value);
 	},
 
-	visible indices = action(this: This): List {
+	visible indices = action(this: This) {
 		let editable index = 0;
 		let editable result = [];
 

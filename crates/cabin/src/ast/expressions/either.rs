@@ -4,17 +4,19 @@ use convert_case::{Case, Casing as _};
 use derive_getters::Getters;
 
 use crate::{
+	Span,
 	SpanLike,
 	Spanned,
 	api::context::Context,
 	ast::{
-		expressions::{Expression, UnevaluatedExpression, identifier::Identifier, object::Object},
-		misc::compile_time_parameter::{CompileTimeParameters, EvaluatedCompileTimeParameters},
+		expressions::{identifier::Identifier, object::Object},
+		misc::compile_time_parameter::CompileTimeParameters,
 	},
 	comptime::{
 		Dot,
 		Evaluate,
-		storage::{Evaluated, Pointer},
+		storage::Pointer,
+		types::{EvaluatedInnerType, EvaluatedType, Type},
 	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_some,
@@ -31,6 +33,7 @@ pub struct Either {
 	variants: Vec<EitherVariant>,
 	compile_time_parameters: Option<CompileTimeParameters>,
 	tokens: EitherTokens,
+	object: Pointer,
 }
 
 #[derive(Debug, Clone, Getters)]
@@ -43,8 +46,9 @@ pub struct EitherTokens {
 #[derive(Debug, Clone, Getters)]
 pub struct EitherVariant {
 	name: Identifier,
-	subtype: Option<Pointer<Expression>>,
+	subtype: Option<Type>,
 	tokens: EitherVariantTokens,
+	object: Pointer,
 }
 
 #[derive(Debug, Clone, Getters)]
@@ -57,6 +61,7 @@ impl TryParse for Either {
 	type Output = Either;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+		log!(context, "Parsing either");
 		let keyword_either = tokens.pop(TokenType::KeywordEither, context)?;
 		let mut variants = Vec::new();
 
@@ -65,10 +70,8 @@ impl TryParse for Either {
 		let compile_time_parameters = CompileTimeParameters::try_parse(tokens, context).ok();
 		if let Some(compile_time_parameters) = &compile_time_parameters {
 			for parameter in compile_time_parameters.parameters() {
-				if let Err(error) = context
-					.scope
-					.declare_new_variable_from_id(parameter.name(), parameter.as_declaration(context), either_scope)
-				{
+				let declaration = parameter.as_declaration(context);
+				if let Err(error) = context.scope.declare_new_variable_from_id(parameter.name(), declaration, either_scope) {
 					context.add_diagnostic(Diagnostic::at(parameter.name(), error));
 				};
 			}
@@ -76,10 +79,11 @@ impl TryParse for Either {
 
 		let left_brace = tokens.pop(TokenType::LeftBrace, context)?;
 		while !tokens.next_is(TokenType::RightBrace) {
+			log!(context, "Parsing either variant");
 			let name = Identifier::try_parse(tokens, context)?;
 
 			let (colon, subtype) = if_then_some!(tokens.next_is(TokenType::Colon), {
-				(tokens.pop(TokenType::Colon, context)?, UnevaluatedExpression::try_parse(tokens, context)?)
+				(tokens.pop(TokenType::Colon, context)?, Type::try_parse(tokens, context)?)
 			})
 			.unzip();
 
@@ -92,10 +96,38 @@ impl TryParse for Either {
 			let comma = tokens.pop(TokenType::Comma, context).ok();
 			let has_comma = comma.is_some();
 
+			let variant_span = || {
+				let start = name.span();
+
+				if let Some(subtype) = &subtype {
+					if let Some(comma) = &comma {
+						return start.to(comma.span());
+					}
+					return start.to(subtype.span());
+				}
+
+				if let Some(comma) = &comma {
+					return start.to(comma.span());
+				}
+
+				start.to(name.span())
+			};
+			let span = variant_span();
+
 			variants.push(EitherVariant {
 				name,
 				subtype,
 				tokens: EitherVariantTokens { colon, comma },
+				object: Object::new(
+					Some(EvaluatedType {
+						editable: false,
+						inner: EvaluatedInnerType::Group(context.builtin("EitherVariant")),
+						span: Span::none(),
+					}),
+					HashMap::new(),
+					span,
+				)
+				.store(context),
 			});
 
 			if !has_comma {
@@ -106,10 +138,12 @@ impl TryParse for Either {
 		let right_brace = tokens.pop(TokenType::RightBrace, context)?;
 
 		context.scope.exit_scope(either_scope).unwrap();
+		log!(context, "Finished Parsing either");
 
 		Ok(Either {
 			variants,
 			compile_time_parameters,
+			object: Object::new(Some(EvaluatedType::builtin("Either", context)), HashMap::new(), keyword_either.span.to(&right_brace.span)).store(context),
 			tokens: EitherTokens {
 				keyword_either,
 				left_brace,
@@ -120,7 +154,7 @@ impl TryParse for Either {
 }
 
 impl Evaluate for Either {
-	type Output = EvaluatedEither;
+	type Output = Either;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating either");
@@ -132,16 +166,17 @@ impl Evaluate for Either {
 
 		let mut variants = Vec::new();
 		for variant in self.variants {
-			variants.push(EvaluatedEitherVariant {
-				object: Object::new(context.builtin("EitherVariant"), HashMap::from([]), variant.span().into_owned()).store(context),
+			variants.push(EitherVariant {
+				object: variant.object,
 				name: variant.name,
-				subtype: variant.subtype.evaluate(context),
+				subtype: variant.subtype.evaluate(context).map(Type::Evaluated),
 				tokens: variant.tokens,
 			});
 		}
 
-		EvaluatedEither {
+		Either {
 			variants,
+			object: self.object,
 			tokens: self.tokens,
 			compile_time_parameters: self.compile_time_parameters.evaluate(context),
 		}
@@ -187,27 +222,6 @@ impl ToCabin for EitherVariant {
 	}
 }
 
-impl Spanned for EvaluatedEither {
-	fn span(&self) -> impl SpanLike {
-		self.tokens().keyword_either().span().to(self.tokens().right_brace().span())
-	}
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedEither {
-	variants: Vec<EvaluatedEitherVariant>,
-	compile_time_parameters: Option<EvaluatedCompileTimeParameters>,
-	tokens: EitherTokens,
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedEitherVariant {
-	name: Identifier,
-	subtype: Option<Pointer<Evaluated>>,
-	tokens: EitherVariantTokens,
-	object: Pointer<Object>,
-}
-
 impl Spanned for EitherVariant {
 	fn span(&self) -> impl SpanLike {
 		let start = self.name.span();
@@ -227,10 +241,8 @@ impl Spanned for EitherVariant {
 	}
 }
 
-impl Dot for EvaluatedEither {
-	fn dot(&self, _context: &Context, name: &str) -> Option<Pointer<Evaluated>> {
-		self.variants
-			.iter()
-			.find_map(|variant| (variant.name.source_identifier() == name).then(|| variant.object.clone().into()))
+impl Dot for Either {
+	fn dot(&self, context: &mut Context, name: &str) -> Option<Pointer> {
+		self.object.dot(context, name)
 	}
 }

@@ -1,9 +1,17 @@
+use std::collections::HashMap;
+
 use derive_getters::Getters;
 
 use crate::{
 	Context,
 	SpanLike,
 	Spanned,
+	ast::expressions::object::Object,
+	comptime::{
+		Dot,
+		storage::Pointer,
+		types::{EvaluatedInnerType, EvaluatedType},
+	},
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -12,7 +20,8 @@ use crate::{
 
 #[derive(Debug, Clone, Getters)]
 pub struct Number {
-	value: f64,
+	pub value: f64,
+	object: Pointer,
 	tokens: NumberTokens,
 }
 
@@ -29,6 +38,7 @@ impl TryParse for Number {
 
 		Ok(Number {
 			value: number.value.parse().unwrap(),
+			object: Object::new(Some(EvaluatedType::builtin("Number", context)), HashMap::new(), number.span.clone()).store(context),
 			tokens: NumberTokens { number },
 		})
 	}
@@ -55,5 +65,21 @@ impl ToCabin for Number {
 		// remove trailing 0 / decimal (in case of floating point errors)
 		string = string.trim_end_matches("0").trim_end_matches(".").to_owned();
 		string
+	}
+}
+
+impl Dot for Number {
+	fn dot(&self, context: &mut Context, name: &str) -> Option<Pointer> {
+		self.object.dot(context, name)
+	}
+}
+
+impl Number {
+	pub fn synthetic(token: Token, context: &mut Context) -> Number {
+		Number {
+			value: token.value.parse().unwrap(),
+			object: Object::new(Some(EvaluatedType::builtin("Number", context)), HashMap::new(), token.span.clone()).store(context),
+			tokens: NumberTokens { number: token },
+		}
 	}
 }

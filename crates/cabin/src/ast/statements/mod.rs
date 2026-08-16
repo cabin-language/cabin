@@ -4,16 +4,10 @@ use crate::{
 	Spanned,
 	api::context::Context,
 	ast::{
-		expressions::UnevaluatedExpression,
-		statements::{
-			declaration::{Declaration, EvaluatedDeclaration},
-			tail::{EvaluatedTailStatement, TailStatement},
-		},
+		expressions::Expression,
+		statements::{declaration::Declaration, tail::TailStatement},
 	},
-	comptime::{
-		Evaluate,
-		storage::{Evaluated, Pointer},
-	},
+	comptime::{Evaluate, storage::Pointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::TokenType,
 	log,
@@ -28,7 +22,7 @@ pub mod tail;
 pub enum Statement {
 	Declaration(Declaration),
 	Tail(TailStatement),
-	Expression(UnevaluatedExpression),
+	Expression(Pointer),
 	Error(Span),
 }
 
@@ -45,7 +39,7 @@ impl TryParse for Statement {
 					tail
 				},
 				_ => {
-					let expression = Statement::Expression(UnevaluatedExpression::try_parse(tokens, context)?);
+					let expression = Statement::Expression(Expression::try_parse(tokens, context)?);
 					let _ = tokens.pop(TokenType::Semicolon, context)?;
 					expression
 				},
@@ -78,15 +72,15 @@ impl TryParse for Statement {
 }
 
 impl Evaluate for Statement {
-	type Output = EvaluatedStatement;
+	type Output = Statement;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating statement");
 		match self {
-			Statement::Declaration(declaration) => EvaluatedStatement::Declaration(declaration.evaluate(context)),
-			Statement::Expression(expression) => EvaluatedStatement::Expression(expression.evaluate(context)),
-			Statement::Tail(tail) => EvaluatedStatement::Tail(tail.evaluate(context)),
-			Statement::Error(span) => EvaluatedStatement::Error(span),
+			Statement::Declaration(declaration) => Statement::Declaration(declaration.evaluate(context)),
+			Statement::Expression(expression) => Statement::Expression(expression.evaluate(context)),
+			Statement::Tail(tail) => Statement::Tail(tail.evaluate(context)),
+			Statement::Error(span) => Statement::Error(span),
 		}
 	}
 }
@@ -111,12 +105,4 @@ impl ToCabin for Statement {
 			Statement::Error(span) => todo!(),
 		}
 	}
-}
-
-#[derive(Debug, Clone)]
-pub enum EvaluatedStatement {
-	Expression(Pointer<Evaluated>),
-	Declaration(EvaluatedDeclaration),
-	Tail(EvaluatedTailStatement),
-	Error(Span),
 }

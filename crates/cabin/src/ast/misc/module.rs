@@ -1,24 +1,13 @@
 use std::collections::HashMap;
 
-use derive_getters::Getters;
-
 use crate::{
 	Context,
 	Span,
-	SpanLike as _,
-	Spanned as _,
 	ast::{
-		expressions::{action::EvaluatedAction, either::EvaluatedEither, evaluated::EvaluatedExpression, extend::EvaluatedExtend, group::EvaluatedGroup, object::Object},
-		statements::{
-			Statement,
-			declaration::{Declaration, EvaluatedDeclaration},
-		},
+		expressions::object::Object,
+		statements::{Statement, declaration::Declaration},
 	},
-	comptime::{
-		Dot,
-		Evaluate,
-		storage::{ExpressionRef, Storable},
-	},
+	comptime::{Dot, Evaluate, storage::Pointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	parser::{TokenQueue, TryParse},
 	scope::{ScopeRef, ScopeType},
@@ -68,93 +57,31 @@ impl TryParse for Module {
 }
 
 impl Evaluate for Module {
-	type Output = EvaluatedModule;
+	type Output = Module;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
-		EvaluatedModule {
-			declarations: self
-				.declarations
-				.into_iter()
-				.filter_map(|statement| {
-					let evaluated = statement.evaluate(context);
-					let span = evaluated.value().span().owned();
-					let top_level = TopLevelDeclaration::new(evaluated, context);
-					if top_level.is_none() {
-						context.add_diagnostic_at(&span, DiagnosticInfo::BadTopLevelDeclaration);
-					}
-
-					top_level
-				})
-				.collect(),
+		Module {
+			declarations: self.declarations.into_iter().map(|statement| statement.evaluate(context)).collect(),
 			scope: self.scope,
 		}
 	}
 }
 
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedModule {
-	declarations: Vec<TopLevelDeclaration>,
-	scope: ScopeRef,
-}
-
-impl EvaluatedModule {
-	pub(crate) fn into_object(self, context: &Context) -> Object {
-		let mut fields = HashMap::new();
-		for declaration in self.declarations {
-			let name = declaration.inner.name().source_identifier().to_owned();
-			let value = declaration.inner.value().to_owned();
-			let _ = fields.insert(name, value);
-		}
-		Object::new(context.builtin("Module"), fields, Span::none())
-	}
-}
-
-impl Dot for EvaluatedModule {
-	fn dot(&self, _context: &Context, name: &str) -> Option<ExpressionRef> {
+impl Dot for Module {
+	fn dot(&self, _context: &mut Context, name: &str) -> Option<Pointer> {
 		self.declarations
 			.iter()
-			.find_map(|declaration| (declaration.inner.name().source_identifier() == name).then(|| declaration.inner.value().to_owned()))
+			.find_map(|declaration| (declaration.name().source_identifier() == name).then(|| declaration.value().to_owned()))
 	}
 }
 
-#[derive(Debug, Clone)]
-pub struct TopLevelDeclaration {
-	inner: EvaluatedDeclaration,
-}
-
-impl TopLevelDeclaration {
-	fn new(inner: EvaluatedDeclaration, context: &Context) -> Option<TopLevelDeclaration> {
-		match inner.value().value(context) {
-			Storable::Object(_) => Some(Self { inner }),
-			Storable::Expression(expression) => matches!(
-				expression,
-				EvaluatedExpression::Group(_) | EvaluatedExpression::Action(_) | EvaluatedExpression::Extend(_) | EvaluatedExpression::Either(_)
-			)
-			.then_some(Self { inner }),
-			Storable::Uninitialized => None,
+impl Module {
+	pub fn into_object(self) -> Object {
+		let mut fields = HashMap::new();
+		for declaration in self.declarations {
+			let _ = fields.insert(declaration.name().source_identifier().to_owned(), declaration.value().to_owned());
 		}
-	}
 
-	pub fn value<'ctx>(&self, context: &'ctx Context) -> TopLevelDeclarationValue<'ctx> {
-		match self.inner.value().value(context) {
-			Storable::Object(object) => TopLevelDeclarationValue::Object(object),
-			Storable::Expression(expression) => match expression {
-				EvaluatedExpression::Group(group) => TopLevelDeclarationValue::Group(group),
-				EvaluatedExpression::Action(action) => TopLevelDeclarationValue::Action(action),
-				EvaluatedExpression::Extend(extend) => TopLevelDeclarationValue::Extend(extend),
-				EvaluatedExpression::Either(either) => TopLevelDeclarationValue::Either(either),
-				_ => unreachable!(),
-			},
-			Storable::Uninitialized => unreachable!(),
-		}
+		Object::new(None, fields, Span::none())
 	}
-}
-
-#[derive(Debug, Clone)]
-pub enum TopLevelDeclarationValue<'ctx> {
-	Group(&'ctx EvaluatedGroup),
-	Action(&'ctx EvaluatedAction),
-	Extend(&'ctx EvaluatedExtend),
-	Either(&'ctx EvaluatedEither),
-	Object(&'ctx Object),
 }

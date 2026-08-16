@@ -1,10 +1,12 @@
+use std::slice;
+
 use derive_getters::Getters;
 
 use crate::{
 	Context,
 	SpanLike,
 	Spanned,
-	ast::misc::parameter::{EvaluatedParameter, Parameter},
+	ast::misc::parameter::Parameter,
 	comptime::Evaluate,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
@@ -63,10 +65,10 @@ impl TryParse for CompileTimeParameters {
 }
 
 impl Evaluate for CompileTimeParameters {
-	type Output = EvaluatedCompileTimeParameters;
+	type Output = CompileTimeParameters;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
-		EvaluatedCompileTimeParameters {
+		CompileTimeParameters {
 			tokens: self.tokens,
 			parameters: self.parameters.evaluate(context),
 		}
@@ -85,20 +87,12 @@ impl ToCabin for CompileTimeParameters {
 	}
 }
 
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedCompileTimeParameters {
-	parameters: Vec<EvaluatedParameter>,
-	tokens: CompileTimeParameterTokens,
-}
-
-impl Spanned for EvaluatedCompileTimeParameters {
-	fn span(&self) -> impl SpanLike {
-		self.tokens().left_angle_bracket().span().to(self.tokens().right_angle_bracket().span())
-	}
-}
-
-impl EvaluatedCompileTimeParameters {
-	pub fn iter(&self) -> impl Iterator<Item = &EvaluatedParameter> {
+impl CompileTimeParameters {
+	pub fn iter(&self) -> slice::Iter<Parameter> {
 		self.parameters.iter()
+	}
+
+	pub fn is_fully_known(&self, context: &Context) -> bool {
+		self.parameters.iter().all(|parameter| parameter.is_fully_known(context))
 	}
 }

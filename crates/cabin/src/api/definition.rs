@@ -1,35 +1,10 @@
 use derive_getters::Getters;
-use try_as::{
-	macros::{From, TryAsMut, TryAsRef},
-	traits as try_as_traits,
-	traits::{TryAsMut, TryAsRef},
-};
 
 use crate::{
 	Context,
 	ast::expressions::identifier::Identifier,
-	comptime::{
-		Evaluate,
-		storage::{EvaluatedRef, ExpressionRef},
-	},
+	comptime::{Evaluate, storage::Pointer, types::Type},
 };
-
-#[derive(Debug, Clone, From, TryAsRef, TryAsMut)]
-pub enum VariableDeclaration {
-	Unevaluated(UnevaluatedVariableDeclaration),
-	Evaluated(EvaluatedVariableDeclaration),
-}
-
-impl Evaluate for VariableDeclaration {
-	type Output = EvaluatedVariableDeclaration;
-
-	fn evaluate(self, context: &mut Context) -> Self::Output {
-		match self {
-			VariableDeclaration::Unevaluated(unevaluated) => unevaluated.evaluate(context),
-			VariableDeclaration::Evaluated(evaluated) => evaluated,
-		}
-	}
-}
 
 /// A variable declaration before being evaluated at compile-time.
 ///
@@ -42,53 +17,54 @@ impl Evaluate for VariableDeclaration {
 /// Some variables won't immediately have either, such as a `for` loop binding. In this
 /// case I will kill myself.
 #[derive(Debug, Clone, Getters)]
-pub struct UnevaluatedVariableDeclaration {
+pub struct VariableDeclaration {
 	name: Identifier,
-	variable_type: Option<ExpressionRef>,
-	value: Option<ExpressionRef>,
+	variable_type: Option<Type>,
+	pub value: Pointer,
 }
 
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedVariableDeclaration {
-	name: Identifier,
-	variable_type: Option<EvaluatedRef>,
-	pub(crate) value: Option<EvaluatedRef>,
-}
-
-impl Evaluate for UnevaluatedVariableDeclaration {
-	type Output = EvaluatedVariableDeclaration;
+impl Evaluate for VariableDeclaration {
+	type Output = VariableDeclaration;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
-		EvaluatedVariableDeclaration {
+		VariableDeclaration {
 			name: self.name,
-			variable_type: self.variable_type.evaluate(context),
+			variable_type: self.variable_type.map(|variable_type| Type::Evaluated(variable_type.evaluate(context))),
 			value: self.value.evaluate(context),
 		}
 	}
 }
 
-impl UnevaluatedVariableDeclaration {
-	pub fn with_value_and_type(name: Identifier, expression: ExpressionRef, variable_type: ExpressionRef) -> UnevaluatedVariableDeclaration {
-		UnevaluatedVariableDeclaration {
+impl VariableDeclaration {
+	pub fn with_value_and_type(name: Identifier, expression: Pointer, variable_type: Type) -> VariableDeclaration {
+		VariableDeclaration {
 			name,
-			value: Some(expression),
+			value: expression,
 			variable_type: Some(variable_type),
 		}
 	}
 
-	pub fn with_value(name: Identifier, expression: ExpressionRef) -> UnevaluatedVariableDeclaration {
-		UnevaluatedVariableDeclaration {
+	pub fn with_value(name: Identifier, expression: Pointer) -> VariableDeclaration {
+		VariableDeclaration {
 			name,
-			value: Some(expression),
+			value: expression,
 			variable_type: None,
 		}
 	}
 
-	pub fn with_type(name: Identifier, expression: ExpressionRef) -> UnevaluatedVariableDeclaration {
-		UnevaluatedVariableDeclaration {
+	pub fn empty(name: Identifier, context: &mut Context) -> VariableDeclaration {
+		VariableDeclaration {
+			name,
+			value: context.storage.calloc(),
+			variable_type: None,
+		}
+	}
+
+	pub fn with_type(name: Identifier, expression: Type, context: &mut Context) -> VariableDeclaration {
+		VariableDeclaration {
 			name,
 			variable_type: Some(expression),
-			value: None,
+			value: context.storage.calloc(),
 		}
 	}
 }

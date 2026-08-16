@@ -8,18 +8,13 @@ use crate::{
 	api::{builtin::call_builtin_at_compile_time, context::Context, scope::ScopeRef, traits::TryAs as _},
 	ast::expressions::{
 		Expression,
-		UnevaluatedExpression,
-		action::EvaluatedAction,
+		action::Action,
 		binary::BinaryOperation,
-		evaluated::EvaluatedExpression,
 		field_access::{FieldAccess, FieldAccessTokens},
 		identifier::Identifier,
-		run::Runtimeable,
+		run::Runtime,
 	},
-	comptime::{
-		Evaluate,
-		storage::{Evaluated, Pointer},
-	},
+	comptime::{Evaluate, storage::Pointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_some,
 	lexer::{Token, TokenType},
@@ -29,9 +24,9 @@ use crate::{
 
 #[derive(Debug, Clone, Getters)]
 pub struct FunctionCall {
-	callee: Pointer<Expression>,
-	compile_time_arguments: Vec<Pointer<Expression>>,
-	arguments: Vec<Pointer<Expression>>,
+	callee: Pointer,
+	compile_time_arguments: Vec<Pointer>,
+	arguments: Vec<Pointer>,
 	scope: ScopeRef,
 	tokens: FunctionCallTokens,
 }
@@ -57,7 +52,7 @@ pub struct CompileTimeArgumentTokens {
 pub struct PostfixExpression;
 
 impl TryParse for PostfixExpression {
-	type Output = Pointer<Expression>;
+	type Output = Pointer;
 
 	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		// Primary expression
@@ -69,7 +64,7 @@ impl TryParse for PostfixExpression {
 					let mut compile_time_arguments = Vec::new();
 					let left_angle_bracket = tokens.pop(TokenType::LeftAngleBracket, context).unwrap();
 					while !tokens.next_is(TokenType::RightAngleBracket) {
-						compile_time_arguments.push(UnevaluatedExpression::try_parse(tokens, context)?);
+						compile_time_arguments.push(Expression::try_parse(tokens, context)?);
 						if tokens.pop(TokenType::Comma, context).is_err() {
 							break;
 						}
@@ -80,7 +75,7 @@ impl TryParse for PostfixExpression {
 						let mut arguments = Vec::new();
 						let left_parenthesis = tokens.pop(TokenType::LeftParenthesis, context).unwrap();
 						while !tokens.next_is(TokenType::RightParenthesis) {
-							arguments.push(UnevaluatedExpression::try_parse(tokens, context)?);
+							arguments.push(Expression::try_parse(tokens, context)?);
 							if tokens.pop(TokenType::Comma, context).is_err() {
 								break;
 							}
@@ -90,7 +85,7 @@ impl TryParse for PostfixExpression {
 					})
 					.unzip();
 
-					expression = Expression::Unevaluated(UnevaluatedExpression::FunctionCall(Box::new(FunctionCall {
+					expression = Expression::FunctionCall(FunctionCall {
 						callee: expression,
 						compile_time_arguments,
 						arguments: arguments.unwrap_or_default(),
@@ -105,7 +100,7 @@ impl TryParse for PostfixExpression {
 								right_angle_bracket,
 							}),
 						},
-					})))
+					})
 					.store(context);
 				},
 
@@ -113,14 +108,14 @@ impl TryParse for PostfixExpression {
 					let mut arguments = Vec::new();
 					let left_parenthesis = tokens.pop(TokenType::LeftParenthesis, context).unwrap();
 					while !tokens.next_is(TokenType::RightParenthesis) {
-						arguments.push(UnevaluatedExpression::try_parse(tokens, context)?);
+						arguments.push(Expression::try_parse(tokens, context)?);
 						if tokens.pop(TokenType::Comma, context).is_err() {
 							break;
 						}
 					}
 					let right_parenthesis = tokens.pop(TokenType::RightParenthesis, context)?;
 
-					expression = Expression::Unevaluated(UnevaluatedExpression::FunctionCall(Box::new(FunctionCall {
+					expression = Expression::FunctionCall(FunctionCall {
 						callee: expression,
 						compile_time_arguments: Vec::new(),
 						arguments,
@@ -132,7 +127,7 @@ impl TryParse for PostfixExpression {
 							}),
 							compile_time_arguments: None,
 						},
-					})))
+					})
 					.store(context);
 				},
 
@@ -145,7 +140,7 @@ impl TryParse for PostfixExpression {
 }
 
 impl Evaluate for FunctionCall {
-	type Output = Pointer<Evaluated>;
+	type Output = Pointer;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating action call");
@@ -176,18 +171,17 @@ impl Evaluate for FunctionCall {
 		// If not all arguments are known at compile-time, we can't call the function at compile time. In this case, we just
 		// return a function call expression, and it'll get transpiled to C and called at runtime.
 		if arguments.iter().map(|argument| argument.is_fully_known(context)).any(|value| !value) {
-			return EvaluatedExpression::FunctionCall(EvaluatedFunctionCall {
+			return Expression::FunctionCall(FunctionCall {
 				callee: function,
 				compile_time_arguments,
 				arguments,
 				scope: self.scope,
 				tokens: self.tokens,
 			})
-			.store(context)
-			.into();
+			.store(context);
 		}
 
-		context.call_stack.push(EvaluatedFunctionCall {
+		context.call_stack.push(FunctionCall {
 			callee: function.to_owned(),
 			compile_time_arguments: compile_time_arguments.clone(),
 			arguments: arguments.clone(),
@@ -196,7 +190,7 @@ impl Evaluate for FunctionCall {
 		});
 
 		// callee is an action
-		if let Some(action) = function.value(context).as_expression(context).and_then(|expr| expr.try_as::<EvaluatedAction>().ok()) {
+		if let Some(action) = function.value(context).as_expression().and_then(|expr| expr.try_as::<Action>().ok()) {
 			let action = action.clone();
 
 			if let Some(this) = action.this() {
@@ -218,32 +212,48 @@ impl Evaluate for FunctionCall {
 				}));
 			}
 
-			let mut builtin_name = None;
-			let mut runtime = None;
+			let mut builtin_name: Option<String> = None;
+			let mut runtime: Option<String> = None;
 
 			// Get runtime tags
 			if let Some(tags) = action.tags() {
 				for tag in tags.values() {
-					if let Some(object) = tag.value().value(context).as_object() {
-						if *object.group() == context.builtin("Builtin") {
-							builtin_name = Some(
-								object
-									.get_field_value("internal_name")
-									.unwrap()
-									.value(context)
-									.as_object()
-									.unwrap()
-									.get_text()
-									.unwrap()
-									.to_owned(),
-							);
+					if let Some(Expression::New(new)) = tag.value().value(context).as_expression() {
+						// if new
+						// 	.type_name()
+						// 	.as_ref()
+						// 	.is_some_and(|group| group.value(context).is_some_and(|value| value == context.builtin("BuiltinTag")))
+						// {
+						// 	builtin_name = Some(
+						// 		new.fields()
+						// 			.iter()
+						// 			.find(|field| field.name().source_identifier() == "internal_name")
+						// 			.unwrap()
+						// 			.value()
+						// 			.as_text_literal(context)
+						// 			.unwrap()
+						// 			.to_owned(),
+						// 	);
 
-							continue;
-						}
+						// 	continue;
+						// }
 
-						if *object.group() == context.builtin("Runtime") {
-							runtime = Some(object.get_field_value("reason").unwrap().value(context).as_object().unwrap().get_text().unwrap().to_owned());
-						}
+						// if new
+						// 	.type_name()
+						// 	.as_ref()
+						// 	.is_some_and(|group| group.value(context).is_some_and(|value| value == context.builtin("Runtime")))
+						// {
+						// 	runtime = Some(
+						// 		new.fields()
+						// 			.iter()
+						// 			.find(|field| field.name().source_identifier() == "reason")
+						// 			.unwrap()
+						// 			.value()
+						// 			.as_text_literal(context)
+						// 			.unwrap()
+						// 			.to_owned(),
+						// 	)
+						// }
 					}
 				}
 			}
@@ -282,10 +292,12 @@ impl Evaluate for FunctionCall {
 				let _ = context.call_stack.pop().unwrap();
 
 				if let Some(outer) = context.call_stack.last()
-					&& outer.callee == context.get_builtin("log").unwrap()
 					&& internal_name == "system.terminal.write"
 				{
-					context.diagnostics_mut().last_mut().unwrap().span = outer.span().into_owned();
+					let outer_span = outer.span().into_owned();
+					if outer.callee.clone() == context.get_builtin("log").unwrap() {
+						context.diagnostics_mut().last_mut().unwrap().span = outer_span.into_owned();
+					}
 				}
 
 				return return_value;
@@ -294,25 +306,29 @@ impl Evaluate for FunctionCall {
 			context.add_diagnostic(Diagnostic::at(&action, DiagnosticInfo::ActionWithoutBody));
 
 			let _ = context.call_stack.pop().unwrap();
-			return EvaluatedExpression::FunctionCall(EvaluatedFunctionCall {
+			return Expression::FunctionCall(FunctionCall {
 				callee: function,
 				compile_time_arguments,
 				arguments,
 				scope: self.scope,
 				tokens: self.tokens,
 			})
-			.store(context)
-			.into();
+			.store(context);
 		}
 
 		// callee is not an action
 		context.add_diagnostic(Diagnostic::at(
 			&span,
-			DiagnosticInfo::CallNonFunction(function.value(context).as_expression(context).unwrap().kind_name().to_owned()),
+			DiagnosticInfo::CallNonFunction(
+				function
+					.value(context)
+					.as_expression()
+					.map_or_else(|| "object".to_owned(), |expression| expression.kind_name().to_owned()),
+			),
 		));
 
 		let _ = context.call_stack.pop().unwrap();
-		EvaluatedExpression::FunctionCall(EvaluatedFunctionCall {
+		Expression::FunctionCall(FunctionCall {
 			callee: function,
 			compile_time_arguments,
 			arguments,
@@ -320,7 +336,6 @@ impl Evaluate for FunctionCall {
 			tokens: self.tokens,
 		})
 		.store(context)
-		.into()
 	}
 }
 
@@ -341,14 +356,14 @@ impl Spanned for FunctionCall {
 }
 
 impl FunctionCall {
-	pub fn from_binary_expression(left: Pointer<Expression>, operation: BinaryOperation, right: Pointer<Expression>, operator: Token, context: &mut Context) -> FunctionCall {
+	pub fn from_binary_expression(left: Pointer, operation: BinaryOperation, right: Pointer, operator: Token, context: &mut Context) -> FunctionCall {
 		let token = Token::synthetic(TokenType::Identifier, operation.action_name().to_owned(), operator.span().owned());
 		FunctionCall {
-			callee: Expression::Unevaluated(UnevaluatedExpression::FieldAccess(Box::new(FieldAccess {
+			callee: Expression::FieldAccess(FieldAccess {
 				left,
 				right: Identifier::synthetic(token, context),
 				tokens: FieldAccessTokens { operator },
-			})))
+			})
 			.store(context),
 			compile_time_arguments: Vec::new(),
 			arguments: vec![right],
@@ -361,41 +376,14 @@ impl FunctionCall {
 	}
 }
 
-impl Runtimeable for FunctionCall {
-	type Output = EvaluatedFunctionCall;
-
-	fn evaluate_subexpressions(self, context: &mut Context) -> EvaluatedFunctionCall {
-		EvaluatedFunctionCall {
+impl Runtime for FunctionCall {
+	fn evaluate_subexpressions(self, context: &mut Context) -> Self {
+		FunctionCall {
 			callee: self.callee.evaluate(context),
 			compile_time_arguments: self.compile_time_arguments.evaluate(context),
 			arguments: self.arguments.evaluate(context),
 			scope: self.scope,
 			tokens: self.tokens,
 		}
-	}
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedFunctionCall {
-	callee: Pointer<Evaluated>,
-	compile_time_arguments: Vec<Pointer<Evaluated>>,
-	arguments: Vec<Pointer<Evaluated>>,
-	scope: ScopeRef,
-	tokens: FunctionCallTokens,
-}
-
-impl Spanned for EvaluatedFunctionCall {
-	fn span(&self) -> impl SpanLike {
-		let start = self.callee.span();
-
-		if let Some(argument) = self.arguments.last() {
-			return start.to(argument.span());
-		}
-
-		if let Some(argument) = self.compile_time_arguments.last() {
-			return start.to(argument.span());
-		}
-
-		unreachable!()
 	}
 }

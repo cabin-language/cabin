@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use derive_getters::Getters;
 
 use crate::{
@@ -5,11 +7,7 @@ use crate::{
 	Spanned,
 	api::context::Context,
 	ast::expressions::{Expression, object::Object},
-	comptime::{
-		Dot,
-		Evaluate,
-		storage::{Evaluated, Pointer},
-	},
+	comptime::{Dot, Evaluate, storage::Pointer, types::EvaluatedType},
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -20,6 +18,7 @@ use crate::{
 pub struct List {
 	elements: Vec<ListElement>,
 	tokens: ListTokens,
+	object: Pointer,
 }
 
 #[derive(Debug, Clone, Getters)]
@@ -30,7 +29,7 @@ pub struct ListTokens {
 
 #[derive(Debug, Clone, Getters)]
 pub struct ListElement {
-	value: Pointer<Expression>,
+	value: Pointer,
 	tokens: ListElementTokens,
 }
 
@@ -59,31 +58,32 @@ impl TryParse for List {
 		}
 
 		let right_bracket = tokens.pop(TokenType::RightBracket, context)?;
+		let object = Object::new(Some(EvaluatedType::builtin("List", context)), HashMap::new(), left_bracket.span().to(right_bracket.span())).store(context);
 
 		Ok(List {
 			elements,
+			object,
 			tokens: ListTokens { left_bracket, right_bracket },
 		})
 	}
 }
 
 impl Evaluate for List {
-	type Output = EvaluatedList;
+	type Output = List;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
-		let span = self.span().into_owned();
 		let elements = self
 			.elements
 			.into_iter()
-			.map(|element| EvaluatedListElement {
+			.map(|element| ListElement {
 				value: element.value.evaluate(context),
 				tokens: element.tokens,
 			})
 			.collect::<Vec<_>>();
 
-		EvaluatedList {
+		List {
 			tokens: self.tokens,
-			object: Object::list(elements.iter().map(|element| element.value().to_owned()).collect(), context, span).store(context),
+			object: self.object,
 			elements,
 		}
 	}
@@ -107,27 +107,23 @@ impl ToCabin for ListElement {
 	}
 }
 
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedList {
-	elements: Vec<EvaluatedListElement>,
-	tokens: ListTokens,
-	object: Pointer<Object>,
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedListElement {
-	value: Pointer<Evaluated>,
-	tokens: ListElementTokens,
-}
-
-impl Spanned for EvaluatedList {
-	fn span(&self) -> impl SpanLike {
-		self.tokens().left_bracket().span().to(self.tokens().right_bracket().span())
+impl List {
+	pub fn insert(&mut self, index: usize, element: Pointer, context: &mut Context) {
+		self.object
+			.as_object_mut(context)
+			.unwrap()
+			.get_internal_field_mut::<Vec<Pointer>>(internal_fields::ELEMENTS)
+			.unwrap()
+			.insert(index, element);
 	}
 }
 
-impl Dot for EvaluatedList {
-	fn dot(&self, context: &Context, name: &str) -> Option<Pointer<Evaluated>> {
+impl Dot for List {
+	fn dot(&self, context: &mut Context, name: &str) -> Option<Pointer> {
 		self.object.dot(context, name)
 	}
+}
+
+pub mod internal_fields {
+	pub const ELEMENTS: &str = "elements";
 }

@@ -1,7 +1,4 @@
-use crate::{
-	api::context::Context,
-	comptime::storage::{Evaluated, Pointer},
-};
+use crate::{api::context::Context, comptime::storage::Pointer};
 
 pub mod storage;
 pub mod types;
@@ -66,5 +63,5 @@ where
 }
 
 pub trait Dot {
-	fn dot(&self, context: &Context, name: &str) -> Option<Pointer<Evaluated>>;
+	fn dot(&self, context: &mut Context, name: &str) -> Option<Pointer>;
 }

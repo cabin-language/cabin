@@ -9,16 +9,14 @@ use crate::{
 	api::{context::Context, scope::ScopeType},
 	ast::{
 		expressions::{Expression, identifier::Identifier, object::Object},
-		misc::{
-			compile_time_parameter::{CompileTimeParameters, EvaluatedCompileTimeParameters},
-			tag::{EvaluatedTagList, TagList},
-		},
+		misc::{compile_time_parameter::CompileTimeParameters, tag::TagList},
 	},
 	comptime::{
+		Dot,
 		Evaluate,
-		storage::{Evaluated, Pointer},
+		storage::Pointer,
+		types::{EvaluatedType, Type},
 	},
-	definition::UnevaluatedVariableDeclaration,
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_some,
 	lexer::{Token, TokenType},
@@ -31,6 +29,8 @@ pub struct Group {
 	compile_time_parameters: Option<CompileTimeParameters>,
 	fields: Vec<GroupField>,
 	tokens: GroupTokens,
+	object: Pointer,
+	is_evaluated: bool,
 }
 
 #[derive(Debug, Clone, Getters)]
@@ -40,12 +40,12 @@ pub struct GroupTokens {
 	right_brace: Token,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Getters)]
 pub struct GroupField {
 	tags: Option<TagList>,
 	name: Identifier,
-	field_type: Option<Pointer<Expression>>,
-	default_value: Option<Pointer<Expression>>,
+	field_type: Option<Type>,
+	default_value: Option<Pointer>,
 	tokens: GroupFieldTokens,
 }
 
@@ -61,13 +61,17 @@ impl TryParse for Group {
 	type Output = Group;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
+		log!(context, "Parsing group");
 		let keyword_group = tokens.pop(TokenType::KeywordGroup, context)?;
 		let group_scope = context.scope.enter_new_scope(ScopeType::Group);
 
 		let compile_time_parameters = CompileTimeParameters::try_parse(tokens, context).ok();
 		if let Some(compile_time_parameters) = &compile_time_parameters {
 			for parameter in compile_time_parameters.parameters() {
-				context.declare_new_variable(UnevaluatedVariableDeclaration::with_type(parameter.name().to_owned(), parameter.parameter_type().clone()));
+				let declaration = parameter.as_declaration(context);
+				if let Err(error) = context.scope.declare_new_variable_from_id(parameter.name(), declaration, group_scope) {
+					context.add_diagnostic(Diagnostic::at(parameter.name(), error));
+				};
 			}
 		}
 
@@ -76,6 +80,7 @@ impl TryParse for Group {
 		// Fields
 		let mut fields = Vec::new();
 		while !tokens.next_is(TokenType::RightBrace) {
+			log!(context, "Parsing group field");
 			//  Group field tags
 			let tags = if_then_some!(
 				tokens.next_is(TokenType::TagOpening),
@@ -109,13 +114,13 @@ impl TryParse for Group {
 					tokens.pop(TokenType::Colon, context).inspect_err(|_err| {
 						context.scope.exit_scope(group_scope).unwrap();
 					})?,
-					Expression::try_parse(tokens, context)?,
+					Type::try_parse(tokens, context)?,
 				)
 			})
 			.unzip();
 
 			// field value
-			let (equals, mut value) = if_then_some!(tokens.next_is(TokenType::Equal), {
+			let (equals, value) = if_then_some!(tokens.next_is(TokenType::Equal), {
 				(
 					tokens.pop(TokenType::Equal, context).inspect_err(|_err| {
 						context.scope.exit_scope(group_scope).unwrap();
@@ -124,12 +129,6 @@ impl TryParse for Group {
 				)
 			})
 			.unzip();
-
-			if let Some(tags) = &tags
-				&& let Some(value) = &mut value
-			{
-				value.as_unevaluated_mut(context).unwrap().set_tags(tags.clone());
-			}
 
 			// comma
 			let comma = tokens.pop(TokenType::Comma, context).ok();
@@ -154,24 +153,30 @@ impl TryParse for Group {
 		context.scope.exit_scope(group_scope).unwrap();
 
 		Ok(Group {
+			object: Object::new(Some(EvaluatedType::builtin("Group", context)), HashMap::new(), keyword_group.span.to(&right_brace.span)).store(context),
 			fields,
-			compile_time_parameters,
 			tokens: GroupTokens {
 				keyword_group,
 				left_brace,
 				right_brace,
 			},
+			compile_time_parameters,
+			is_evaluated: false,
 		})
 	}
 }
 
 impl Evaluate for Group {
-	type Output = EvaluatedGroup;
+	type Output = Group;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
+		if self.is_evaluated {
+			return self;
+		}
+
 		log!(context, "Evaluating group");
+		let span = self.span().owned();
 		let mut fields = Vec::new();
-		let span = self.span().into_owned();
 
 		for field in self.fields {
 			log!(context, "Evaluating group field \"{}\"", field.name.source_identifier());
@@ -179,9 +184,9 @@ impl Evaluate for Group {
 			log!(context, "Evaluating group field \"{}\" value", field.name.source_identifier());
 			let default_value = field.default_value.evaluate(context);
 			log!(context, "Evaluating group field \"{}\" type", field.name.source_identifier());
-			let field_type = field.field_type.evaluate(context);
+			let field_type = field.field_type.evaluate(context).map(Type::Evaluated);
 
-			fields.push(EvaluatedGroupField {
+			fields.push(GroupField {
 				name: field.name,
 				tokens: field.tokens,
 				tags,
@@ -190,36 +195,13 @@ impl Evaluate for Group {
 			});
 		}
 
-		log!(context, "Creating group object");
-		let obj = Object::new(
-			context.builtin("Group"),
-			HashMap::from([(
-				"fields".to_owned(),
-				Object::list(
-					fields
-						.iter()
-						.map(|field| {
-							Object::new(
-								context.builtin("Property"),
-								HashMap::from([("name".to_owned(), field.name.stringify(context).store(context))]),
-								field.name.span().into_owned(),
-							)
-							.store(context)
-						})
-						.collect(),
-					context,
-					span.clone(),
-				)
-				.store(context),
-			)]),
-			span,
-		)
-		.store(context);
+		log!(context, "Creating evaluated group");
 
-		EvaluatedGroup {
-			object: obj,
+		Group {
+			object: self.object,
 			fields,
 			compile_time_parameters: self.compile_time_parameters.evaluate(context),
+			is_evaluated: true,
 			tokens: self.tokens,
 		}
 	}
@@ -231,26 +213,17 @@ impl Spanned for Group {
 	}
 }
 
-impl Spanned for EvaluatedGroup {
-	fn span(&self) -> impl SpanLike {
-		self.tokens().keyword_group().span().to(self.tokens().right_brace().span())
+impl Group {
+	pub fn is_fully_known(&self, context: &Context) -> bool {
+		self.fields
+			.iter()
+			.all(|field| field.default_value.as_ref().is_none_or(|value| value.is_fully_known(context)))
+			&& self.compile_time_parameters.as_ref().is_none_or(|parameters| parameters.is_fully_known(context))
 	}
 }
 
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedGroup {
-	compile_time_parameters: Option<EvaluatedCompileTimeParameters>,
-	fields: Vec<EvaluatedGroupField>,
-	tokens: GroupTokens,
-
-	object: Pointer<Object>,
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedGroupField {
-	tags: Option<EvaluatedTagList>,
-	name: Identifier,
-	field_type: Option<Pointer<Evaluated>>,
-	default_value: Option<Pointer<Evaluated>>,
-	tokens: GroupFieldTokens,
+impl Dot for Group {
+	fn dot(&self, context: &mut Context, name: &str) -> Option<Pointer> {
+		self.object.dot(context, name)
+	}
 }

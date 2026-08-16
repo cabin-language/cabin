@@ -4,11 +4,8 @@ use crate::{
 	Context,
 	SpanLike,
 	Spanned,
-	ast::expressions::{UnevaluatedExpression, block::Block},
-	comptime::{
-		Evaluate,
-		storage::{Evaluated, Pointer},
-	},
+	ast::expressions::{Expression, block::Block},
+	comptime::{Evaluate, storage::Pointer},
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -17,7 +14,7 @@ use crate::{
 
 #[derive(Debug, Clone, Getters)]
 pub struct WhileLoop {
-	condition: UnevaluatedExpression,
+	condition: Pointer,
 	body: Block,
 	tokens: WhileLoopTokens,
 }
@@ -32,7 +29,7 @@ impl TryParse for WhileLoop {
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let keyword_while = tokens.pop(TokenType::KeywordWhile, context)?;
-		let expression = UnevaluatedExpression::try_parse(tokens, context)?;
+		let expression = Expression::try_parse(tokens, context)?;
 		let body = Block::try_parse(tokens, context, ScopeType::While)?;
 
 		Ok(WhileLoop {
@@ -44,7 +41,7 @@ impl TryParse for WhileLoop {
 }
 
 impl Evaluate for WhileLoop {
-	type Output = Pointer<Evaluated>;
+	type Output = Pointer;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		loop {

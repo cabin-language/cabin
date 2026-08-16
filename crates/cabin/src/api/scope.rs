@@ -4,12 +4,7 @@ use std::{
 	ops::{Deref, DerefMut},
 };
 
-use crate::{
-	api::context::Context,
-	ast::expressions::identifier::Identifier,
-	definition::{UnevaluatedVariableDeclaration, VariableDeclaration},
-	diagnostics::DiagnosticInfo,
-};
+use crate::{api::context::Context, ast::expressions::identifier::Identifier, definition::VariableDeclaration, diagnostics::DiagnosticInfo};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScopeRef(pub(crate) usize);
@@ -119,7 +114,7 @@ impl Scope {
 		self.label = Some(name);
 	}
 
-	fn available_variables_with_underscores<'scopes>(&'scopes self, scopes: &'scopes [Self]) -> Vec<UnevaluatedVariableDeclaration> {
+	fn available_variables_with_underscores<'scopes>(&'scopes self, scopes: &'scopes [Self]) -> Vec<VariableDeclaration> {
 		let mut vec = self.variables.values().cloned().collect::<Vec<_>>();
 		vec.extend(self.underscores.iter().cloned());
 		if let Some(parent) = self.parent {
@@ -128,7 +123,7 @@ impl Scope {
 		vec
 	}
 
-	fn available_variables<'scopes>(&'scopes self, scopes: &'scopes [Self]) -> HashMap<Identifier, UnevaluatedVariableDeclaration> {
+	fn available_variables<'scopes>(&'scopes self, scopes: &'scopes [Self]) -> HashMap<Identifier, VariableDeclaration> {
 		let mut map = self.variables.clone();
 		if let Some(parent) = self.parent {
 			map.extend(scopes.get(parent).unwrap().available_variables(scopes));
@@ -283,7 +278,7 @@ impl ScopeTree {
 	///
 	/// # Errors
 	/// Returns an error if a variable already exists with the given name in the scope with the given id.
-	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Identifier>, value: UnevaluatedVariableDeclaration, id: ScopeRef) -> Result<(), DiagnosticInfo> {
+	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Identifier>, value: VariableDeclaration, id: ScopeRef) -> Result<(), DiagnosticInfo> {
 		let name = name.into();
 
 		if name.source_identifier() == "_" {
@@ -314,7 +309,7 @@ impl ScopeTree {
 	///
 	/// # Errors
 	/// Returns an error if a variable already exists with the given name in the current scope.
-	pub fn declare_new_variable(&mut self, name: impl Into<Identifier>, value: UnevaluatedVariableDeclaration) -> Result<(), DiagnosticInfo> {
+	pub fn declare_new_variable(&mut self, name: impl Into<Identifier>, value: VariableDeclaration) -> Result<(), DiagnosticInfo> {
 		self.declare_new_variable_from_id(name, value, ScopeRef(self.current_scope))
 	}
 
@@ -345,11 +340,11 @@ impl ScopeTree {
 		id
 	}
 
-	pub fn available_variables(&self) -> HashMap<Identifier, UnevaluatedVariableDeclaration> {
+	pub fn available_variables(&self) -> HashMap<Identifier, VariableDeclaration> {
 		self.current().available_variables(&self.scopes)
 	}
 
-	pub fn available_variables_with_underscores(&self) -> Vec<UnevaluatedVariableDeclaration> {
+	pub fn available_variables_with_underscores(&self) -> Vec<VariableDeclaration> {
 		self.current().available_variables_with_underscores(&self.scopes)
 	}
 }

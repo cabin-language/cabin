@@ -6,11 +6,11 @@ use crate::{
 	SpanLike,
 	Spanned,
 	api::context::Context,
-	ast::expressions::{evaluated::EvaluatedExpression, object::Object},
-	comptime::{
-		Evaluate,
-		storage::{Evaluated, Pointer},
+	ast::expressions::{
+		Expression,
+		string::{LiteralPart, Text},
 	},
+	comptime::{Dot, Evaluate, storage::Pointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 	log,
@@ -36,6 +36,7 @@ impl TryParse for Identifier {
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> anyhow::Result<Self::Output, Diagnostic> {
 		let token = tokens.pop(TokenType::Identifier, context)?;
+		log!(context, "Parsing identifier \"{}\"", token.value);
 
 		let identifier = Identifier {
 			token,
@@ -47,11 +48,11 @@ impl TryParse for Identifier {
 }
 
 impl Evaluate for Identifier {
-	type Output = Pointer<Evaluated>;
+	type Output = Pointer;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating identifier \"{}\"", self.source_identifier());
-		self.value(context).unwrap_or_else(|| EvaluatedExpression::Identifier(self).store(context).into())
+		self.value(context).unwrap_or_else(|| Expression::Identifier(self).store(context))
 	}
 }
 
@@ -99,8 +100,14 @@ impl Debug for Identifier {
 	}
 }
 
+impl Dot for Identifier {
+	fn dot(&self, context: &mut Context, name: &str) -> Option<Pointer> {
+		self.value(context).and_then(|value| value.dot(context, name))
+	}
+}
+
 impl Identifier {
-	pub fn value(&self, context: &mut Context) -> Option<Pointer<Evaluated>> {
+	pub fn value(&self, context: &mut Context) -> Option<Pointer> {
 		context
 			.get_variable(self)
 			.ok_or_else(|| {
@@ -110,8 +117,14 @@ impl Identifier {
 			.map(|ptr| ptr.with_span(self.span().into_owned()))
 	}
 
-	pub fn stringify(&self, context: &mut Context) -> Object {
-		Object::text(self.source_identifier(), context, self.span().into_owned())
+	pub fn stringify(&self, context: &mut Context) -> Text {
+		Text::literal(
+			LiteralPart {
+				value: self.source_identifier().to_owned(),
+				span: self.span().owned(),
+			},
+			context,
+		)
 	}
 
 	pub const fn create_virtual(name: String, context: &Context) -> Identifier {

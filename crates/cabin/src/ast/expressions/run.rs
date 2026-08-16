@@ -3,8 +3,8 @@ use derive_getters::Getters;
 use crate::{
 	Context,
 	SpanLike,
-	ast::expressions::{UnevaluatedExpression, Spanned, evaluated::EvaluatedExpression},
-	comptime::Evaluate,
+	ast::expressions::{Expression, Spanned},
+	comptime::{Evaluate, storage::Pointer},
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -13,7 +13,7 @@ use crate::{
 
 #[derive(Debug, Clone, Getters)]
 pub struct RunExpression {
-	expression: UnevaluatedExpression,
+	expression: Pointer,
 	tokens: RunExpressionTokens,
 }
 
@@ -30,7 +30,7 @@ impl TryParse for RunExpression {
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let keyword_run = tokens.pop(TokenType::KeywordRun, context)?;
 		let left_parenthesis = tokens.pop(TokenType::LeftParenthesis, context)?;
-		let expression = UnevaluatedExpression::try_parse(tokens, context)?;
+		let expression = Expression::try_parse(tokens, context)?;
 		let right_parenthesis = tokens.pop(TokenType::RightParenthesis, context)?;
 
 		Ok(RunExpression {
@@ -45,10 +45,10 @@ impl TryParse for RunExpression {
 }
 
 impl Evaluate for RunExpression {
-	type Output = EvaluatedRunExpression;
+	type Output = RunExpression;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
-		EvaluatedRunExpression {
+		RunExpression {
 			expression: self.expression.evaluate_subexpressions(context),
 			tokens: self.tokens,
 		}
@@ -67,19 +67,6 @@ impl Spanned for RunExpression {
 	}
 }
 
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedRunExpression {
-	expression: EvaluatedExpression,
-	tokens: RunExpressionTokens,
-}
-
-pub trait Runtimeable {
-	type Output;
-	fn evaluate_subexpressions(self, context: &mut Context) -> Self::Output;
-}
-
-impl Spanned for EvaluatedRunExpression {
-	fn span(&self) -> impl SpanLike {
-		self.tokens().keyword_run().span().to(self.tokens().right_parenthesis().span())
-	}
+pub trait Runtime {
+	fn evaluate_subexpressions(self, context: &mut Context) -> Self;
 }

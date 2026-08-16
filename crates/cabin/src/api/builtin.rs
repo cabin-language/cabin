@@ -3,11 +3,14 @@ use std::{collections::VecDeque, io::Write as _};
 use crate::{
 	Context,
 	Span,
-	SpanLike as _,
-	Spanned as _,
-	ast::expressions::object::Object,
-	comptime::storage::{Evaluated, Pointer},
+	ast::expressions::{
+		Expression,
+		number::Number,
+		string::{LiteralPart, Text},
+	},
+	comptime::storage::Pointer,
 	diagnostics::DiagnosticInfo,
+	lexer::{Token, TokenType},
 	log,
 };
 
@@ -29,7 +32,7 @@ use crate::{
 /// If there is no built-in function with the given name, an error is returned.
 ///
 /// Also, if the built-in function throws an error while being called, that error is returned as well.
-pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut arguments: VecDeque<Pointer<Evaluated>>, span: &Span) -> Pointer<Evaluated> {
+pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut arguments: VecDeque<Pointer>, span: &Span) -> Pointer {
 	match name {
 		"system.terminal.write" => {
 			let Some(pointer) = arguments.pop_front() else {
@@ -39,7 +42,10 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut argum
 			};
 
 			// convert the object to a string with the builtin to_text()
-			let string_value = call_builtin_at_compile_time("Any.to_text", context, vec![pointer].into(), span).as_string(context).unwrap();
+			let string_value = call_builtin_at_compile_time("Any.to_text", context, vec![pointer].into(), span)
+				.as_text_literal(context)
+				.unwrap()
+				.to_owned();
 
 			if context.side_effects {
 				if !context.has_printed && !context.interactive {
@@ -61,11 +67,18 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut argum
 		"Text.plus" => {
 			// safe to unwrap here because these will be typechecked before the call ever happens
 			// if the arguments aren't present or aren't strings this won't get called
-			let left = arguments.pop_front().unwrap().as_string(context).unwrap();
-			let right = arguments.pop_front().unwrap().as_string(context).unwrap();
+			let left = arguments.pop_front().unwrap().as_text_literal(context).unwrap();
+			let right = arguments.pop_front().unwrap().as_text_literal(context).unwrap();
 			let concatenated = format!("{left}{right}");
 
-			Object::text(concatenated, context, span.to_owned()).store(context).into()
+			Expression::from(Text::literal(
+				LiteralPart {
+					value: concatenated,
+					span: span.to_owned(),
+				},
+				context,
+			))
+			.store(context)
 		},
 
 		"terminal.input" => {
@@ -77,30 +90,48 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut argum
 			line = line.get(0..line.len() - 1).unwrap().to_owned();
 
 			// return
-			Object::text(line, context, span.to_owned()).store(context).into()
+			Expression::from(Text::literal(
+				LiteralPart {
+					value: line,
+					span: span.to_owned(),
+				},
+				context,
+			))
+			.store(context)
 		},
 
 		"Any.to_text" => {
 			let this = arguments.pop_front().unwrap();
-			let text = this.value(context).as_object(context).unwrap().to_text(context);
+			let text = this.value(context).as_object().unwrap().to_text(context);
 
-			Object::text(text, context, this.span().owned()).store(context).into()
+			Expression::from(Text::literal(
+				LiteralPart {
+					value: text,
+					span: span.to_owned(),
+				},
+				context,
+			))
+			.store(context)
 		},
 
 		"List.insert" => {
 			log!(context, "Calling builtin \"List.insert\"");
-			let index = arguments.get(1).unwrap().as_number(context).unwrap() as usize;
+			let index = arguments.get(1).unwrap().as_number_literal(context).unwrap() as usize;
 			let element = arguments.get(2).unwrap().to_owned();
-			let this = arguments.pop_front().unwrap().as_mut_list(context).unwrap();
-			this.insert(index, element);
+			let this = arguments.pop_front().unwrap().as_mut_list_literal(context).unwrap();
+			// this.insert(index, element, context);
 
 			context.none()
 		},
 
 		"List.length" => {
 			log!(context, "Calling builtin \"List.length\"");
-			let this = arguments.pop_front().unwrap().as_list(context).unwrap();
-			Object::number(this.len() as f64, context, span.to_owned()).store(context)
+			let this = arguments.pop_front().unwrap().as_list_literal(context).unwrap();
+			Expression::Number(Number::synthetic(
+				Token::synthetic(TokenType::Number, this.elements().len().to_string(), span.to_owned()),
+				context,
+			))
+			.store(context)
 		},
 
 		_ => unreachable!(),

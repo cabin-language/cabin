@@ -30,7 +30,7 @@ pub fn import(input: TokenStream) -> TokenStream {
 		}
 
 		quotes.push(quote::quote! {
-			.dot(&#context, #field_name)
+			.dot(&mut #context, #field_name)
 			.unwrap()
 		});
 	}
@@ -38,9 +38,14 @@ pub fn import(input: TokenStream) -> TokenStream {
 	let last = name.unwrap_or_else(|| last.unwrap());
 
 	quote::quote! {
+		let declaration =
+			crate::api::definition::VariableDeclaration::with_value(
+				crate::ast::expressions::identifier::Identifier::create_virtual(#last.to_owned(), &#context),
+				#module #(#quotes)*
+			);
 		context.scope.declare_new_variable(
 			crate::ast::expressions::identifier::Identifier::create_virtual(#last.to_owned(), &#context),
-			#module #(#quotes)*
+			declaration
 		).unwrap()
 	}
 	.into()

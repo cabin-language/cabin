@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{collections::HashMap, fmt::Debug};
 
 use derive_getters::Getters;
 
@@ -7,16 +7,14 @@ use crate::{
 	Spanned,
 	api::{context::Context, scope::ScopeType},
 	ast::{
-		expressions::{Expression, block::Block},
-		misc::{
-			compile_time_parameter::{CompileTimeParameters, EvaluatedCompileTimeParameters},
-			parameter::{EvaluatedParameters, Parameters},
-			tag::{EvaluatedTagList, TagList},
-		},
+		expressions::{block::Block, object::Object},
+		misc::{compile_time_parameter::CompileTimeParameters, parameter::Parameters, tag::TagList},
 	},
 	comptime::{
+		Dot,
 		Evaluate,
-		storage::{EvaluatedRef, ExpressionRef},
+		storage::Pointer,
+		types::{EvaluatedType, Type},
 	},
 	diagnostics::Diagnostic,
 	if_then_some,
@@ -35,7 +33,9 @@ pub struct Action {
 	body: Option<Block>,
 	parameter_scope: ScopeRef,
 	tokens: ActionTokens,
+	object: Pointer,
 	pub(crate) tags: Option<TagList>,
+	pub(crate) this: Option<Pointer>,
 }
 
 #[derive(Debug, Clone, Getters)]
@@ -45,7 +45,7 @@ pub struct ActionTokens {
 
 #[derive(Debug, Clone, Getters)]
 pub struct ReturnType {
-	return_type: ExpressionRef,
+	return_type: Type,
 	tokens: ReturnTypeTokens,
 }
 
@@ -67,10 +67,8 @@ impl TryParse for Action {
 
 		if let Some(compile_time_parameters) = &compile_time_parameters {
 			for parameter in compile_time_parameters.parameters() {
-				if let Err(error) = context
-					.scope
-					.declare_new_variable_from_id(parameter.name(), parameter.as_declaration(context), parameter_scope)
-				{
+				let declaration = parameter.as_declaration(context);
+				if let Err(error) = context.scope.declare_new_variable_from_id(parameter.name(), declaration, parameter_scope) {
 					context.add_diagnostic(Diagnostic::at(parameter.name(), error));
 				};
 			}
@@ -78,10 +76,8 @@ impl TryParse for Action {
 
 		if let Some(parameters) = &parameters {
 			for parameter in parameters.parameters() {
-				if let Err(error) = context
-					.scope
-					.declare_new_variable_from_id(parameter.name(), parameter.as_declaration(context), parameter_scope)
-				{
+				let declaration = parameter.as_declaration(context);
+				if let Err(error) = context.scope.declare_new_variable_from_id(parameter.name(), declaration, parameter_scope) {
 					context.add_diagnostic(Diagnostic::at(parameter.name(), error));
 				};
 			}
@@ -90,9 +86,9 @@ impl TryParse for Action {
 		// return Type
 		let return_type = if_then_some!(tokens.next_is(TokenType::Colon), {
 			let colon = tokens.pop(TokenType::Colon, context)?;
-			let expression = Expression::try_parse(tokens, context)?;
+			let inner_return_type = Type::try_parse(tokens, context)?;
 			ReturnType {
-				return_type: expression,
+				return_type: inner_return_type,
 				tokens: ReturnTypeTokens { colon },
 			}
 		});
@@ -102,8 +98,31 @@ impl TryParse for Action {
 
 		context.scope.exit_scope(parameter_scope).unwrap();
 
+		let span = || {
+			let start = &keyword_action.span;
+
+			if let Some(body) = &body {
+				return start.to(body.tokens().right_brace().span());
+			}
+
+			if let Some(return_type) = &return_type {
+				return start.to(return_type.return_type.span());
+			}
+
+			if let Some(parameters) = &parameters {
+				return start.to(parameters.span());
+			}
+
+			if let Some(compile_time_parameters) = &compile_time_parameters {
+				return start.to(compile_time_parameters.span());
+			}
+
+			start.to(start)
+		};
+
 		// Return
 		Ok(Action {
+			object: Object::new(Some(EvaluatedType::builtin("Action", context)), HashMap::new(), span()).store(context),
 			parameters,
 			parameter_scope,
 			compile_time_parameters,
@@ -111,12 +130,13 @@ impl TryParse for Action {
 			body,
 			tokens: ActionTokens { keyword_action },
 			tags: None,
+			this: None,
 		})
 	}
 }
 
 impl Evaluate for Action {
-	type Output = EvaluatedAction;
+	type Output = Action;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating action");
@@ -128,8 +148,8 @@ impl Evaluate for Action {
 		let parameters = self.parameters.evaluate(context);
 
 		// return type
-		let return_type = self.return_type.map(|return_type| EvaluatedReturnType {
-			return_type: return_type.return_type.evaluate(context),
+		let return_type = self.return_type.map(|return_type| ReturnType {
+			return_type: Type::Evaluated(return_type.return_type.evaluate(context)),
 			tokens: return_type.tokens,
 		});
 
@@ -142,63 +162,22 @@ impl Evaluate for Action {
 		reverter.revert(context);
 
 		// Return
-		EvaluatedAction {
+		Action {
 			compile_time_parameters,
 			parameters,
 			body: self.body,
 			return_type,
 			parameter_scope: self.parameter_scope,
 			tokens: self.tokens,
+			object: self.object,
 			tags,
-			this: None,
+			this: self.this,
 		}
 	}
 }
 
 impl Spanned for Action {
 	fn span(&self) -> impl SpanLike {
-		let start = &self.tokens.keyword_action.span;
-
-		if let Some(body) = &self.body {
-			return start.to(body.tokens().right_brace().span());
-		}
-
-		if let Some(return_type) = &self.return_type {
-			return start.to(return_type.return_type.span());
-		}
-
-		if let Some(parameters) = &self.parameters {
-			return start.to(parameters.span());
-		}
-
-		if let Some(parameters) = &self.compile_time_parameters {
-			return start.to(parameters.span());
-		}
-
-		start.to(start)
-	}
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedAction {
-	compile_time_parameters: Option<EvaluatedCompileTimeParameters>,
-	parameters: Option<EvaluatedParameters>,
-	return_type: Option<EvaluatedReturnType>,
-	body: Option<Block>,
-	parameter_scope: ScopeRef,
-	tokens: ActionTokens,
-	tags: Option<EvaluatedTagList>,
-	pub(crate) this: Option<ExpressionRef>,
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedReturnType {
-	return_type: EvaluatedRef,
-	tokens: ReturnTypeTokens,
-}
-
-impl Spanned for EvaluatedAction {
-	fn span(&self) -> impl SpanLike<'_> {
 		let start = &self.tokens.keyword_action.span;
 
 		if let Some(body) = &self.body {
@@ -232,17 +211,27 @@ impl ToCabin for Action {
 	}
 }
 
-impl EvaluatedAction {
-	pub fn takes_this(&self, context: &mut Context) -> bool {
-		let this = context.builtin("This").to_owned();
-		self.parameters()
-			.as_ref()
-			.is_some_and(|parameters| parameters.first().is_some_and(|first| *first.parameter_type() == this))
-	}
-}
-
 impl ToCabin for ReturnType {
 	fn to_cabin(&self) -> String {
 		format!(": {}", self.return_type.to_cabin())
+	}
+}
+
+impl Action {
+	pub fn takes_this(&self) -> bool {
+		self.parameters
+			.as_ref()
+			.is_some_and(|parameters| parameters.first().is_some_and(|parameter| parameter.name().source_identifier() == "this"))
+	}
+
+	pub fn bind(mut self, object: Object, context: &mut Context) -> Action {
+		self.this = Some(object.store(context));
+		self
+	}
+}
+
+impl Dot for Action {
+	fn dot(&self, context: &mut Context, name: &str) -> Option<Pointer> {
+		self.object.dot(context, name)
 	}
 }

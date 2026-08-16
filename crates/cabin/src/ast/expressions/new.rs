@@ -6,13 +6,10 @@ use crate::{
 	SpanLike,
 	api::context::Context,
 	ast::{
-		expressions::{Expression, Spanned, UnevaluatedExpression, evaluated::EvaluatedExpression, identifier::Identifier, object::Object},
-		misc::tag::{EvaluatedTagList, TagList},
+		expressions::{Expression, Spanned, identifier::Identifier},
+		misc::tag::TagList,
 	},
-	comptime::{
-		Evaluate,
-		storage::{Evaluated, Pointer},
-	},
+	comptime::{Dot, Evaluate, storage::Pointer},
 	diagnostics::Diagnostic,
 	if_then_some,
 	lexer::{Token, TokenType},
@@ -39,7 +36,7 @@ pub struct NewTokens {
 pub struct NewField {
 	tags: Option<TagList>,
 	name: Identifier,
-	value: Pointer<Expression>,
+	value: Pointer,
 	tokens: NewFieldTokens,
 }
 
@@ -71,10 +68,7 @@ impl TryParse for NewExpression {
 
 			// field value
 			let equals = tokens.pop(TokenType::Equal, context)?;
-			let mut value = UnevaluatedExpression::try_parse(tokens, context)?;
-			if let Some(tags) = &tags {
-				value.set_tags(tags.clone());
-			}
+			let value = Expression::try_parse(tokens, context)?;
 
 			let comma = tokens.pop(TokenType::Comma, context).ok();
 			let has_comma = comma.is_some();
@@ -108,13 +102,13 @@ impl TryParse for NewExpression {
 }
 
 impl Evaluate for NewExpression {
-	type Output = Pointer<Evaluated>;
+	type Output = NewExpression;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		let mut fields = Vec::new();
 
 		for field in self.fields.clone() {
-			fields.push(EvaluatedNewField {
+			fields.push(NewField {
 				tokens: field.tokens,
 				name: field.name,
 				tags: field.tags.evaluate(context),
@@ -122,15 +116,10 @@ impl Evaluate for NewExpression {
 			});
 		}
 
-		let evaluated = EvaluatedNewExpression {
-			group: self.type_name.evaluate(context),
+		NewExpression {
+			type_name: self.type_name,
 			fields,
 			tokens: self.tokens,
-		};
-
-		match evaluated.into_object(context) {
-			Ok(obj) => obj.store(context).into(),
-			Err(new) => EvaluatedExpression::New(new).store(context).into(),
 		}
 	}
 }
@@ -163,12 +152,6 @@ impl ToCabin for NewExpression {
 	}
 }
 
-impl Spanned for EvaluatedNewExpression {
-	fn span(&self) -> impl SpanLike {
-		self.tokens().keyword_new().span().to(self.tokens().right_brace().span())
-	}
-}
-
 impl ToCabin for NewField {
 	fn to_cabin(&self) -> String {
 		let mut code = String::new();
@@ -180,36 +163,8 @@ impl ToCabin for NewField {
 	}
 }
 
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedNewExpression {
-	group: Option<ExpressionRef>,
-	fields: Vec<EvaluatedNewField>,
-	tokens: NewTokens,
-}
-
-impl EvaluatedNewExpression {
-	pub fn get_field_value(&self, name: &Identifier) -> Option<ExpressionRef> {
-		self.fields.iter().find(|field| &field.name == name).map(|field| field.value.to_owned())
+impl Dot for NewExpression {
+	fn dot(&self, _context: &mut Context, name: &str) -> Option<Pointer> {
+		self.fields.iter().find_map(|field| (field.name.source_identifier() == name).then(|| field.value.clone()))
 	}
-
-	fn into_object(self, context: &Context) -> Result<Object, Self> {
-		if self.fields.iter().all(|field| field.value.is_fully_known(context)) {
-			let span = self.span().into_owned();
-			Ok(Object::new(
-				self.group.unwrap(),
-				self.fields.into_iter().map(|field| (field.name.source_identifier().to_owned(), field.value)).collect(),
-				span,
-			))
-		} else {
-			Err(self)
-		}
-	}
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedNewField {
-	tags: Option<EvaluatedTagList>,
-	name: Identifier,
-	value: ExpressionRef,
-	tokens: NewFieldTokens,
 }

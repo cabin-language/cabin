@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use derive_getters::Getters;
 
 use crate::{
@@ -6,15 +8,14 @@ use crate::{
 	Spanned,
 	api::scope::ScopeType,
 	ast::{
-		expressions::{UnevaluatedExpression, identifier::Identifier},
-		misc::{
-			compile_time_parameter::{CompileTimeParameters, EvaluatedCompileTimeParameters},
-			tag::{EvaluatedTagList, TagList},
-		},
+		expressions::{Expression, either::Either, identifier::Identifier, object::Object},
+		misc::{compile_time_parameter::CompileTimeParameters, tag::TagList},
 	},
 	comptime::{
+		Dot,
 		Evaluate,
-		storage::{Evaluated, Pointer},
+		storage::Pointer,
+		types::{EvaluatedType, Type},
 	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_some,
@@ -27,17 +28,18 @@ use crate::{
 #[derive(Debug, Clone, Getters)]
 pub struct Extend {
 	compile_time_parameters: Option<CompileTimeParameters>,
-	type_to_extend: UnevaluatedExpression,
+	type_to_extend: Type,
 	as_clause: Option<ExtendAsClause>,
 	fields: Vec<ExtendField>,
 	tokens: ExtendTokens,
+	object: Pointer,
 }
 
 #[derive(Debug, Clone, Getters)]
 pub struct ExtendField {
 	tags: Option<TagList>,
 	name: Identifier,
-	value: UnevaluatedExpression,
+	value: Pointer,
 	tokens: ExtendFieldTokens,
 }
 
@@ -49,7 +51,7 @@ pub struct ExtendFieldTokens {
 
 #[derive(Debug, Clone, Getters)]
 pub struct ExtendAsClause {
-	as_type: UnevaluatedExpression,
+	as_type: Type,
 	tokens: ExtendAsClauseTokens,
 }
 
@@ -76,21 +78,19 @@ impl TryParse for Extend {
 		let compile_time_parameters = CompileTimeParameters::try_parse(tokens, context).ok();
 		if let Some(compile_time_parameters) = &compile_time_parameters {
 			for parameter in compile_time_parameters.parameters() {
-				if let Err(error) = context
-					.scope
-					.declare_new_variable_from_id(parameter.name(), parameter.as_declaration(context), extend_scope)
-				{
+				let declaration = parameter.as_declaration(context);
+				if let Err(error) = context.scope.declare_new_variable_from_id(parameter.name(), declaration, extend_scope) {
 					context.add_diagnostic(Diagnostic::at(parameter.name(), error));
 				};
 			}
 		}
 
-		let type_to_extend = UnevaluatedExpression::try_parse(tokens, context).or_exit_scope(context)?;
+		let type_to_extend = Type::try_parse(tokens, context).or_exit_scope(context)?;
 
 		let as_clause = if_then_some!(tokens.next_is(TokenType::KeywordAs), {
 			(
 				tokens.pop(TokenType::KeywordAs, context).or_exit_scope(context)?,
-				UnevaluatedExpression::try_parse(tokens, context).or_exit_scope(context)?,
+				Type::try_parse(tokens, context).or_exit_scope(context)?,
 			)
 		});
 
@@ -105,10 +105,7 @@ impl TryParse for Extend {
 
 			// value
 			let equal = tokens.pop(TokenType::Equal, context).or_exit_scope(context)?;
-			let mut value = UnevaluatedExpression::try_parse(tokens, context).or_exit_scope(context)?;
-			if let Some(tags) = &tags {
-				value.set_tags(tags.clone());
-			}
+			let value = Expression::try_parse(tokens, context).or_exit_scope(context)?;
 
 			let comma = tokens.pop(TokenType::Comma, context).ok();
 			let has_comma = comma.is_some();
@@ -136,6 +133,7 @@ impl TryParse for Extend {
 			}),
 			fields,
 			compile_time_parameters,
+			object: Object::new(Some(EvaluatedType::builtin("Extend", context)), HashMap::new(), keyword_extend.span.to(&right_brace.span)).store(context),
 			tokens: ExtendTokens {
 				keyword_extend,
 				left_brace,
@@ -154,19 +152,19 @@ impl TryParse for Extend {
 }
 
 impl Evaluate for Extend {
-	type Output = EvaluatedExtend;
+	type Output = Extend;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating expression");
 		let type_to_extend = self.type_to_extend.evaluate(context);
-		let as_clause = self.as_clause.map(|as_clause| EvaluatedExtendAsClause {
-			as_type: as_clause.as_type.evaluate(context),
+		let as_clause = self.as_clause.map(|as_clause| ExtendAsClause {
+			as_type: Type::Evaluated(as_clause.as_type.evaluate(context)),
 			tokens: as_clause.tokens,
 		});
 
 		let mut fields = Vec::new();
 		for field in self.fields {
-			fields.push(EvaluatedExtendField {
+			fields.push(ExtendField {
 				tags: field.tags.evaluate(context),
 				name: field.name,
 				value: field.value.evaluate(context),
@@ -177,8 +175,9 @@ impl Evaluate for Extend {
 		// Evaluate compile-time parameters
 		let compile_time_parameters = self.compile_time_parameters.evaluate(context);
 
-		EvaluatedExtend {
-			type_to_extend,
+		Extend {
+			object: self.object,
+			type_to_extend: Type::Evaluated(type_to_extend),
 			as_clause,
 			fields,
 			compile_time_parameters,
@@ -193,31 +192,8 @@ impl Spanned for Extend {
 	}
 }
 
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedExtend {
-	compile_time_parameters: Option<EvaluatedCompileTimeParameters>,
-	type_to_extend: Pointer<Evaluated>,
-	as_clause: Option<EvaluatedExtendAsClause>,
-	fields: Vec<EvaluatedExtendField>,
-	tokens: ExtendTokens,
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedExtendField {
-	tags: Option<EvaluatedTagList>,
-	name: Identifier,
-	value: Pointer<Evaluated>,
-	tokens: ExtendFieldTokens,
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedExtendAsClause {
-	as_type: Pointer<Evaluated>,
-	tokens: ExtendAsClauseTokens,
-}
-
-impl Spanned for EvaluatedExtend {
-	fn span(&self) -> impl SpanLike {
-		self.tokens().keyword_extend().span().to(self.tokens().right_brace().span())
+impl Dot for Extend {
+	fn dot(&self, context: &mut Context, name: &str) -> Option<Pointer> {
+		self.object.dot(context, name)
 	}
 }

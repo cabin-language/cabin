@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use derive_getters::Getters;
 // Required because of a bug in `try_as`
@@ -9,11 +9,8 @@ use crate::{
 	SpanLike,
 	Spanned,
 	api::context::Context,
-	ast::expressions::{UnevaluatedExpression, binary::BinaryExpression, object::Object},
-	comptime::{
-		Evaluate,
-		storage::{Evaluated, Pointer},
-	},
+	ast::expressions::{Expression, binary::BinaryOperation, function_call::FunctionCall, object::Object},
+	comptime::{Dot, Evaluate, storage::Pointer, types::EvaluatedType},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType, tokenize_string},
 	log,
@@ -25,6 +22,7 @@ use crate::{
 pub struct Text {
 	parts: Vec<StringPart>,
 	tokens: TextTokens,
+	object: Pointer,
 }
 
 #[derive(Debug, Clone, try_as::macros::TryAsRef)]
@@ -33,13 +31,13 @@ pub enum StringPart {
 	Literal(LiteralPart),
 
 	/// An interpolated expression string part.
-	Expression(UnevaluatedExpression),
+	Expression(Pointer),
 }
 
 #[derive(Debug, Clone, Getters)]
 pub struct LiteralPart {
-	span: Span,
-	value: String,
+	pub span: Span,
+	pub value: String,
 }
 
 #[derive(Debug, Clone, Getters)]
@@ -76,7 +74,7 @@ impl TryParse for Text {
 					}
 
 					let mut expr_tokens = tokenize_string(&context.file, &without_quotes.iter().collect::<String>(), span_start);
-					let expression = UnevaluatedExpression::try_parse(&mut expr_tokens, context)?;
+					let expression = Expression::try_parse(&mut expr_tokens, context)?;
 					let length = expression.span().length();
 					parts.push(StringPart::Expression(expression));
 					span_start += length;
@@ -106,29 +104,30 @@ impl TryParse for Text {
 		Ok(Text {
 			parts,
 			tokens: TextTokens { string: token },
+			object: Object::new(Some(EvaluatedType::builtin("Text", context)), HashMap::new(), Span::none()).store(context),
 		})
 	}
 }
 
 impl Evaluate for Text {
-	type Output = Pointer<Evaluated>;
+	type Output = Pointer;
 
 	fn evaluate(mut self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating text");
 
 		if self.parts.len() == 1 {
 			return match self.parts.remove(0) {
-				StringPart::Literal(literal) => Object::text(literal.value, context, literal.span).store(context).into(),
+				StringPart::Literal(literal) => Expression::from(Text::literal(literal, context)).store(context),
 				StringPart::Expression(expr) => expr.evaluate(context),
 			};
 		}
 
-		let mut parts = self.parts.into_iter().map(|part| part.into_expression());
-		let mut expression = parts.next().unwrap();
+		let mut parts = VecDeque::from(self.parts.into_iter().map(|part| part.evalute(context)).collect::<Vec<_>>());
+		let mut expression = parts.pop_front().unwrap();
 
 		for part in parts {
 			let token = Token::synthetic(TokenType::Plus, "+".to_owned(), part.span().owned());
-			expression = UnevaluatedExpression::Binary(Box::new(BinaryExpression::synthetic(expression, token, part)));
+			expression = FunctionCall::from_binary_expression(expression, BinaryOperation::Add, part, token, context).evaluate(context);
 		}
 
 		expression.evaluate(context)
@@ -148,21 +147,41 @@ impl ToCabin for Text {
 }
 
 impl Text {
-	pub fn literal(literal: LiteralPart) -> Text {
+	pub fn literal(literal: LiteralPart, context: &mut Context) -> Text {
 		Text {
+			object: Object::new(Some(EvaluatedType::builtin("Text", context)), HashMap::new(), Span::none()).store(context),
 			tokens: TextTokens {
 				string: Token::synthetic(TokenType::String, literal.value().to_owned(), literal.span().owned()),
 			},
 			parts: vec![StringPart::Literal(literal)],
 		}
 	}
+
+	pub fn is_fully_known(&self, context: &Context) -> bool {
+		self.parts.iter().all(|part| match part {
+			StringPart::Literal(_) => true,
+			StringPart::Expression(pointer) => pointer.is_fully_known(context),
+		})
+	}
+
+	pub fn as_literal(&self) -> Option<&String> {
+		if self.parts.len() != 1 {
+			return None;
+		}
+
+		let StringPart::Literal(literal) = self.parts.first().unwrap() else {
+			return None;
+		};
+
+		Some(&literal.value)
+	}
 }
 
 impl StringPart {
-	pub fn into_expression(self) -> UnevaluatedExpression {
+	pub fn evalute(self, context: &mut Context) -> Pointer {
 		match self {
-			StringPart::Expression(expression) => expression,
-			StringPart::Literal(literal) => UnevaluatedExpression::Text(Text::literal(literal)),
+			StringPart::Expression(expression) => expression.evaluate(context),
+			StringPart::Literal(literal) => Expression::from(Text::literal(literal, context)).store(context),
 		}
 	}
 }
@@ -179,5 +198,11 @@ impl ToCabin for StringPart {
 			StringPart::Literal(literal_part) => literal_part.to_cabin(),
 			StringPart::Expression(expression) => format!("{{{}}}", expression.to_cabin()),
 		}
+	}
+}
+
+impl Dot for Text {
+	fn dot(&self, context: &mut Context, name: &str) -> Option<Pointer> {
+		self.object.as_object(context).unwrap().clone().dot(context, name)
 	}
 }

@@ -10,14 +10,8 @@ use crate::{
 		context::Context,
 		scope::{ScopeRef, ScopeType},
 	},
-	ast::{
-		expressions::EvaluatedExpression,
-		statements::{EvaluatedStatement, Statement},
-	},
-	comptime::{
-		Evaluate,
-		storage::{Evaluated, Pointer},
-	},
+	ast::{expressions::Expression, statements::Statement},
+	comptime::{Evaluate, storage::Pointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 	log,
@@ -72,7 +66,7 @@ impl Block {
 }
 
 impl Evaluate for Block {
-	type Output = Pointer<Evaluated>;
+	type Output = Pointer;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating block");
@@ -84,7 +78,7 @@ impl Evaluate for Block {
 
 		for (index, statement) in self.statements.into_iter().enumerate() {
 			let evaluated_statement = statement.evaluate(context);
-			if let EvaluatedStatement::Tail(tail) = evaluated_statement {
+			if let Statement::Tail(tail) = evaluated_statement {
 				let tail_end = tail.span().end();
 				if index != count - 1 {
 					context.add_diagnostic(Diagnostic::at(
@@ -94,12 +88,12 @@ impl Evaluate for Block {
 				}
 
 				let value = tail.value();
-				if value.value(context).as_object().is_some() {
+				if value.as_object(context).is_some() {
 					scope_reverter.revert(context);
 					return value.to_owned();
 				}
 
-				statements.push(EvaluatedStatement::Tail(tail));
+				statements.push(Statement::Tail(tail));
 			} else {
 				statements.push(evaluated_statement);
 			};
@@ -107,13 +101,12 @@ impl Evaluate for Block {
 
 		scope_reverter.revert(context);
 
-		EvaluatedExpression::Block(EvaluatedBlock {
+		Expression::Block(Block {
 			statements,
 			inner_scope: self.inner_scope,
 			tokens: self.tokens,
 		})
 		.store(context)
-		.into()
 	}
 }
 
@@ -141,22 +134,5 @@ impl ToCabin for Block {
 
 		code += "}";
 		code
-	}
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedBlock {
-	/// The statements inside this block.
-	statements: Vec<EvaluatedStatement>,
-
-	/// The scope ID of the inside of this block.
-	inner_scope: ScopeRef,
-
-	tokens: BlockTokens,
-}
-
-impl Spanned for EvaluatedBlock {
-	fn span(&self) -> impl SpanLike {
-		self.tokens.left_brace().span().to(self.tokens.right_brace().span())
 	}
 }

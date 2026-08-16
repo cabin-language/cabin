@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::{
 	Context,
 	api::{config::Config, diagnostics::Diagnostics},
-	ast::misc::program::EvaluatedProgram,
+	ast::misc::program::Program,
 	comptime::Evaluate as _,
 	diagnostics::Diagnostic,
 };
@@ -31,7 +31,7 @@ pub struct Project {
 	root_directory: PathBuf,
 	config: Config,
 	context: Context,
-	program: Option<EvaluatedProgram>,
+	program: Option<Program>,
 	main_file_contents: String,
 }
 

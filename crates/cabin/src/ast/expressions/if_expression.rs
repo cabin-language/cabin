@@ -4,12 +4,8 @@ use crate::{
 	Context,
 	SpanLike,
 	Spanned,
-	ast::expressions::{EvaluatedExpression, Expression, UnevaluatedExpression, block::Block},
-	comptime::{
-		Check as _,
-		Evaluate,
-		storage::{Evaluated, Pointer},
-	},
+	ast::expressions::{Expression, block::Block},
+	comptime::{Check as _, Evaluate, storage::Pointer},
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -18,7 +14,7 @@ use crate::{
 
 #[derive(Debug, Clone, Getters)]
 pub struct IfExpression {
-	condition: Pointer<Expression>,
+	condition: Pointer,
 	body: Block,
 	otherwise_ifs: Vec<OtherwiseIf>,
 	otherwise: Option<Otherwise>,
@@ -32,7 +28,7 @@ pub struct IfTokens {
 
 #[derive(Debug, Clone, Getters)]
 pub struct OtherwiseIf {
-	condition: Pointer<Expression>,
+	condition: Pointer,
 	body: Block,
 	tokens: OtherwiseIfTokens,
 }
@@ -59,14 +55,14 @@ impl TryParse for IfExpression {
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		let keyword_if = tokens.pop(TokenType::KeywordIf, context)?;
-		let condition = UnevaluatedExpression::try_parse(tokens, context)?;
+		let condition = Expression::try_parse(tokens, context)?;
 		let body = Block::try_parse(tokens, context, ScopeType::If)?;
 
 		let mut otherwise_ifs = Vec::new();
 		while tokens.next_is(TokenType::KeywordOtherwise) && tokens.get(1).is_some_and(|t| t.token_type == TokenType::KeywordIf) {
 			let keyword_otherwise = tokens.pop(TokenType::KeywordOtherwise, context).unwrap();
 			let otherwise_keyword_if = tokens.pop(TokenType::KeywordIf, context).unwrap();
-			let otherwise_condition = UnevaluatedExpression::try_parse(tokens, context)?;
+			let otherwise_condition = Expression::try_parse(tokens, context)?;
 			let otherwise_body = Block::try_parse(tokens, context, ScopeType::OtherwiseIf)?;
 			otherwise_ifs.push(OtherwiseIf {
 				condition: otherwise_condition,
@@ -99,24 +95,8 @@ impl TryParse for IfExpression {
 	}
 }
 
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedIfExpression {
-	condition: Pointer<Evaluated>,
-	body: Block,
-	otherwise_ifs: Vec<EvaluatedOtherwiseIf>,
-	otherwise: Option<Otherwise>,
-	tokens: IfTokens,
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedOtherwiseIf {
-	condition: Pointer<Evaluated>,
-	body: Block,
-	tokens: OtherwiseIfTokens,
-}
-
 impl Evaluate for IfExpression {
-	type Output = Pointer<Evaluated>;
+	type Output = Pointer;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		// evaluate condition
@@ -147,7 +127,7 @@ impl Evaluate for IfExpression {
 				return otherwise_if.body.evaluate(context);
 			}
 
-			otherwise_ifs.push(EvaluatedOtherwiseIf {
+			otherwise_ifs.push(OtherwiseIf {
 				condition: otherwise_condition,
 				body: otherwise_if.body,
 				tokens: otherwise_if.tokens,
@@ -166,7 +146,7 @@ impl Evaluate for IfExpression {
 		};
 
 		// Non-literal: Return as an if-expression
-		EvaluatedExpression::If(EvaluatedIfExpression {
+		Expression::If(IfExpression {
 			condition,
 			body: self.body,
 			otherwise_ifs,
@@ -174,27 +154,10 @@ impl Evaluate for IfExpression {
 			tokens: self.tokens,
 		})
 		.store(context)
-		.into()
 	}
 }
 
 impl Spanned for IfExpression {
-	fn span(&self) -> impl SpanLike {
-		let start = self.tokens().keyword_if().span();
-
-		if let Some(otherwise) = &self.otherwise {
-			return start.to(otherwise.body.span());
-		}
-
-		if let Some(last_otherwise_if) = self.otherwise_ifs.last() {
-			return start.to(last_otherwise_if.body.span());
-		}
-
-		start.to(self.body.span())
-	}
-}
-
-impl Spanned for EvaluatedIfExpression {
 	fn span(&self) -> impl SpanLike {
 		let start = self.tokens().keyword_if().span();
 

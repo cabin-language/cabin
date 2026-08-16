@@ -5,10 +5,7 @@ use crate::{
 	Spanned,
 	api::context::Context,
 	ast::expressions::{Expression, identifier::Identifier},
-	comptime::{
-		Evaluate,
-		storage::{Evaluated, Pointer},
-	},
+	comptime::{Evaluate, storage::Pointer},
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -17,7 +14,7 @@ use crate::{
 #[derive(Debug, Clone, Getters)]
 pub struct TailStatement {
 	label: Identifier,
-	value: Pointer<Expression>,
+	value: Pointer,
 	tokens: TailStatementTokens,
 }
 
@@ -43,10 +40,10 @@ impl TryParse for TailStatement {
 }
 
 impl Evaluate for TailStatement {
-	type Output = EvaluatedTailStatement;
+	type Output = TailStatement;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
-		EvaluatedTailStatement {
+		TailStatement {
 			label: self.label,
 			value: self.value.evaluate(context),
 			tokens: self.tokens,
@@ -55,19 +52,6 @@ impl Evaluate for TailStatement {
 }
 
 impl Spanned for TailStatement {
-	fn span(&self) -> impl SpanLike {
-		self.label.span().to(self.value.span())
-	}
-}
-
-#[derive(Debug, Clone, Getters)]
-pub struct EvaluatedTailStatement {
-	label: Identifier,
-	value: Pointer<Evaluated>,
-	tokens: TailStatementTokens,
-}
-
-impl Spanned for EvaluatedTailStatement {
 	fn span(&self) -> impl SpanLike {
 		self.label.span().to(self.value.span())
 	}

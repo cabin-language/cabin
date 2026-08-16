@@ -8,17 +8,16 @@ use crate::{
 	STDLIB,
 	Spanned,
 	api::{diagnostics::Diagnostic, scope::ScopeTree},
-	ast::expressions::{UnevaluatedExpression, evaluated::EvaluatedExpression, extend::EvaluatedExtend, function_call::EvaluatedFunctionCall, identifier::Identifier},
+	ast::expressions::{Expression, extend::Extend, function_call::FunctionCall, identifier::Identifier},
 	comptime::{
 		Dot as _,
 		Evaluate as _,
-		storage::{EvaluatedRef, ExpressionRef, Storable, Storage},
+		storage::{Pointer, Storable, Storage},
 	},
-	definition::{EvaluatedVariableDeclaration, UnevaluatedVariableDeclaration},
+	definition::VariableDeclaration,
 	diagnostics::DiagnosticInfo,
 	log,
 	scope::ScopeRef,
-	traits::TryAs,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -88,7 +87,9 @@ pub struct Context {
 	pub name_query_result: Option<Identifier>,
 	pub name_query: Option<usize>,
 	pub debug_mode: DebugMode,
-	pub call_stack: Vec<EvaluatedFunctionCall>,
+	pub call_stack: Vec<FunctionCall>,
+
+	pub path: Vec<String>,
 }
 
 impl Default for Context {
@@ -133,6 +134,7 @@ impl Context {
 		let mut context = Context {
 			scope: ScopeTree::global(),
 			storage: Storage::empty(),
+			path: Vec::new(),
 			diagnostics: Diagnostics::empty(),
 			side_effects: true,
 			has_printed: false,
@@ -142,10 +144,11 @@ impl Context {
 			system_io: Box::new(io),
 			interactive: false,
 			call_stack: Vec::new(),
-			debug_mode: DebugMode::Full,
+			debug_mode: DebugMode::None,
 		};
 
 		// parse & evaluate standard library
+		log!(&context, "Parsing standard library");
 		let stdlib_ast = crate::parse_library(STDLIB, &mut context);
 		let stdlib_ast = stdlib_ast
 			.inspect_err(|_| {
@@ -169,17 +172,20 @@ impl Context {
 		import!(context, std::system::terminal::input);
 		import!(context, std::system::terminal);
 
-		import!(context, std::Optional::none);
-		import!(context, std::Optional::some);
+		// import!(context, std::Optional::none);
+		// import!(context, std::Optional::some);
 
 		import!(context, std::add_text as _);
 		import!(context, std::add_numbers as _);
 
 		// convert stdlib module into an object bring it into global scope under the name `builtin`
-		let stdlib_pointer = std.into_object(&context).store(&mut context);
+		let stdlib_pointer = std.into_object().store(&mut context);
 		context
 			.scope
-			.declare_new_variable(Identifier::create_virtual("builtin".to_owned(), &context), stdlib_pointer)
+			.declare_new_variable(
+				Identifier::create_virtual("builtin".to_owned(), &context),
+				VariableDeclaration::with_value(Identifier::create_virtual("builtin".to_owned(), &context), stdlib_pointer),
+			)
 			.unwrap();
 
 		// return context
@@ -195,6 +201,18 @@ impl Context {
 	/// The diagnostics in the user's code
 	pub const fn diagnostics(&self) -> &Diagnostics {
 		&self.diagnostics
+	}
+
+	pub fn add_to_path<S: AsRef<str>>(&mut self, path: S) {
+		self.path.push(path.as_ref().to_owned());
+	}
+
+	pub fn pop_from_path(&mut self) {
+		let _ = self.path.pop();
+	}
+
+	pub fn get_path(&self) -> String {
+		self.path.join("::")
 	}
 
 	pub const fn diagnostics_mut(&mut self) -> &mut Diagnostics {
@@ -239,59 +257,60 @@ impl Context {
 		self.system_io.read_line()
 	}
 
-	pub fn get_false(&mut self) -> ExpressionRef {
-		self.get_variable_in_scope("false", ScopeRef::global()).unwrap()
+	pub fn get_false(&mut self) -> Pointer {
+		self.get_builtin("false").unwrap()
 	}
 
-	pub fn get_true(&mut self) -> ExpressionRef {
-		self.get_variable_in_scope("true", ScopeRef::global()).unwrap()
+	pub fn get_true(&mut self) -> Pointer {
+		self.get_builtin("true").unwrap()
 	}
 
-	pub fn none(&mut self) -> ExpressionRef {
-		self.get_variable_in_scope("none", ScopeRef::global()).unwrap()
+	pub fn none(&mut self) -> Pointer {
+		self.get_builtin("none").unwrap()
 	}
 
-	pub fn none_expr(&self) -> UnevaluatedExpression {
-		UnevaluatedExpression::Identifier(Identifier::create_virtual("none".to_owned(), self))
+	pub fn none_expr(&self) -> Expression {
+		Expression::Identifier(Identifier::create_virtual("none".to_owned(), self))
 	}
 
-	pub fn any(&mut self) -> ExpressionRef {
-		self.get_variable_in_scope("Any", ScopeRef::global()).unwrap()
+	pub fn any(&mut self) -> Pointer {
+		self.get_builtin("Any").unwrap()
 	}
 
-	pub(crate) fn builtin(&mut self, name: &'static str) -> EvaluatedRef {
+	pub(crate) fn builtin(&self, name: &'static str) -> Pointer {
 		#[allow(clippy::panic, reason = "dev error")]
-		self.get_variable_in_scope(name, ScopeRef::stdlib()).unwrap_or_else(|| {
+		self.get_builtin(name).unwrap_or_else(|| {
 			dbg!(&self.diagnostics);
+			dbg!(&self.scope);
 			panic!("Could not find {name}");
 		})
 	}
 
-	pub fn extensions(&self) -> Vec<&EvaluatedExtend> {
+	pub fn extensions(&self) -> Vec<&Extend> {
 		self.scope
 			.available_variables_with_underscores()
 			.into_iter()
-			.filter_map(|value| match value.value(self) {
-				Storable::Expression(EvaluatedExpression::Extend(extend)) => Some(extend),
+			.filter_map(|value| match value.value().value(self) {
+				Storable::Expression(Expression::Extend(extend)) => Some(extend),
 				_ => None,
 			})
 			.collect()
 	}
 
-	pub fn extensions_for(&self, group: ExpressionRef) -> Vec<&EvaluatedExtend> {
-		self.extensions().into_iter().filter(|extension| *extension.type_to_extend() == group).collect()
+	pub fn extensions_for(&self, group: Pointer) -> Vec<&Pointer> {
+		todo!()
 	}
 
-	pub fn reassign_variable(&mut self, name: &Identifier, value: EvaluatedRef) {
+	pub fn reassign_variable(&mut self, name: &Identifier, value: Pointer) {
 		let Some(declaration) = self.get_variable_declaration_mut(name) else {
 			self.add_diagnostic_at(name, DiagnosticInfo::UnknownVariable(name.source_identifier().to_owned()));
 			return;
 		};
 
-		declaration.value = Some(value);
+		declaration.value = value;
 	}
 
-	pub fn get_variable_declaration_mut(&mut self, name: &Identifier) -> Option<&mut EvaluatedVariableDeclaration> {
+	pub fn get_variable_declaration_mut(&mut self, name: &Identifier) -> Option<&mut VariableDeclaration> {
 		let mut current_ref = Some(name.scope());
 
 		while let Some(current) = current_ref {
@@ -299,36 +318,54 @@ impl Context {
 
 			if let Some(declaration) = variable {
 				let evaluated = declaration.evaluate(self);
-				self.scope.current_mut().variables.insert(name.to_owned(), evaluated.into());
-				return Some(self.scope.current_mut().variables.get_mut(name).unwrap().try_mut().unwrap());
+				let _ = self.scope.get_scope_mut(current).variables.insert(name.to_owned(), evaluated);
+				return Some(self.scope.get_scope_mut(current).variables.get_mut(name).unwrap());
 			}
 
-			current_ref = self.scope.get_scope(current).parent.map(|parent| ScopeRef(parent));
+			current_ref = self.scope.get_scope(current).parent.map(ScopeRef);
 		}
 
 		None
 	}
 
-	pub fn get_variable_declaration(&mut self, name: &Identifier) -> Option<&EvaluatedVariableDeclaration> {
+	pub fn get_variable_declaration(&mut self, name: &Identifier) -> Option<&VariableDeclaration> {
 		let mut current_ref = Some(name.scope());
 
 		while let Some(current) = current_ref {
-			let variable = self.scope.get_scope_mut(current).variables.remove(name);
+			let variable = self.scope.get_scope_mut(current).variables.get(name);
 
 			if let Some(declaration) = variable {
-				let evaluated = declaration.evaluate(self);
-				self.scope.current_mut().variables.insert(name.to_owned(), evaluated.into());
-				return Some(self.scope.current_mut().variables.get_mut(name).unwrap().try_mut().unwrap());
+				let evaluated = declaration.clone().evaluate(self);
+				let _ = self.scope.get_scope_mut(current).variables.insert(name.to_owned(), evaluated);
+				return Some(self.scope.get_scope_mut(current).variables.get_mut(name).unwrap());
 			}
 
-			current_ref = self.scope.get_scope(current).parent.map(|parent| ScopeRef(parent));
+			current_ref = self.scope.get_scope(current).parent.map(ScopeRef);
 		}
 
 		None
 	}
 
-	pub fn get_variable(&mut self, name: &Identifier) -> Option<EvaluatedRef> {
-		self.get_variable_declaration(name).map(|declaration| declaration.value().to_owned()).flatten()
+	pub fn get_unevaluated_variable_declaration(&self, name: &Identifier) -> Option<&VariableDeclaration> {
+		let mut current_ref = Some(name.scope());
+
+		while let Some(current) = current_ref {
+			if let Some(variable) = self.scope.get_scope(current).variables.get(name) {
+				return Some(variable);
+			}
+
+			current_ref = self.scope.get_scope(current).parent.map(ScopeRef);
+		}
+
+		None
+	}
+
+	pub fn get_variable(&mut self, name: &Identifier) -> Option<Pointer> {
+		self.get_variable_declaration(name).map(|declaration| declaration.value().to_owned())
+	}
+
+	pub fn get_unevaluated_variable(&self, name: &Identifier) -> Option<Pointer> {
+		self.get_unevaluated_variable_declaration(name).map(|declaration| declaration.value().to_owned())
 	}
 
 	pub fn variable_exists(&self, name: &Identifier) -> bool {
@@ -341,13 +378,13 @@ impl Context {
 				return true;
 			}
 
-			current_ref = self.scope.get_scope(current).parent.map(|parent| ScopeRef(parent));
+			current_ref = self.scope.get_scope(current).parent.map(ScopeRef);
 		}
 
 		false
 	}
 
-	pub fn declare_new_variable(&mut self, declaration: UnevaluatedVariableDeclaration) {
+	pub fn declare_new_variable(&mut self, declaration: VariableDeclaration) {
 		if self.variable_exists(declaration.name()) {
 			self.add_diagnostic_at(declaration.name(), DiagnosticInfo::DuplicateVariableDeclaration {
 				name: declaration.name().source_identifier().to_owned(),
@@ -357,15 +394,15 @@ impl Context {
 		let scope = self.scope.get_scope_mut(declaration.name().scope());
 
 		if declaration.name().source_identifier() == "_" {
-			scope.underscores.push(declaration.into());
+			scope.underscores.push(declaration);
 			return;
 		}
 
-		scope.variables.insert(declaration.name().to_owned(), declaration.into());
+		let _ = scope.variables.insert(declaration.name().to_owned(), declaration);
 	}
 
-	pub fn get_builtin(&mut self, name: &str) -> Option<EvaluatedRef> {
-		self.get_variable(&Identifier::create_virtual_in_scope(name.to_owned(), ScopeRef::stdlib()))
+	pub fn get_builtin(&self, name: &str) -> Option<Pointer> {
+		self.get_unevaluated_variable(&Identifier::create_virtual_in_scope(name.to_owned(), ScopeRef::stdlib()))
 	}
 }
 

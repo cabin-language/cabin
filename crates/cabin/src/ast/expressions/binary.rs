@@ -7,7 +7,7 @@ use crate::{
 	Spanned,
 	api::context::Context,
 	ast::expressions::{
-		UnevaluatedExpression,
+		Expression,
 		action::Action,
 		block::Block,
 		either::Either,
@@ -21,12 +21,10 @@ use crate::{
 		new::NewExpression,
 		number::Number,
 		parenthesized::ParenthesizedExpression,
+		run::Runtime,
 		string::Text,
 	},
-	comptime::{
-		Evaluate,
-		storage::{EvaluatedRef, ExpressionRef},
-	},
+	comptime::{Evaluate, storage::Pointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	lexer::{Token, TokenType},
 	log,
@@ -37,9 +35,9 @@ use crate::{
 
 #[derive(Clone, Debug, Getters)]
 pub struct BinaryExpression {
-	left: ExpressionRef,
+	left: Pointer,
 	operation: BinaryOperation,
-	right: ExpressionRef,
+	right: Pointer,
 	tokens: BinaryExpressionTokens,
 }
 
@@ -49,7 +47,7 @@ pub struct BinaryExpressionTokens {
 }
 
 impl TryParse for BinaryExpression {
-	type Output = ExpressionRef;
+	type Output = Pointer;
 
 	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		BinaryOperation::Or.parse(tokens, context)
@@ -57,7 +55,7 @@ impl TryParse for BinaryExpression {
 }
 
 impl Evaluate for BinaryExpression {
-	type Output = EvaluatedRef;
+	type Output = Pointer;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating binary expression");
@@ -79,7 +77,7 @@ impl ToCabin for BinaryExpression {
 }
 
 impl BinaryExpression {
-	pub const fn synthetic(left: ExpressionRef, operator: Token, right: ExpressionRef) -> BinaryExpression {
+	pub const fn synthetic(left: Pointer, operator: Token, right: Pointer) -> BinaryExpression {
 		BinaryExpression {
 			left,
 			right,
@@ -92,23 +90,23 @@ impl BinaryExpression {
 pub struct PrimaryExpression;
 
 impl TryParse for PrimaryExpression {
-	type Output = ExpressionRef;
+	type Output = Pointer;
 
 	fn try_parse(tokens: &mut VecDeque<Token>, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		Ok(match tokens.peek_type(context)? {
-			TokenType::LeftParenthesis => Box::new(ParenthesizedExpression::try_parse(tokens, context)?).into(),
-			TokenType::KeywordAction => Box::new(Action::try_parse(tokens, context)?).into(),
-			TokenType::LeftBrace => Block::try_parse(tokens, context, ScopeType::Block)?.into(),
-			TokenType::Identifier => Identifier::try_parse(tokens, context)?.into(),
-			TokenType::KeywordNew => NewExpression::try_parse(tokens, context)?.into(),
-			TokenType::KeywordGroup => Group::try_parse(tokens, context)?.into(),
-			TokenType::KeywordEither => Either::try_parse(tokens, context)?.into(),
-			TokenType::KeywordIf => Box::new(IfExpression::try_parse(tokens, context)?).into(),
-			TokenType::KeywordForEach => Box::new(ForLoop::try_parse(tokens, context)?).into(),
-			TokenType::KeywordExtend => Box::new(Extend::try_parse(tokens, context)?).into(),
-			TokenType::String => Text::try_parse(tokens, context)?.into(),
-			TokenType::Number => Number::try_parse(tokens, context)?.into(),
-			TokenType::LeftBracket => List::try_parse(tokens, context)?.into(),
+			TokenType::LeftParenthesis => Expression::from(ParenthesizedExpression::try_parse(tokens, context)?).store(context),
+			TokenType::KeywordAction => Expression::from(Action::try_parse(tokens, context)?).store(context),
+			TokenType::LeftBrace => Expression::from(Block::try_parse(tokens, context, ScopeType::Block)?).store(context),
+			TokenType::Identifier => Expression::from(Identifier::try_parse(tokens, context)?).store(context),
+			TokenType::KeywordNew => Expression::from(NewExpression::try_parse(tokens, context)?).store(context),
+			TokenType::KeywordGroup => Expression::from(Group::try_parse(tokens, context)?).store(context),
+			TokenType::KeywordEither => Expression::from(Either::try_parse(tokens, context)?).store(context),
+			TokenType::KeywordIf => Expression::from(IfExpression::try_parse(tokens, context)?).store(context),
+			TokenType::KeywordForEach => Expression::from(ForLoop::try_parse(tokens, context)?).store(context),
+			TokenType::KeywordExtend => Expression::from(Extend::try_parse(tokens, context)?).store(context),
+			TokenType::String => Expression::from(Text::try_parse(tokens, context)?).store(context),
+			TokenType::Number => Expression::from(Number::try_parse(tokens, context)?).store(context),
+			TokenType::LeftBracket => Expression::from(List::try_parse(tokens, context)?).store(context),
 
 			// bad :<
 			token_type => {
@@ -171,7 +169,7 @@ impl BinaryOperation {
 		}
 	}
 
-	fn parse_precedent(self, tokens: &mut TokenQueue, context: &mut Context) -> Result<ExpressionRef, Diagnostic> {
+	fn parse_precedent(self, tokens: &mut TokenQueue, context: &mut Context) -> Result<Pointer, Diagnostic> {
 		if let Some(precedent) = self.precedent() {
 			precedent.parse(tokens, context)
 		} else {
@@ -179,18 +177,19 @@ impl BinaryOperation {
 		}
 	}
 
-	fn parse(self, tokens: &mut TokenQueue, context: &mut Context) -> Result<ExpressionRef, Diagnostic> {
+	fn parse(self, tokens: &mut TokenQueue, context: &mut Context) -> Result<Pointer, Diagnostic> {
 		let mut expression = self.parse_precedent(tokens, context)?;
 
 		while tokens.next_is_one_of(self.token_types()) {
 			let operator = tokens.pop(tokens.peek_type(context)?, context)?;
 			let right = self.parse_precedent(tokens, context)?;
-			expression = UnevaluatedExpression::Binary(Box::new(BinaryExpression {
+			expression = Expression::Binary(BinaryExpression {
 				left: expression,
 				operation: BinaryOperation::from_token_type(operator.token_type).unwrap(),
 				right,
 				tokens: BinaryExpressionTokens { operator },
-			}));
+			})
+			.store(context);
 		}
 
 		Ok(expression)
@@ -251,5 +250,16 @@ impl ToCabin for BinaryOperation {
 			BinaryOperation::And => "and",
 		}
 		.to_owned()
+	}
+}
+
+impl Runtime for BinaryExpression {
+	fn evaluate_subexpressions(self, context: &mut Context) -> Self {
+		Self {
+			left: self.left.evaluate(context),
+			operation: self.operation,
+			right: self.right.evaluate(context),
+			tokens: self.tokens,
+		}
 	}
 }

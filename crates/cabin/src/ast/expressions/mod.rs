@@ -18,7 +18,6 @@ use crate::{
 			block::Block,
 			either::Either,
 			error::ErrorExpression,
-			evaluated::EvaluatedExpression,
 			extend::Extend,
 			field_access::FieldAccess,
 			foreach::ForLoop,
@@ -30,16 +29,13 @@ use crate::{
 			new::NewExpression,
 			number::Number,
 			parenthesized::ParenthesizedExpression,
-			run::{RunExpression, Runtimeable},
+			run::{RunExpression, Runtime},
 			string::Text,
 			unary::UnaryExpression,
 		},
 		misc::tag::TagList,
 	},
-	comptime::{
-		Evaluate,
-		storage::{EvaluatedRef, ExpressionRef, Storable, StorageRef},
-	},
+	comptime::{Evaluate, storage::Pointer},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	log,
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
@@ -51,7 +47,6 @@ pub mod binary;
 pub mod block;
 pub mod either;
 pub mod error;
-pub mod evaluated;
 pub mod extend;
 pub mod field_access;
 pub mod foreach;
@@ -70,33 +65,33 @@ pub mod unary;
 pub mod while_loop;
 
 #[derive(Debug, Clone, From, try_as::macros::TryInto, TryAsRef, TryAsMut)]
-pub enum UnevaluatedExpression {
+pub enum Expression {
 	Number(Number),
 	Text(Text),
 	Identifier(Identifier),
 	List(List),
 
-	Action(Box<Action>),
+	Action(Action),
 	Group(Group),
 	Either(Either),
 	New(NewExpression),
-	Extend(Box<Extend>),
+	Extend(Extend),
 
 	Block(Block),
-	FieldAccess(Box<FieldAccess>),
-	FunctionCall(Box<FunctionCall>),
-	If(Box<IfExpression>),
-	Binary(Box<BinaryExpression>),
-	ForEachLoop(Box<ForLoop>),
-	Run(Box<RunExpression>),
-	Unary(Box<UnaryExpression>),
+	FieldAccess(FieldAccess),
+	FunctionCall(FunctionCall),
+	If(IfExpression),
+	Binary(BinaryExpression),
+	ForEachLoop(ForLoop),
+	Run(RunExpression),
+	Unary(UnaryExpression),
 
-	Parenthesized(Box<ParenthesizedExpression>),
+	Parenthesized(ParenthesizedExpression),
 	ErrorExpression(ErrorExpression),
 }
 
-impl TryParse for UnevaluatedExpression {
-	type Output = ExpressionRef;
+impl TryParse for Expression {
+	type Output = Pointer;
 
 	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
 		log!(context, "Parsing expression");
@@ -109,7 +104,7 @@ impl TryParse for UnevaluatedExpression {
 				let mut error_tokens = Vec::new();
 				if let Ok(token_type) = tokens.peek_type(context) {
 					error_tokens.push(tokens.pop(token_type, context).unwrap());
-					Ok(UnevaluatedExpression::ErrorExpression(ErrorExpression::new(error_tokens)).store(context))
+					Ok(Expression::ErrorExpression(ErrorExpression::new(error_tokens)).store(context))
 				} else {
 					Err(Diagnostic::at(&Span::eof(&context.file), DiagnosticInfo::UnexpectedGenericEOF))
 				}
@@ -118,53 +113,50 @@ impl TryParse for UnevaluatedExpression {
 	}
 }
 
-impl Evaluate for UnevaluatedExpression {
-	type Output = EvaluatedRef;
+impl Evaluate for Expression {
+	type Output = Pointer;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating expression");
 		match self {
 			Self::Block(block) => block.evaluate(context),
-			Self::Action(action) => EvaluatedExpression::Action(action.evaluate(context)).store(context),
-			Self::Group(group) => EvaluatedExpression::Group(group.evaluate(context)).store(context),
-			Self::Either(either) => EvaluatedExpression::Either(either.evaluate(context)).store(context),
-			Self::Number(number) => EvaluatedExpression::Number(number).store(context),
+			Self::Action(action) => Expression::from(action.evaluate(context)).store(context),
+			Self::Group(group) => Expression::from(group.evaluate(context)).store(context),
+			Self::Either(either) => Expression::from(either.evaluate(context)).store(context),
+			Self::Number(number) => Expression::from(number).store(context),
 			Self::Text(text) => text.evaluate(context),
 			Self::FieldAccess(field_access) => field_access.evaluate(context),
 			Self::FunctionCall(function_call) => function_call.evaluate(context),
 			Self::If(if_expression) => if_expression.evaluate(context),
 			Self::Identifier(name) => name.evaluate(context),
-			Self::New(new) => new.evaluate(context),
+			Self::New(new) => Expression::from(new.evaluate(context)).store(context),
 			Self::ForEachLoop(for_loop) => for_loop.evaluate(context),
-			Self::Extend(extend) => EvaluatedExpression::Extend(extend.evaluate(context)).store(context),
-			Self::Run(run_expression) => EvaluatedExpression::Run(Box::new(run_expression.evaluate(context))).store(context),
+			Self::Extend(extend) => Expression::from(extend.evaluate(context)).store(context),
+			Self::Run(run_expression) => Expression::from(run_expression.evaluate(context)).store(context),
 			Self::Binary(binary_expression) => binary_expression.evaluate(context),
-			Self::Parenthesized(parenthesized_expression) => EvaluatedExpression::Parenthesized(parenthesized_expression.evaluate(context)).store(context),
-			Self::Unary(unary_expression) => unary_expression.evaluate(context),
-			Self::ErrorExpression(error) => EvaluatedExpression::ErrorExpression(error).store(context),
-			Self::List(list) => EvaluatedExpression::List(list.evaluate(context)).store(context),
+			Self::Parenthesized(parenthesized_expression) => Expression::from(parenthesized_expression.evaluate(context)).store(context),
+			Self::ErrorExpression(error) => Expression::from(error).store(context),
+			Self::List(list) => Expression::from(list.evaluate(context)).store(context),
+			Self::Unary(_) => todo!(),
 		}
 	}
 }
 
-impl Runtimeable for UnevaluatedExpression {
-	type Output = EvaluatedExpression;
-
-	fn evaluate_subexpressions(self, context: &mut Context) -> EvaluatedExpression {
+impl Runtime for Expression {
+	fn evaluate_subexpressions(self, context: &mut Context) -> Self {
 		match self {
-			Self::FunctionCall(function_call) => EvaluatedExpression::FunctionCall(function_call.evaluate_subexpressions(context)),
+			Self::FunctionCall(function_call) => Expression::FunctionCall(function_call.evaluate_subexpressions(context)),
+			Self::Binary(binary) => Expression::Binary(binary.evaluate_subexpressions(context)),
 			_ => {
 				context.add_diagnostic(Diagnostic::at(&self, DiagnosticInfo::RunLiteral));
-
-				// erm.....
-				self.evaluate(context).value(context).as_expression().unwrap().clone()
+				self
 			},
 		}
 	}
 }
 
-impl UnevaluatedExpression {
-	pub fn store(self, context: &mut Context) -> ExpressionRef {
+impl Expression {
+	pub fn store(self, context: &mut Context) -> Pointer {
 		context.storage.store(self)
 	}
 
@@ -175,142 +167,90 @@ impl UnevaluatedExpression {
 		}
 	}
 
+	pub fn is_fully_known(&self, context: &Context) -> bool {
+		match self {
+			Expression::Number(_) => true,
+			Expression::Group(group) => group.is_fully_known(context),
+			Expression::Text(text) => text.is_fully_known(context),
+			_ => false,
+		}
+	}
+
 	pub const fn kind_name(&self) -> &'static str {
 		match self {
-			UnevaluatedExpression::Block(_) => "block",
-			UnevaluatedExpression::Action(_) => "action",
-			UnevaluatedExpression::Extend(_) => "extension",
-			UnevaluatedExpression::FieldAccess(_) => "field access",
-			UnevaluatedExpression::If(_) => "if expression",
-			UnevaluatedExpression::Identifier(_) => "name",
-			UnevaluatedExpression::New(_) => "object constructor",
-			UnevaluatedExpression::Run(_) => "run expression",
-			UnevaluatedExpression::List(_) => "list",
-			UnevaluatedExpression::Group(_) => "group",
-			UnevaluatedExpression::Either(_) => "either",
-			UnevaluatedExpression::FunctionCall(_) => "action call",
-			UnevaluatedExpression::Number(_) => "number",
-			UnevaluatedExpression::ForEachLoop(_) => "for loop",
-			UnevaluatedExpression::ErrorExpression(_) => "error",
-			UnevaluatedExpression::Parenthesized(_) => "parenthesized expression",
-			UnevaluatedExpression::Text(_) => "text",
-			UnevaluatedExpression::Binary(_) => "binary expression",
-			UnevaluatedExpression::Unary(_) => "unary expression",
+			Expression::Block(_) => "block",
+			Expression::Action(_) => "action",
+			Expression::Extend(_) => "extension",
+			Expression::FieldAccess(_) => "field access",
+			Expression::If(_) => "if expression",
+			Expression::Identifier(_) => "name",
+			Expression::New(_) => "object constructor",
+			Expression::Run(_) => "run expression",
+			Expression::List(_) => "list",
+			Expression::Group(_) => "group",
+			Expression::Either(_) => "either",
+			Expression::FunctionCall(_) => "action call",
+			Expression::Number(_) => "number",
+			Expression::ForEachLoop(_) => "for loop",
+			Expression::ErrorExpression(_) => "error",
+			Expression::Parenthesized(_) => "parenthesized expression",
+			Expression::Text(_) => "text",
+			Expression::Binary(_) => "binary expression",
+			Expression::Unary(_) => "unary expression",
 		}
 	}
 }
 
-impl ToCabin for UnevaluatedExpression {
+impl ToCabin for Expression {
 	fn to_cabin(&self) -> String {
 		match self {
-			UnevaluatedExpression::Action(action) => action.to_cabin(),
-			UnevaluatedExpression::Block(block) => block.to_cabin(),
-			UnevaluatedExpression::Identifier(identifier) => identifier.to_cabin(),
-			UnevaluatedExpression::Run(run_expression) => run_expression.to_cabin(),
-			UnevaluatedExpression::List(list) => list.to_cabin(),
-			UnevaluatedExpression::Number(number) => number.to_cabin(),
-			UnevaluatedExpression::Text(text) => text.to_cabin(),
-			UnevaluatedExpression::Binary(binary_expression) => binary_expression.to_cabin(),
-			UnevaluatedExpression::Parenthesized(parenthesized_expression) => parenthesized_expression.to_cabin(),
-			UnevaluatedExpression::Either(either) => either.to_cabin(),
-			UnevaluatedExpression::ForEachLoop(for_loop) => for_loop.to_cabin(),
-			UnevaluatedExpression::New(new_expression) => new_expression.to_cabin(),
+			Expression::Action(action) => action.to_cabin(),
+			Expression::Block(block) => block.to_cabin(),
+			Expression::Identifier(identifier) => identifier.to_cabin(),
+			Expression::Run(run_expression) => run_expression.to_cabin(),
+			Expression::List(list) => list.to_cabin(),
+			Expression::Number(number) => number.to_cabin(),
+			Expression::Text(text) => text.to_cabin(),
+			Expression::Binary(binary_expression) => binary_expression.to_cabin(),
+			Expression::Parenthesized(parenthesized_expression) => parenthesized_expression.to_cabin(),
+			Expression::Either(either) => either.to_cabin(),
+			Expression::ForEachLoop(for_loop) => for_loop.to_cabin(),
+			Expression::New(new_expression) => new_expression.to_cabin(),
 
-			UnevaluatedExpression::FieldAccess(field_access) => todo!(),
-			UnevaluatedExpression::FunctionCall(function_call) => todo!(),
-			UnevaluatedExpression::Group(group) => todo!(),
-			UnevaluatedExpression::If(if_expression) => todo!(),
-			UnevaluatedExpression::Unary(unary_expression) => todo!(),
-			UnevaluatedExpression::Extend(extend) => todo!(),
+			Expression::FieldAccess(field_access) => todo!(),
+			Expression::FunctionCall(function_call) => todo!(),
+			Expression::Group(group) => todo!(),
+			Expression::If(if_expression) => todo!(),
+			Expression::Unary(unary_expression) => todo!(),
+			Expression::Extend(extend) => todo!(),
 
-			UnevaluatedExpression::ErrorExpression(error_expression) => todo!(),
+			Expression::ErrorExpression(error_expression) => todo!(),
 		}
 	}
-}
-
-impl Spanned for UnevaluatedExpression {
-	fn span(&self) -> impl SpanLike {
-		match self {
-			UnevaluatedExpression::Identifier(name) => name.span().owned(),
-			UnevaluatedExpression::Run(run_expression) => run_expression.span().owned(),
-			UnevaluatedExpression::Block(block) => block.span().owned(),
-			UnevaluatedExpression::New(object_constructor) => object_constructor.span().owned(),
-			UnevaluatedExpression::FunctionCall(function_call) => function_call.span().owned(),
-			UnevaluatedExpression::If(if_expression) => if_expression.span().owned(),
-			UnevaluatedExpression::FieldAccess(field_access) => field_access.span().owned(),
-			UnevaluatedExpression::ForEachLoop(for_each_loop) => for_each_loop.span().owned(),
-			UnevaluatedExpression::Unary(unary) => unary.span().owned(),
-			UnevaluatedExpression::List(list) => list.span().owned(),
-			UnevaluatedExpression::Group(group) => group.span().owned(),
-			UnevaluatedExpression::Either(either) => either.span().owned(),
-			UnevaluatedExpression::Binary(binary_expression) => binary_expression.span().owned(),
-			UnevaluatedExpression::Number(number) => number.span().owned(),
-			UnevaluatedExpression::Text(text) => text.span().owned(),
-			UnevaluatedExpression::Action(action) => action.span().owned(),
-			UnevaluatedExpression::Extend(extend) => extend.span().owned(),
-			UnevaluatedExpression::Parenthesized(parenthesized_expression) => parenthesized_expression.span().owned(),
-			UnevaluatedExpression::ErrorExpression(error_expression) => error_expression.span().owned(),
-		}
-	}
-}
-
-#[derive(Debug, Clone, TryAsRef, TryAsMut, From)]
-pub enum Expression {
-	Unevaluated(UnevaluatedExpression),
-	Evaluated(EvaluatedExpression),
 }
 
 impl Spanned for Expression {
 	fn span(&self) -> impl SpanLike {
 		match self {
-			Expression::Unevaluated(unevaluated_expression) => unevaluated_expression.span().owned(),
-			Expression::Evaluated(evaluated_expression) => evaluated_expression.span().owned(),
-		}
-	}
-}
-
-impl TryParse for Expression {
-	type Output = ExpressionRef;
-
-	fn try_parse(tokens: &mut TokenQueue, context: &mut Context) -> Result<Self::Output, Diagnostic> {
-		UnevaluatedExpression::try_parse(tokens, context).map(|expr| Expression::Unevaluated(expr).store(context))
-	}
-}
-
-impl Expression {
-	pub fn is_fully_known(&self) -> bool {
-		self.as_evaluated().is_some_and(|expression| expression.is_fully_known())
-	}
-
-	fn store(self, context: &mut Context) -> ExpressionRef {
-		context.storage.store(self)
-	}
-
-	pub fn as_evaluated(&self) -> Option<&EvaluatedExpression> {
-		match self {
-			Expression::Evaluated(evaluated) => Some(evaluated),
-			Expression::Unevaluated(_) => None,
-		}
-	}
-
-	pub fn as_unevaluated(&self) -> Option<&UnevaluatedExpression> {
-		match self {
-			Expression::Unevaluated(expression) => Some(expression),
-			Expression::Evaluated(_) => None,
-		}
-	}
-
-	pub fn as_unevaluated_mut(&mut self) -> Option<&mut UnevaluatedExpression> {
-		match self {
-			Expression::Unevaluated(expression) => Some(expression),
-			Expression::Evaluated(_) => None,
-		}
-	}
-
-	pub fn as_evaluated_mut(&mut self) -> Option<&mut EvaluatedExpression> {
-		match self {
-			Expression::Evaluated(evaluated) => Some(evaluated),
-			Expression::Unevaluated(_) => None,
+			Expression::Identifier(name) => name.span().owned(),
+			Expression::Run(run_expression) => run_expression.span().owned(),
+			Expression::Block(block) => block.span().owned(),
+			Expression::New(object_constructor) => object_constructor.span().owned(),
+			Expression::FunctionCall(function_call) => function_call.span().owned(),
+			Expression::If(if_expression) => if_expression.span().owned(),
+			Expression::FieldAccess(field_access) => field_access.span().owned(),
+			Expression::ForEachLoop(for_each_loop) => for_each_loop.span().owned(),
+			Expression::Unary(unary) => unary.span().owned(),
+			Expression::List(list) => list.span().owned(),
+			Expression::Group(group) => group.span().owned(),
+			Expression::Either(either) => either.span().owned(),
+			Expression::Binary(binary_expression) => binary_expression.span().owned(),
+			Expression::Number(number) => number.span().owned(),
+			Expression::Text(text) => text.span().owned(),
+			Expression::Action(action) => action.span().owned(),
+			Expression::Extend(extend) => extend.span().owned(),
+			Expression::Parenthesized(parenthesized_expression) => parenthesized_expression.span().owned(),
+			Expression::ErrorExpression(error_expression) => error_expression.span().owned(),
 		}
 	}
 }
