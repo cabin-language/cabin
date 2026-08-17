@@ -129,7 +129,7 @@ impl Evaluate for Expression {
 			Self::FunctionCall(function_call) => function_call.evaluate(context),
 			Self::If(if_expression) => if_expression.evaluate(context),
 			Self::Identifier(name) => name.evaluate(context),
-			Self::New(new) => Expression::from(new.evaluate(context)).store(context),
+			Self::New(new) => new.evaluate(context),
 			Self::ForEachLoop(for_loop) => for_loop.evaluate(context),
 			Self::Extend(extend) => Expression::from(extend.evaluate(context)).store(context),
 			Self::Run(run_expression) => Expression::from(run_expression.evaluate(context)).store(context),
@@ -158,13 +158,6 @@ impl Runtime for Expression {
 impl Expression {
 	pub fn store(self, context: &mut Context) -> Pointer {
 		context.storage.store(self)
-	}
-
-	pub fn set_tags(&mut self, tags: TagList) {
-		match self {
-			Self::Action(action) => action.tags = Some(tags),
-			_ => {},
-		}
 	}
 
 	pub fn is_fully_known(&self, context: &Context) -> bool {

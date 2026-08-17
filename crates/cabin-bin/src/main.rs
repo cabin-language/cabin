@@ -25,6 +25,7 @@ pub fn wrap(mut text: &str, max_line_length: usize) -> String {
 		let splindex = if text.len() <= max_line_length {
 			text.len()
 		} else {
+			println!("{}", text);
 			max_line_length - text[..max_line_length].chars().rev().position(|c| c == ' ').unwrap()
 		};
 		result.push(text.get(0..splindex).unwrap());

@@ -50,7 +50,7 @@ impl Evaluate for WhileLoop {
 			// loop can be run at compile-time
 			if condition.is_fully_known(context) {
 				// loop is done
-				if condition == context.get_false() {
+				if condition.equals(&context.get_false(), context) {
 					return context.none();
 				}
 			}

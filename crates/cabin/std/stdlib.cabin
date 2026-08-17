@@ -90,7 +90,8 @@ let visible builtin = action<name: Text> {
 	return is new Builtin { internal_name = name };
 };
 
-let visible add_text = extend Text as Addable {
+#[default]
+let _ = extend Text as Addable {
 	#[builtin<"Text.plus">]
 	plus = action(this: This, other: This): This,
 };
@@ -107,7 +108,7 @@ let visible List = group<T: Any> {
 	visible set = action(this: This, index: Number, value: T),
 
 	#[builtin<"List.length">]
-	visible length = action(this: This, index: Number, value: T),
+	visible length = action(this: This): Number,
 
 	#[builtin<"List.remove_at">]
 	visible remove_at = action(this: This, index: Number),
@@ -186,3 +187,5 @@ let visible ordereds_are_comparable = extend Ordered as Comparable {
 		return is this.compared_to(other) == Ordering.equal;
 	}
 };
+
+let visible none = new Object {};

@@ -88,7 +88,7 @@ impl Evaluate for Block {
 				}
 
 				let value = tail.value();
-				if value.as_object(context).is_some() {
+				if value.is_fully_known(context) {
 					scope_reverter.revert(context);
 					return value.to_owned();
 				}

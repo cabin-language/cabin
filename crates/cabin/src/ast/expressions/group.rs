@@ -14,7 +14,7 @@ use crate::{
 	comptime::{
 		Dot,
 		Evaluate,
-		storage::Pointer,
+		storage::{Pointer, Storable},
 		types::{EvaluatedType, Type},
 	},
 	diagnostics::{Diagnostic, DiagnosticInfo},
@@ -96,16 +96,17 @@ impl TryParse for Group {
 			let name = Identifier::try_parse(tokens, context).inspect_err(|_err| {
 				context.scope.exit_scope(group_scope).unwrap();
 			})?;
+			context.add_to_path(name.source_text());
 
-			if !name.source_identifier().is_case(Case::Snake) {
+			if !name.source_text().is_case(Case::Snake) {
 				context.add_diagnostic_at(&name, DiagnosticInfo::NonSnakeCaseName {
-					original_name: name.source_identifier().to_owned(),
+					original_name: name.source_text().to_owned(),
 				});
 			}
 
 			// check for duplicate fields
 			if fields.iter().any(|field: &GroupField| field.name == name) {
-				context.add_diagnostic_at(&name, DiagnosticInfo::DuplicateGroupField(name.source_identifier().to_owned()));
+				context.add_diagnostic_at(&name, DiagnosticInfo::DuplicateGroupField(name.source_text().to_owned()));
 			}
 
 			// field type
@@ -130,6 +131,13 @@ impl TryParse for Group {
 			})
 			.unzip();
 
+			if let Some(tags) = &tags
+				&& let Some(value) = &value
+				&& let Storable::Expression(Expression::Action(action)) = value.value_mut(context)
+			{
+				action.tags = Some(tags.to_owned());
+			}
+
 			// comma
 			let comma = tokens.pop(TokenType::Comma, context).ok();
 			let has_comma = comma.is_some();
@@ -142,6 +150,8 @@ impl TryParse for Group {
 				field_type,
 				tokens: GroupFieldTokens { colon, equals, comma, visible },
 			});
+
+			context.pop_from_path();
 
 			if !has_comma {
 				break;
@@ -175,15 +185,14 @@ impl Evaluate for Group {
 		}
 
 		log!(context, "Evaluating group");
-		let span = self.span().owned();
 		let mut fields = Vec::new();
 
 		for field in self.fields {
-			log!(context, "Evaluating group field \"{}\"", field.name.source_identifier());
+			log!(context, "Evaluating group field \"{}\"", field.name.source_text());
 			let tags = field.tags.evaluate(context);
-			log!(context, "Evaluating group field \"{}\" value", field.name.source_identifier());
+			log!(context, "Evaluating group field \"{}\" value", field.name.source_text());
 			let default_value = field.default_value.evaluate(context);
-			log!(context, "Evaluating group field \"{}\" type", field.name.source_identifier());
+			log!(context, "Evaluating group field \"{}\" type", field.name.source_text());
 			let field_type = field.field_type.evaluate(context).map(Type::Evaluated);
 
 			fields.push(GroupField {

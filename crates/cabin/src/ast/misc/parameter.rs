@@ -105,7 +105,7 @@ impl TryParse for Parameters {
 
 			if context.variable_exists(parameter.name()) {
 				context.add_diagnostic_at(parameter.name(), DiagnosticInfo::DuplicateVariableDeclaration {
-					name: parameter.name().source_identifier().to_owned(),
+					name: parameter.name().source_text().to_owned(),
 				});
 			}
 

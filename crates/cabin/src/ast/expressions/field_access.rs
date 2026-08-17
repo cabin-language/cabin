@@ -57,7 +57,7 @@ impl Evaluate for FieldAccess {
 
 		let span = self.span().into_owned();
 		let left = self.left.evaluate(context);
-		let result = left.dot(context, self.right.source_identifier());
+		let result = left.dot(context, self.right.source_text());
 
 		match result {
 			Some(field) => {
@@ -71,7 +71,7 @@ impl Evaluate for FieldAccess {
 				field.with_span(span)
 			},
 			None => {
-				context.add_diagnostic(Diagnostic::at(&self.right, DiagnosticInfo::NoSuchField(self.right.source_identifier().to_owned())));
+				context.add_diagnostic(Diagnostic::at(&self.right, DiagnosticInfo::NoSuchField(self.right.source_text().to_owned())));
 
 				Expression::FieldAccess(FieldAccess {
 					left,

@@ -1,4 +1,4 @@
-use std::fmt::Write as _;
+use std::{collections::HashMap, fmt::Write as _};
 
 use derive_getters::Getters;
 
@@ -6,14 +6,20 @@ use crate::{
 	SpanLike,
 	api::context::Context,
 	ast::{
-		expressions::{Expression, Spanned, identifier::Identifier},
+		expressions::{Expression, Spanned, identifier::Identifier, object::Object},
 		misc::tag::TagList,
 	},
-	comptime::{Dot, Evaluate, storage::Pointer},
+	comptime::{
+		Dot,
+		Evaluate,
+		storage::Pointer,
+		types::{EvaluatedInnerType, EvaluatedType},
+	},
 	diagnostics::Diagnostic,
 	if_then_some,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},
+	traits::TryAs,
 	transpiler::ToCabin,
 	util::Indent as _,
 };
@@ -102,7 +108,7 @@ impl TryParse for NewExpression {
 }
 
 impl Evaluate for NewExpression {
-	type Output = NewExpression;
+	type Output = Pointer;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		let mut fields = Vec::new();
@@ -116,10 +122,16 @@ impl Evaluate for NewExpression {
 			});
 		}
 
-		NewExpression {
+		let evaluated = NewExpression {
 			type_name: self.type_name,
 			fields,
 			tokens: self.tokens,
+		};
+
+		if let Some(object) = evaluated.into_object(context) {
+			object.store(context)
+		} else {
+			Expression::from(evaluated).store(context)
 		}
 	}
 }
@@ -165,6 +177,32 @@ impl ToCabin for NewField {
 
 impl Dot for NewExpression {
 	fn dot(&self, _context: &mut Context, name: &str) -> Option<Pointer> {
-		self.fields.iter().find_map(|field| (field.name.source_identifier() == name).then(|| field.value.clone()))
+		self.fields.iter().find_map(|field| (field.name.source_text() == name).then(|| field.value.clone()))
+	}
+}
+
+impl NewExpression {
+	fn into_object(&self, context: &mut Context) -> Option<Object> {
+		let mut fields = HashMap::new();
+		for field in &self.fields {
+			if !field.value.is_fully_known(context) {
+				return None;
+			}
+
+			let _ = fields.insert(field.name().clone().source_text().to_owned(), field.value().clone());
+		}
+
+		Some(Object::new(
+			self.type_name()
+				.as_ref()
+				.and_then(|name| context.get_variable(name).map(|value| (name, value)))
+				.map(|(name, group)| EvaluatedType {
+					inner: EvaluatedInnerType::Group(group),
+					editable: false,
+					span: name.span().owned(),
+				}),
+			fields,
+			self.span().owned(),
+		))
 	}
 }

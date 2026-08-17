@@ -60,7 +60,8 @@ impl Evaluate for BinaryExpression {
 	fn evaluate(self, context: &mut Context) -> Self::Output {
 		log!(context, "Evaluating binary expression");
 		let operation = *self.operation();
-		FunctionCall::from_binary_expression(self.left, operation, self.right, self.tokens.operator, context).evaluate(context)
+		let span = self.span().owned();
+		FunctionCall::from_binary_expression(self.left, operation, self.right, self.tokens.operator, context, span).evaluate(context)
 	}
 }
 

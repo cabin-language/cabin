@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use derive_getters::Getters;
 
 use crate::{
+	Span,
 	SpanLike,
 	Spanned,
 	api::{builtin::call_builtin_at_compile_time, context::Context, scope::ScopeRef, traits::TryAs as _},
@@ -14,7 +15,7 @@ use crate::{
 		identifier::Identifier,
 		run::Runtime,
 	},
-	comptime::{Evaluate, storage::Pointer},
+	comptime::{Evaluate, storage::Pointer, types::EvaluatedInnerType},
 	diagnostics::{Diagnostic, DiagnosticInfo},
 	if_then_some,
 	lexer::{Token, TokenType},
@@ -25,6 +26,8 @@ use crate::{
 #[derive(Debug, Clone, Getters)]
 pub struct FunctionCall {
 	callee: Pointer,
+	#[getter(skip)]
+	span: Option<Span>,
 	compile_time_arguments: Vec<Pointer>,
 	arguments: Vec<Pointer>,
 	scope: ScopeRef,
@@ -87,6 +90,7 @@ impl TryParse for PostfixExpression {
 
 					expression = Expression::FunctionCall(FunctionCall {
 						callee: expression,
+						span: None,
 						compile_time_arguments,
 						arguments: arguments.unwrap_or_default(),
 						scope: context.scope.get_ref(),
@@ -118,6 +122,7 @@ impl TryParse for PostfixExpression {
 					expression = Expression::FunctionCall(FunctionCall {
 						callee: expression,
 						compile_time_arguments: Vec::new(),
+						span: None,
 						arguments,
 						scope: context.scope.get_ref(),
 						tokens: FunctionCallTokens {
@@ -174,6 +179,7 @@ impl Evaluate for FunctionCall {
 			return Expression::FunctionCall(FunctionCall {
 				callee: function,
 				compile_time_arguments,
+				span: None,
 				arguments,
 				scope: self.scope,
 				tokens: self.tokens,
@@ -184,6 +190,7 @@ impl Evaluate for FunctionCall {
 		context.call_stack.push(FunctionCall {
 			callee: function.to_owned(),
 			compile_time_arguments: compile_time_arguments.clone(),
+			span: None,
 			arguments: arguments.clone(),
 			scope: self.scope,
 			tokens: self.tokens.clone(),
@@ -209,52 +216,60 @@ impl Evaluate for FunctionCall {
 				context.add_diagnostic(Diagnostic::at(&span, DiagnosticInfo::IncorrectArgumentCount {
 					expected: parameter_count,
 					actual: arguments.len(),
+					name: action.name().clone().unwrap_or_else(|| "<anonymous>".to_owned()),
 				}));
 			}
 
 			let mut builtin_name: Option<String> = None;
 			let mut runtime: Option<String> = None;
 
+			let builtin = context.builtin("Builtin");
+
 			// Get runtime tags
 			if let Some(tags) = action.tags() {
 				for tag in tags.values() {
-					if let Some(Expression::New(new)) = tag.value().value(context).as_expression() {
-						// if new
-						// 	.type_name()
-						// 	.as_ref()
-						// 	.is_some_and(|group| group.value(context).is_some_and(|value| value == context.builtin("BuiltinTag")))
-						// {
-						// 	builtin_name = Some(
-						// 		new.fields()
-						// 			.iter()
-						// 			.find(|field| field.name().source_identifier() == "internal_name")
-						// 			.unwrap()
-						// 			.value()
-						// 			.as_text_literal(context)
-						// 			.unwrap()
-						// 			.to_owned(),
-						// 	);
+					dbg!(&tag);
+					if let Some(object) = tag.value().value(context).as_object().cloned() {
+						dbg!(&object);
+						if let Some(type_name) = object.base_type() {
+							dbg!(&type_name);
+							if let EvaluatedInnerType::Group(group) = &type_name.inner {
+								if group.equals(&builtin, context) {
+									builtin_name = Some(
+										object
+											.fields()
+											.iter()
+											.find_map(|(name, value)| (name == "internal_name").then(|| value.to_owned()))
+											.unwrap()
+											.as_text_literal(context)
+											.unwrap()
+											.to_owned(),
+									);
 
-						// 	continue;
-						// }
+									println!("{builtin_name:?}");
 
-						// if new
-						// 	.type_name()
-						// 	.as_ref()
-						// 	.is_some_and(|group| group.value(context).is_some_and(|value| value == context.builtin("Runtime")))
-						// {
-						// 	runtime = Some(
-						// 		new.fields()
-						// 			.iter()
-						// 			.find(|field| field.name().source_identifier() == "reason")
-						// 			.unwrap()
-						// 			.value()
-						// 			.as_text_literal(context)
-						// 			.unwrap()
-						// 			.to_owned(),
-						// 	)
-						// }
+									continue;
+								}
+							}
+						}
 					}
+
+					// if new
+					// 	.type_name()
+					// 	.as_ref()
+					// 	.is_some_and(|group| group.value(context).is_some_and(|value| value == context.builtin("Runtime")))
+					// {
+					// 	runtime = Some(
+					// 		new.fields()
+					// 			.iter()
+					// 			.find(|field| field.name().source_identifier() == "reason")
+					// 			.unwrap()
+					// 			.value()
+					// 			.as_text_literal(context)
+					// 			.unwrap()
+					// 			.to_owned(),
+					// 	)
+					// }
 				}
 			}
 
@@ -295,7 +310,7 @@ impl Evaluate for FunctionCall {
 					&& internal_name == "system.terminal.write"
 				{
 					let outer_span = outer.span().into_owned();
-					if outer.callee.clone() == context.get_builtin("log").unwrap() {
+					if outer.callee.clone().equals(&context.builtin("log"), context) {
 						context.diagnostics_mut().last_mut().unwrap().span = outer_span.into_owned();
 					}
 				}
@@ -303,7 +318,9 @@ impl Evaluate for FunctionCall {
 				return return_value;
 			}
 
-			context.add_diagnostic(Diagnostic::at(&action, DiagnosticInfo::ActionWithoutBody));
+			context.add_diagnostic(Diagnostic::at(&action, DiagnosticInfo::ActionWithoutBody {
+				name: action.name().clone().unwrap_or_else(|| "<anonymous>".to_owned()),
+			}));
 
 			let _ = context.call_stack.pop().unwrap();
 			return Expression::FunctionCall(FunctionCall {
@@ -311,6 +328,7 @@ impl Evaluate for FunctionCall {
 				compile_time_arguments,
 				arguments,
 				scope: self.scope,
+				span: self.span,
 				tokens: self.tokens,
 			})
 			.store(context);
@@ -334,6 +352,7 @@ impl Evaluate for FunctionCall {
 			arguments,
 			scope: self.scope,
 			tokens: self.tokens,
+			span: self.span,
 		})
 		.store(context)
 	}
@@ -341,8 +360,14 @@ impl Evaluate for FunctionCall {
 
 impl Spanned for FunctionCall {
 	fn span(&self) -> impl SpanLike {
+		dbg!(self);
+		if let Some(span) = &self.span {
+			return span.owned();
+		}
+
 		let start = self.callee.span();
 
+		dbg!(&self.tokens);
 		if let Some(arguments) = self.tokens().arguments() {
 			return start.to(arguments.right_parenthesis().span());
 		}
@@ -356,7 +381,7 @@ impl Spanned for FunctionCall {
 }
 
 impl FunctionCall {
-	pub fn from_binary_expression(left: Pointer, operation: BinaryOperation, right: Pointer, operator: Token, context: &mut Context) -> FunctionCall {
+	pub fn from_binary_expression(left: Pointer, operation: BinaryOperation, right: Pointer, operator: Token, context: &mut Context, span: Span) -> FunctionCall {
 		let token = Token::synthetic(TokenType::Identifier, operation.action_name().to_owned(), operator.span().owned());
 		FunctionCall {
 			callee: Expression::FieldAccess(FieldAccess {
@@ -368,6 +393,7 @@ impl FunctionCall {
 			compile_time_arguments: Vec::new(),
 			arguments: vec![right],
 			scope: context.scope.get_ref(),
+			span: Some(span),
 			tokens: FunctionCallTokens {
 				arguments: None,
 				compile_time_arguments: None,
@@ -381,6 +407,7 @@ impl Runtime for FunctionCall {
 		FunctionCall {
 			callee: self.callee.evaluate(context),
 			compile_time_arguments: self.compile_time_arguments.evaluate(context),
+			span: None,
 			arguments: self.arguments.evaluate(context),
 			scope: self.scope,
 			tokens: self.tokens,

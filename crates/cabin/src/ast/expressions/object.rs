@@ -60,37 +60,6 @@ impl Object {
 		}
 	}
 
-	pub fn with_defaults(
-		group: Pointer,
-		mut fields: HashMap<String, Pointer>,
-		internal_fields: HashMap<&'static str, InternalFieldValue>,
-		context: &Context,
-		span: Span,
-	) -> Object {
-		let binding = group.value(context);
-		let Some(Expression::Group(inner_group)) = binding.as_expression() else {
-			unreachable!()
-		};
-
-		for field in inner_group.fields() {
-			if let Some(value) = field.default_value() {
-				let name = field.name().source_identifier().to_owned();
-				let _ = fields.entry(name).or_insert_with(|| value.to_owned());
-			}
-		}
-
-		Object {
-			base_type: Some(EvaluatedType {
-				editable: false,
-				inner: EvaluatedInnerType::Group(group),
-				span: Span::none(),
-			}),
-			fields,
-			internal_fields,
-			span,
-		}
-	}
-
 	pub fn get_field_value(&self, name: &str) -> Option<Pointer> {
 		self.fields.iter().find_map(|(other, value)| (name == other).then_some(value.to_owned()))
 	}
@@ -142,7 +111,7 @@ impl Dot for Object {
 						unreachable!();
 					};
 
-					if let Some(field) = group.fields().iter().find(|field| field.name().source_identifier() == name)
+					if let Some(field) = group.fields().iter().find(|field| field.name().source_text() == name)
 						&& let Some(value) = field.default_value()
 					{
 						if let Storable::Expression(Expression::Action(action)) = value.value(context).clone() {

@@ -175,9 +175,6 @@ impl Context {
 		// import!(context, std::Optional::none);
 		// import!(context, std::Optional::some);
 
-		import!(context, std::add_text as _);
-		import!(context, std::add_numbers as _);
-
 		// convert stdlib module into an object bring it into global scope under the name `builtin`
 		let stdlib_pointer = std.into_object().store(&mut context);
 		context
@@ -211,8 +208,8 @@ impl Context {
 		let _ = self.path.pop();
 	}
 
-	pub fn get_path(&self) -> String {
-		self.path.join("::")
+	pub fn get_path(&self) -> Option<String> {
+		if self.path.is_empty() { None } else { Some(self.path.join("::")) }
 	}
 
 	pub const fn diagnostics_mut(&mut self) -> &mut Diagnostics {
@@ -303,7 +300,7 @@ impl Context {
 
 	pub fn reassign_variable(&mut self, name: &Identifier, value: Pointer) {
 		let Some(declaration) = self.get_variable_declaration_mut(name) else {
-			self.add_diagnostic_at(name, DiagnosticInfo::UnknownVariable(name.source_identifier().to_owned()));
+			self.add_diagnostic_at(name, DiagnosticInfo::UnknownVariable(name.source_text().to_owned()));
 			return;
 		};
 
@@ -387,13 +384,13 @@ impl Context {
 	pub fn declare_new_variable(&mut self, declaration: VariableDeclaration) {
 		if self.variable_exists(declaration.name()) {
 			self.add_diagnostic_at(declaration.name(), DiagnosticInfo::DuplicateVariableDeclaration {
-				name: declaration.name().source_identifier().to_owned(),
+				name: declaration.name().source_text().to_owned(),
 			});
 		}
 
 		let scope = self.scope.get_scope_mut(declaration.name().scope());
 
-		if declaration.name().source_identifier() == "_" {
+		if declaration.name().source_text() == "_" {
 			scope.underscores.push(declaration);
 			return;
 		}

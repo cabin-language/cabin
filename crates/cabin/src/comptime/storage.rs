@@ -20,9 +20,7 @@ use crate::{
 		string::Text,
 	},
 	comptime::{Dot, Evaluate},
-	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
-	parser::{TokenQueue, TryParse},
 	traits::TryAs as _,
 	transpiler::ToCabin,
 };
@@ -156,7 +154,16 @@ impl Pointer {
 	}
 
 	pub fn value_mut<'ctx>(&self, context: &'ctx mut Context) -> &'ctx mut Storable {
-		context.storage.get_mut(self)
+		let mut key = self.to_owned();
+
+		loop {
+			let next = match context.storage.get(&key) {
+				Storable::Pointer(pointer) => pointer.to_owned(),
+				_ => return context.storage.get_mut(&key),
+			};
+
+			key = next;
+		}
 	}
 
 	pub fn with_span(&self, span: Span) -> Self {
@@ -211,6 +218,20 @@ impl Pointer {
 			Storable::Pointer(pointer) => pointer.is_fully_known(context),
 		}
 	}
+
+	pub fn equals(&self, other: &Pointer, context: &Context) -> bool {
+		let mut this_base = self;
+		while let Storable::Pointer(inner) = this_base.value(context) {
+			this_base = inner;
+		}
+
+		let mut other_base = other;
+		while let Storable::Pointer(inner) = other_base.value(context) {
+			other_base = inner;
+		}
+
+		this_base.0 == other_base.0
+	}
 }
 
 impl Evaluate for Pointer {
@@ -220,11 +241,10 @@ impl Evaluate for Pointer {
 		let storable = context.storage.get(&self).clone();
 		let evaluated = match storable {
 			Storable::Expression(expression) => expression.evaluate(context),
-			Storable::Uninitialized => return self,
-			Storable::Object(_) => todo!(),
 			Storable::Pointer(pointer) => pointer.evaluate(context),
+			Storable::Uninitialized | Storable::Object(_) => return self,
 		};
-		context.storage.memory.insert(self.0, Storable::Pointer(evaluated));
+		let _ = context.storage.memory.insert(self.0, Storable::Pointer(evaluated));
 		Pointer(self.0, self.1)
 	}
 }
@@ -234,14 +254,6 @@ impl Spanned for Pointer {
 		&self.1
 	}
 }
-
-impl PartialEq for Pointer {
-	fn eq(&self, other: &Self) -> bool {
-		self.0 == other.0
-	}
-}
-
-impl Eq for Pointer {}
 
 #[derive(Debug, Clone)]
 pub struct Storage {
@@ -276,11 +288,11 @@ impl Storage {
 	}
 
 	pub fn get(&self, address: &Pointer) -> &Storable {
-		self.memory.get(&address.0).unwrap().try_into().unwrap()
+		self.memory.get(&address.0).unwrap()
 	}
 
 	pub fn get_mut(&mut self, address: &Pointer) -> &mut Storable {
-		self.memory.get_mut(&address.0).unwrap().try_into().unwrap()
+		self.memory.get_mut(&address.0).unwrap()
 	}
 
 	fn next_unused_virtual_address(&self) -> usize {

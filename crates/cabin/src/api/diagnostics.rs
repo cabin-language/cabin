@@ -118,8 +118,8 @@ pub enum DiagnosticInfo {
 	#[error("Unexpected token: Expected {expected} but found {actual}")]
 	UnexpectedToken { expected: TokenType, actual: TokenType },
 
-	#[error("Incorrect number of arguments: Expected {expected} arguments to action but received {actual}")]
-	IncorrectArgumentCount { expected: usize, actual: usize },
+	#[error("Incorrect number of arguments: Action \"{name}\" has {expected} parameters, but this call provides {actual}")]
+	IncorrectArgumentCount { expected: usize, actual: usize, name: String },
 
 	#[error("Unexpected end of file: Expected {expected} but found end of file")]
 	UnexpectedEOF { expected: TokenType },
@@ -136,8 +136,8 @@ pub enum DiagnosticInfo {
 	#[error("{0}")]
 	Info(String),
 
-	#[error("Missing action body: This action has no body block")]
-	ActionWithoutBody,
+	#[error("Missing action body: The action \"{name}\" has no body block")]
+	ActionWithoutBody { name: String },
 }
 
 impl DiagnosticInfo {
@@ -161,7 +161,7 @@ impl DiagnosticInfo {
 			| Self::IterateOverNonList
 			| Self::GroupValueNotKnownAtCompileTime
 			| Self::RunLiteral
-			| Self::ActionWithoutBody
+			| Self::ActionWithoutBody { .. }
 			| Self::UnexpectedTokenExpected { .. }
 			| Self::DuplicateGroupField(_)
 			| Self::InvalidTopLevelStatement { .. }

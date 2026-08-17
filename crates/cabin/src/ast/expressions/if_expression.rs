@@ -102,7 +102,7 @@ impl Evaluate for IfExpression {
 		// evaluate condition
 		let condition = self.condition.evaluate(context);
 		let cabin_true = context.get_true();
-		let condition_is_true = condition == cabin_true;
+		let condition_is_true = condition.equals(&cabin_true, context);
 
 		// static analysis
 		self.body.check(context);
@@ -122,7 +122,7 @@ impl Evaluate for IfExpression {
 		let mut otherwise_ifs = Vec::new();
 		for otherwise_if in self.otherwise_ifs {
 			let otherwise_condition = otherwise_if.condition.evaluate(context);
-			let otherwise_condition_is_true = otherwise_condition == cabin_true;
+			let otherwise_condition_is_true = otherwise_condition.equals(&cabin_true, context);
 			if otherwise_condition_is_true {
 				return otherwise_if.body.evaluate(context);
 			}

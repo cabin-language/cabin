@@ -51,7 +51,7 @@ impl Evaluate for Identifier {
 	type Output = Pointer;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
-		log!(context, "Evaluating identifier \"{}\"", self.source_identifier());
+		log!(context, "Evaluating identifier \"{}\"", self.source_text());
 		self.value(context).unwrap_or_else(|| Expression::Identifier(self).store(context))
 	}
 }
@@ -96,7 +96,7 @@ impl From<&Identifier> for Identifier {
 
 impl Debug for Identifier {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}", self.source_identifier())
+		write!(f, "{}", self.source_text())
 	}
 }
 
@@ -111,7 +111,7 @@ impl Identifier {
 		context
 			.get_variable(self)
 			.ok_or_else(|| {
-				context.add_diagnostic_at(self, DiagnosticInfo::UnknownVariable(self.source_identifier().to_owned()));
+				context.add_diagnostic_at(self, DiagnosticInfo::UnknownVariable(self.source_text().to_owned()));
 			})
 			.ok()
 			.map(|ptr| ptr.with_span(self.span().into_owned()))
@@ -120,7 +120,7 @@ impl Identifier {
 	pub fn stringify(&self, context: &mut Context) -> Text {
 		Text::literal(
 			LiteralPart {
-				value: self.source_identifier().to_owned(),
+				value: self.source_text().to_owned(),
 				span: self.span().owned(),
 			},
 			context,
@@ -148,7 +148,7 @@ impl Identifier {
 		}
 	}
 
-	pub fn source_identifier(&self) -> &str {
+	pub fn source_text(&self) -> &str {
 		&self.token.value
 	}
 

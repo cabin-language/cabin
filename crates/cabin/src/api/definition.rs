@@ -36,7 +36,7 @@ impl Evaluate for VariableDeclaration {
 }
 
 impl VariableDeclaration {
-	pub fn with_value_and_type(name: Identifier, expression: Pointer, variable_type: Type) -> VariableDeclaration {
+	pub const fn with_value_and_type(name: Identifier, expression: Pointer, variable_type: Type) -> VariableDeclaration {
 		VariableDeclaration {
 			name,
 			value: expression,
@@ -44,7 +44,7 @@ impl VariableDeclaration {
 		}
 	}
 
-	pub fn with_value(name: Identifier, expression: Pointer) -> VariableDeclaration {
+	pub const fn with_value(name: Identifier, expression: Pointer) -> VariableDeclaration {
 		VariableDeclaration {
 			name,
 			value: expression,

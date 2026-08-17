@@ -63,6 +63,7 @@ impl TryParse for Declaration {
 
 		// name
 		let name = Identifier::try_parse(tokens, context)?;
+		context.add_to_path(name.source_text());
 
 		let location = context.storage.calloc();
 		context.declare_new_variable(VariableDeclaration::with_value(name.clone(), location));
@@ -82,6 +83,8 @@ impl TryParse for Declaration {
 		context.reassign_variable(&name, value.clone());
 
 		let semicolon = tokens.pop(TokenType::Semicolon, context)?;
+
+		context.pop_from_path();
 
 		// return the declaration
 		Ok(Statement::Declaration(Declaration {
@@ -105,24 +108,24 @@ impl Evaluate for Declaration {
 	type Output = Declaration;
 
 	fn evaluate(self, context: &mut Context) -> Self::Output {
-		log!(context, "Evaluating declaration for \"{}\"", self.name.source_identifier());
+		log!(context, "Evaluating declaration for \"{}\"", self.name.source_text());
 		let evaluated = self.value.evaluate(context);
 
 		if let Storable::Expression(value) = evaluated.value(context) {
 			match value {
 				Expression::Group(_) | Expression::Either(_) => {
-					if !self.name.source_identifier().is_case(Case::Pascal) {
+					if !self.name.source_text().is_case(Case::Pascal) {
 						context.add_diagnostic_at(&self.name, DiagnosticInfo::NonPascalCaseGroup {
-							original_name: self.name.source_identifier().to_owned(),
+							original_name: self.name.source_text().to_owned(),
 							type_name: value.kind_name().to_owned(),
 						});
 					}
 				},
 
 				_ => {
-					if !self.name.source_identifier().is_case(Case::Snake) {
+					if !self.name.source_text().is_case(Case::Snake) {
 						context.add_diagnostic_at(&self.name, DiagnosticInfo::NonSnakeCaseName {
-							original_name: self.name.source_identifier().to_owned(),
+							original_name: self.name.source_text().to_owned(),
 						});
 					}
 				},

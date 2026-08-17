@@ -5,6 +5,7 @@ use crate::{
 	Span,
 	ast::expressions::{
 		Expression,
+		list::List,
 		number::Number,
 		string::{LiteralPart, Text},
 	},
@@ -12,6 +13,7 @@ use crate::{
 	diagnostics::DiagnosticInfo,
 	lexer::{Token, TokenType},
 	log,
+	traits::TryAs,
 };
 
 /// Calls a built-in function at compile-time. Built-in functions are called at compiled time with Rust code. This is used in
@@ -36,7 +38,11 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut argum
 	match name {
 		"system.terminal.write" => {
 			let Some(pointer) = arguments.pop_front() else {
-				context.add_diagnostic_at(span, DiagnosticInfo::IncorrectArgumentCount { expected: 1, actual: 0 });
+				context.add_diagnostic_at(span, DiagnosticInfo::IncorrectArgumentCount {
+					expected: 1,
+					actual: 0,
+					name: "builtin::system::terminal::write".to_owned(),
+				});
 
 				return context.none();
 			};
@@ -116,9 +122,21 @@ pub fn call_builtin_at_compile_time(name: &str, context: &mut Context, mut argum
 
 		"List.insert" => {
 			log!(context, "Calling builtin \"List.insert\"");
+
+			if arguments.len() != 3 {
+				context.add_diagnostic_at(span, DiagnosticInfo::IncorrectArgumentCount {
+					expected: 1,
+					actual: 0,
+					name: "builtin::List::insert".to_owned(),
+				});
+
+				return context.none();
+			}
+
+			dbg!(arguments[1].value(context));
+			let this = arguments.get(0).unwrap().as_mut_list_literal(context).unwrap();
 			let index = arguments.get(1).unwrap().as_number_literal(context).unwrap() as usize;
 			let element = arguments.get(2).unwrap().to_owned();
-			let this = arguments.pop_front().unwrap().as_mut_list_literal(context).unwrap();
 			// this.insert(index, element, context);
 
 			context.none()

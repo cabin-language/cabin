@@ -127,7 +127,8 @@ impl Evaluate for Text {
 
 		for part in parts {
 			let token = Token::synthetic(TokenType::Plus, "+".to_owned(), part.span().owned());
-			expression = FunctionCall::from_binary_expression(expression, BinaryOperation::Add, part, token, context).evaluate(context);
+			let span = part.span().owned();
+			expression = FunctionCall::from_binary_expression(expression, BinaryOperation::Add, part, token, context, span).evaluate(context);
 		}
 
 		expression.evaluate(context)

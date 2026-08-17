@@ -98,7 +98,7 @@ impl Scope {
 		string.push(format!("\tlabel: [{:?}]", self.label));
 		string.push(format!(
 			"\tvariables: [{}],",
-			self.variables.keys().map(|name| name.source_identifier()).collect::<Vec<_>>().join(",")
+			self.variables.keys().map(|name| name.source_text()).collect::<Vec<_>>().join(",")
 		));
 		for child_scope in &self.children {
 			for line in scopes.get(*child_scope).unwrap().to_string(scopes).lines() {
@@ -281,7 +281,7 @@ impl ScopeTree {
 	pub fn declare_new_variable_from_id(&mut self, name: impl Into<Identifier>, value: VariableDeclaration, id: ScopeRef) -> Result<(), DiagnosticInfo> {
 		let name = name.into();
 
-		if name.source_identifier() == "_" {
+		if name.source_text() == "_" {
 			self.underscores.push(value);
 			return Ok(());
 		}
@@ -289,7 +289,7 @@ impl ScopeTree {
 		let old = self.scopes.get_mut(id.0).unwrap().variables.insert(name.clone(), value);
 		old.map_or(Ok(()), |_| {
 			Err(DiagnosticInfo::DuplicateVariableDeclaration {
-				name: name.source_identifier().to_owned(),
+				name: name.source_text().to_owned(),
 			})
 		})
 	}

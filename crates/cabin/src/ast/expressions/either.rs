@@ -87,9 +87,9 @@ impl TryParse for Either {
 			})
 			.unzip();
 
-			if name.source_identifier() != name.source_identifier().to_case(Case::Snake) {
+			if name.source_text() != name.source_text().to_case(Case::Snake) {
 				context.add_diagnostic(Diagnostic::at(&name, DiagnosticInfo::NonSnakeCaseName {
-					original_name: name.source_identifier().to_owned(),
+					original_name: name.source_text().to_owned(),
 				}));
 			}
 

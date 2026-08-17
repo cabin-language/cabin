@@ -7,11 +7,7 @@ use crate::{
 	SpanLike,
 	Spanned,
 	ast::expressions::object::Object,
-	comptime::{
-		Dot,
-		storage::Pointer,
-		types::{EvaluatedInnerType, EvaluatedType},
-	},
+	comptime::{Dot, storage::Pointer, types::EvaluatedType},
 	diagnostics::Diagnostic,
 	lexer::{Token, TokenType},
 	parser::{TokenQueue, TokenQueueFunctionality as _, TryParse},

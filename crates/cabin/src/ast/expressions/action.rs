@@ -34,6 +34,7 @@ pub struct Action {
 	parameter_scope: ScopeRef,
 	tokens: ActionTokens,
 	object: Pointer,
+	name: Option<String>,
 	pub(crate) tags: Option<TagList>,
 	pub(crate) this: Option<Pointer>,
 }
@@ -83,7 +84,7 @@ impl TryParse for Action {
 			}
 		}
 
-		// return Type
+		// return type
 		let return_type = if_then_some!(tokens.next_is(TokenType::Colon), {
 			let colon = tokens.pop(TokenType::Colon, context)?;
 			let inner_return_type = Type::try_parse(tokens, context)?;
@@ -128,6 +129,7 @@ impl TryParse for Action {
 			compile_time_parameters,
 			return_type,
 			body,
+			name: context.get_path(),
 			tokens: ActionTokens { keyword_action },
 			tags: None,
 			this: None,
@@ -166,6 +168,7 @@ impl Evaluate for Action {
 			compile_time_parameters,
 			parameters,
 			body: self.body,
+			name: self.name,
 			return_type,
 			parameter_scope: self.parameter_scope,
 			tokens: self.tokens,
@@ -221,7 +224,7 @@ impl Action {
 	pub fn takes_this(&self) -> bool {
 		self.parameters
 			.as_ref()
-			.is_some_and(|parameters| parameters.first().is_some_and(|parameter| parameter.name().source_identifier() == "this"))
+			.is_some_and(|parameters| parameters.first().is_some_and(|parameter| parameter.name().source_text() == "this"))
 	}
 
 	pub fn bind(mut self, object: Object, context: &mut Context) -> Action {

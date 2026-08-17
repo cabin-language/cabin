@@ -38,7 +38,7 @@ impl TryParse for CompileTimeParameters {
 
 			if context.get_variable(parameter.name()).is_some() {
 				context.add_diagnostic_at(parameter.name(), DiagnosticInfo::DuplicateVariableDeclaration {
-					name: parameter.name().source_identifier().to_owned(),
+					name: parameter.name().source_text().to_owned(),
 				});
 			}
 

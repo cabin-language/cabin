@@ -71,7 +71,7 @@ impl Dot for Module {
 	fn dot(&self, _context: &mut Context, name: &str) -> Option<Pointer> {
 		self.declarations
 			.iter()
-			.find_map(|declaration| (declaration.name().source_identifier() == name).then(|| declaration.value().to_owned()))
+			.find_map(|declaration| (declaration.name().source_text() == name).then(|| declaration.value().to_owned()))
 	}
 }
 
@@ -79,7 +79,7 @@ impl Module {
 	pub fn into_object(self) -> Object {
 		let mut fields = HashMap::new();
 		for declaration in self.declarations {
-			let _ = fields.insert(declaration.name().source_identifier().to_owned(), declaration.value().to_owned());
+			let _ = fields.insert(declaration.name().source_text().to_owned(), declaration.value().to_owned());
 		}
 
 		Object::new(None, fields, Span::none())
